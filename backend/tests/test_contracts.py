@@ -508,3 +508,17 @@ def test_bioinformatics_routes_and_sequence_validation_contract():
     alignment = align_sequences(AlignmentRequest(sequence_a="ACDE", sequence_b="ACDF"))
     assert alignment["identity_percent"] == 75.0
     assert alignment["method"].startswith("Needleman-Wunsch")
+
+
+def test_alphafold_structure_discovery_route_is_registered_and_bounded():
+    operation = app.openapi()["paths"]["/api/v1/research/alphafold"]["get"]
+    params = {item["name"]: item for item in operation["parameters"]}
+    assert params["accession"]["schema"]["minLength"] == 3
+    assert params["accession"]["schema"]["maxLength"] == 20
+
+
+def test_structure_discovery_workspace_is_registered():
+    paths = app.openapi()["paths"]
+    assert "/api/v1/research/rcsb" in paths
+    assert "/api/v1/research/alphafold" in paths
+    assert "get" in paths["/api/v1/research/alphafold"]

@@ -82,7 +82,7 @@ def test_clinical_trials_normalization_preserves_source_and_evidence_state():
 
 def test_provenance_migration_is_present_and_applied_in_development_order():
     migrations = sorted(path.name for path in MIGRATIONS_DIR.glob("*.sql"))
-    assert migrations == ["001_initial_schema.sql", "002_provenance_curation.sql", "003_authentication.sql", "004_organization_workspaces.sql", "005_curation_workflow.sql", "006_enrichment_candidates.sql", "007_vendor_directory.sql", "008_analytical_method_intelligence.sql", "009_formulation_stability_intelligence.sql", "010_process_development_intelligence.sql", "011_molecular_interaction_intelligence.sql", "012_agent_sessions.sql", "013_evidence_intelligence.sql", "014_regulatory_guidance_intelligence.sql", "015_regulatory_change_monitoring.sql", "016_regulatory_observation_integrity.sql", "017_regulatory_source_registry.sql", "018_enrichment_ingestion_runs.sql", "019_regulatory_source_observations.sql", "020_regulatory_poll_scheduler.sql", "021_evidence_review_decisions.sql", "022_structured_evidence_extraction.sql", "023_extracted_evidence_field_review.sql"]
+    assert migrations == ["001_initial_schema.sql", "002_provenance_curation.sql", "003_authentication.sql", "004_organization_workspaces.sql", "005_curation_workflow.sql", "006_enrichment_candidates.sql", "007_vendor_directory.sql", "008_analytical_method_intelligence.sql", "009_formulation_stability_intelligence.sql", "010_process_development_intelligence.sql", "011_molecular_interaction_intelligence.sql", "012_agent_sessions.sql", "013_evidence_intelligence.sql", "014_regulatory_guidance_intelligence.sql", "015_regulatory_change_monitoring.sql", "016_regulatory_observation_integrity.sql", "017_regulatory_source_registry.sql", "018_enrichment_ingestion_runs.sql", "019_regulatory_source_observations.sql", "020_regulatory_poll_scheduler.sql", "021_evidence_review_decisions.sql", "022_structured_evidence_extraction.sql", "023_extracted_evidence_field_review.sql", "024_peptide_analytical_method_applicability.sql"]
     sql = (MIGRATIONS_DIR / "002_provenance_curation.sql").read_text(encoding="utf-8")
     assert "source_record_versions" in sql
     assert "external_entity_links" in sql
@@ -933,3 +933,35 @@ def test_development_migration_ledger_rejects_modified_applied_file(tmp_path):
     with pytest.raises(RuntimeError, match="Applied migration 001_first.sql was modified"):
         apply_development_migrations(connection, tmp_path)
 
+
+
+def test_peptide_specific_analytical_applicability_routes_and_schema_are_registered():
+    paths = app.openapi()["paths"]
+    assert "/api/v1/analytical-methods/applicability" in paths
+    assert "get" in paths["/api/v1/analytical-methods/applicability"]
+    assert "post" in paths["/api/v1/analytical-methods/applicability"]
+    assert "/api/v1/analytical-methods/applicability/reviews" in paths
+    assert "/api/v1/analytical-methods/applicability/{applicability_id}/decisions" in paths
+    sql = (MIGRATIONS_DIR / "024_peptide_analytical_method_applicability.sql").read_text(encoding="utf-8")
+    assert "peptide_method_applicability" in sql
+    assert "peptide_method_applicability_decisions" in sql
+    assert "prevent_peptide_method_applicability_decision_mutation" in sql
+
+
+def test_applicability_submission_requires_source_and_explicit_scope():
+    from app.routers.analytical_methods import ApplicabilitySubmission
+
+    payload = ApplicabilitySubmission(
+        peptide_id="00000000-0000-0000-0000-000000000001",
+        method_id="00000000-0000-0000-0000-000000000002",
+        test_purpose="Peptide identity confirmation",
+        material_form="lyophilized research reference",
+        sample_matrix="neat reference material",
+        applicability_rationale="The cited study evaluated this analytical method for the specified peptide material.",
+        evidence_scope="The source supports identity assessment under the described study conditions.",
+        limitations="Applicability to other matrices and modified analogues has not been established.",
+        source_name="Example Journal",
+        source_identifier="doi:10.example/peptide-method",
+        source_url="https://example.org/peptide-method",
+    )
+    assert payload.test_purpose == "Peptide identity confirmation"

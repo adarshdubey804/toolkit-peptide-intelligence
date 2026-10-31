@@ -490,3 +490,21 @@ def test_process_submission_requires_sources_and_limits_stage_categories():
     )
     assert payload.stages == []
     assert payload.process_platform == "solid_phase_peptide_synthesis"
+
+
+def test_bioinformatics_routes_and_sequence_validation_contract():
+    paths = app.openapi()["paths"]
+    assert "/api/v1/bioinformatics/analyze" in paths
+    assert "/api/v1/bioinformatics/align" in paths
+    analyze = paths["/api/v1/bioinformatics/analyze"]["post"]["requestBody"]["content"]["application/json"]["schema"]
+    assert analyze["$ref"].endswith("/SequenceRequest")
+    from app.routers.bioinformatics import SequenceRequest, AlignmentRequest, analyze_sequence, align_sequences
+    with pytest.raises(Exception):
+        SequenceRequest(sequence="ACD-X")
+    result = analyze_sequence(SequenceRequest(sequence="ACDE"))
+    assert result["sequence_length"] == 4
+    assert result["calculation_status"] == "computed_estimate"
+    assert result["molecular_weight_da_average"] > 400
+    alignment = align_sequences(AlignmentRequest(sequence_a="ACDE", sequence_b="ACDF"))
+    assert alignment["identity_percent"] == 75.0
+    assert alignment["method"].startswith("Needleman-Wunsch")

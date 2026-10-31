@@ -91,13 +91,25 @@ def verified_vendor_directory(
                COALESCE(jsonb_agg(DISTINCT jsonb_build_object(
                    'certification_name', vc.certification_name,
                    'issuing_body', vc.issuing_body,
+                   'certificate_reference', vc.certificate_reference,
                    'scope', vc.scope,
+                   'valid_from', vc.valid_from,
                    'valid_until', vc.valid_until,
-                   'verification_status', vc.verification_status
+                   'verification_status', vc.verification_status,
+                   'validity_status', CASE
+                       WHEN vc.valid_from IS NOT NULL AND vc.valid_from > CURRENT_DATE THEN 'not_yet_valid'
+                       WHEN vc.valid_until IS NOT NULL AND vc.valid_until < CURRENT_DATE THEN 'expired'
+                       WHEN vc.valid_from IS NULL OR vc.valid_until IS NULL THEN 'date_not_provided'
+                       ELSE 'current'
+                   END,
+                   'source_name', cert_source.source_name,
+                   'source_identifier', cert_source.source_identifier,
+                   'source_url', cert_source.source_url
                )) FILTER (WHERE vc.id IS NOT NULL), '[]'::jsonb) AS certifications
         FROM vendors v
         LEFT JOIN vendor_services vs ON vs.vendor_id=v.id AND vs.review_status='verified'
         LEFT JOIN vendor_certifications vc ON vc.vendor_id=v.id AND vc.verification_status='verified'
+        LEFT JOIN source_records cert_source ON cert_source.id=vc.verification_source_id
         WHERE v.review_status='verified' AND v.verification_status='verified'
           AND (:q IS NULL OR v.legal_name ILIKE '%' || :q || '%' OR v.vendor_type ILIKE '%' || :q || '%')
           AND (:vendor_type IS NULL OR v.vendor_type=:vendor_type)
@@ -393,6 +405,8 @@ def submit_vendor_certification(
     organization_id, role = _membership(current_user, db)
     if role not in SUBMIT_ROLES:
         raise HTTPException(status_code=403, detail="Your role cannot submit certification evidence.")
+    if payload.valid_from and payload.valid_until and payload.valid_until < payload.valid_from:
+        raise HTTPException(status_code=422, detail="Certification expiry date cannot precede its start date.")
     vendor = db.execute(text("SELECT id, submitted_by FROM vendors WHERE id=:id AND organization_id=:org AND review_status='in_review'"),
                         {"id": vendor_id, "org": organization_id}).mappings().first()
     if not vendor or str(vendor["submitted_by"]) != current_user["id"]:

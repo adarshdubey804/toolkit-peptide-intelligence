@@ -177,3 +177,11 @@ def test_research_assistant_brief_route_is_registered_and_bounded():
     assert params["question"]["schema"]["maxLength"] == 500
     assert params["limit"]["schema"]["minimum"] == 1
     assert params["limit"]["schema"]["maximum"] == 10
+
+
+
+def test_ai_synthesis_is_opt_in_and_development_guarded():
+    operation = app.openapi()["paths"]["/api/v1/research/assistant/synthesize"]["post"]
+    assert operation["requestBody"]["required"] is True
+    from app.config import settings
+    assert settings.ai_synthesis_enabled is False

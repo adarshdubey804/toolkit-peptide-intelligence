@@ -15,6 +15,7 @@ from .routers.curation import router as curation_router
 from .routers.dossiers import router as dossier_router
 from .routers.enrichment import router as enrichment_router
 from .routers.formulations import router as formulation_router
+from .routers.interactions import router as interaction_router
 from .routers.organizations import router as organization_router
 from .routers.peptides import router as peptide_router
 from .routers.process_knowledge import router as process_knowledge_router
@@ -58,6 +59,7 @@ app.include_router(curation_router)
 app.include_router(dossier_router)
 app.include_router(enrichment_router)
 app.include_router(formulation_router)
+app.include_router(interaction_router)
 app.include_router(organization_router)
 app.include_router(peptide_router)
 app.include_router(process_knowledge_router)

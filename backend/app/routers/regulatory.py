@@ -313,3 +313,27 @@ def decide_regulatory_source_observation(observation_id:UUID,payload:RegulatoryF
  VALUES(:u,:o,'regulatory_feed_observation_decided','regulatory_source_observation',:id,jsonb_build_object('decision',:decision))"""),{"u":user["id"],"o":org,"id":observation_id,"decision":payload.decision})
  db.commit()
  return {"observation_id":str(observation_id),"decision":payload.decision}
+
+
+@router.get("/sources/poll-runs")
+def list_regulatory_poll_runs(user:Annotated[dict,Depends(get_current_user)],db:Annotated[Session,Depends(get_db)],limit:int=Query(50,ge=1,le=100)):
+ org,role=membership(user,db)
+ if role not in REVIEW: raise HTTPException(403,"Curator or reviewer permission is required.")
+ rows=db.execute(text("""SELECT r.id,r.source_id,s.source_name,s.authority,s.jurisdiction,
+  r.trigger_type,r.status,r.items_seen,r.items_added,r.error_code,r.started_at,r.finished_at
+  FROM regulatory_source_poll_runs r JOIN regulatory_source_registry s ON s.id=r.source_id
+  WHERE r.organization_id=:org ORDER BY r.started_at DESC LIMIT :limit"""),
+  {"org":org,"limit":limit}).mappings().all()
+ return {"items":[dict(row) for row in rows],"count":len(rows)}
+
+
+@router.get("/sources/due")
+def list_regulatory_poll_schedule(user:Annotated[dict,Depends(get_current_user)],db:Annotated[Session,Depends(get_db)]):
+ org,role=membership(user,db)
+ if role not in REVIEW: raise HTTPException(403,"Curator or reviewer permission is required.")
+ rows=db.execute(text("""SELECT id,authority,jurisdiction,source_name,source_type,
+  polling_interval_hours,is_active,last_polled_at,next_poll_at,last_poll_status
+  FROM regulatory_source_registry WHERE organization_id=:org ORDER BY authority,source_name"""),
+  {"org":org}).mappings().all()
+ return {"items":[dict(row) for row in rows],"count":len(rows),
+  "notice":"Scheduling metadata is used by the one-shot worker; an external scheduler must invoke it periodically."}

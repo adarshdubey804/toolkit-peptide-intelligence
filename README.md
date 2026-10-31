@@ -44,6 +44,7 @@ This is an initial authentication foundation, not a complete production identity
 - GET /api/v1/peptides/{id}/graph — curator-verified sequence, target, pathway, structure, claim and publication relationships.
 - POST /api/v1/dossiers — create a source-linked peptide dossier with aliases, sequence/modifications, chemical properties and evidence claims; submits it directly to the organization's review queue.
 - Frontend `/submit-peptide` — authenticated researcher form for dossier submission (login required).
+- Frontend `/curation` — organization-scoped curator dashboard with source inspection, assignment and review decisions.
 - POST /api/v1/curation/reviews — submit a peptide or evidence claim for review.
 - GET /api/v1/curation/reviews — list the current organization's submitted review queue for reviewers.
 - PATCH /api/v1/curation/reviews/{id}/assignment — assign an open review to an organization curator/reviewer.

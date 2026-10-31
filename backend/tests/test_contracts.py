@@ -150,3 +150,12 @@ def test_source_envelope_requires_timezone_aware_timestamp_and_identifiers():
             source_url="https://example.org/record",
             payload={},
         )
+
+
+def test_verified_peptide_knowledge_graph_route_is_registered():
+    paths = app.openapi()["paths"]
+    route = "/api/v1/peptides/{peptide_id}/graph"
+    assert route in paths
+    assert "get" in paths[route]
+    parameter = next(item for item in paths[route]["get"]["parameters"] if item["name"] == "peptide_id")
+    assert parameter["schema"]["format"] == "uuid"

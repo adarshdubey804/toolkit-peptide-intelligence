@@ -11,7 +11,7 @@ from .db import engine
 from .routers.peptides import router as peptide_router
 from .routers.research import router as research_router
 
-MIGRATION = Path(__file__).resolve().parents[1] / "database" / "migrations" / "001_initial_schema.sql"
+MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "database" / "migrations"
 
 
 @asynccontextmanager
@@ -19,13 +19,14 @@ async def lifespan(app: FastAPI):
     # Development convenience only. Production migrations must run as a deployment job.
     if settings.app_env == "development":
         with engine.begin() as conn:
-            conn.exec_driver_sql(MIGRATION.read_text(encoding="utf-8"))
+            for migration in sorted(MIGRATIONS_DIR.glob("*.sql")):
+                conn.exec_driver_sql(migration.read_text(encoding="utf-8"))
     yield
 
 
 app = FastAPI(
     title="Toolkit Peptide Intelligence API",
-    version="0.2.1",
+    version="0.3.0",
     description="Source-traceable peptide research information API; not a clinical decision system.",
     lifespan=lifespan,
 )
@@ -42,7 +43,7 @@ app.include_router(research_router)
 
 @app.get("/health", tags=["operations"])
 def health():
-    return {"status": "ok", "service": "toolkit-peptide-intelligence-api", "version": "0.2.1"}
+    return {"status": "ok", "service": "toolkit-peptide-intelligence-api", "version": "0.3.0"}
 
 
 @app.get("/ready", tags=["operations"])

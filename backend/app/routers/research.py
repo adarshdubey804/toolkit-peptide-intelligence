@@ -1,12 +1,24 @@
-import httpx
-from pydantic import BaseModel, Field
-from typing import Annotated
-from uuid import UUID
+import asyncio
 import json
+from datetime import datetime, timezone
+from typing import Annotated, Literal
+from uuid import UUID
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+from ..config import settings
+from ..db import get_db
+from ..integrations.alphafold import AlphaFoldProvider
+from ..integrations.clinicaltrials import ClinicalTrialsProvider
+from ..integrations.pubchem import PubChemProvider
+from ..integrations.pubmed import PubMedProvider
+from ..integrations.rcsb import RCSBProvider
+from ..integrations.uniprot import UniProtProvider
+from .auth import get_current_user
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -83,10 +95,6 @@ async def search_pubchem(name: str = Query(min_length=2, max_length=200)):
         return await PubChemProvider().search_by_name(name)
     except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
         raise HTTPException(status_code=502, detail="PubChem could not be reached or returned an invalid response.") from exc
-
-
-import asyncio
-from datetime import datetime, timezone
 
 
 @router.get("/workspace")

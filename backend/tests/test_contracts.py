@@ -279,3 +279,10 @@ def test_curation_decision_history_is_database_append_only():
     sql = (MIGRATIONS_DIR / "005_curation_workflow.sql").read_text(encoding="utf-8")
     assert "BEFORE UPDATE OR DELETE ON curation_decisions" in sql
     assert "append-only" in sql
+
+
+def test_curation_verification_requires_original_source_url():
+    from app.routers import curation
+    source = Path(curation.__file__).read_text(encoding="utf-8")
+    assert "Verification requires at least one linked source" in source
+    assert "source_url IS NOT NULL" in source

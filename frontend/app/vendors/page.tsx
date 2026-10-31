@@ -13,6 +13,7 @@ type MethodOption = { id: string; method_name: string };
 type LinkReview = { id: string; service_id: string; legal_name: string; service_name: string; relationship_type: string; evidence_scope: string; limitations: string; peptide_id?: string; peptide_name?: string; method_id?: string; method_name?: string; source_name: string; source_identifier: string; source_url: string };
 type CertificationReview = { id: string; vendor_id: string; legal_name: string; certification_name: string; issuing_body: string; certificate_reference: string; scope: string; valid_from?: string; valid_until?: string; source_name?: string; source_identifier?: string; source_url?: string };
 type VendorSubmissionOption = { id: string; legal_name: string; review_status: string; verification_status: string };
+type VendorSiteReview = { id: string; vendor_id: string; legal_name: string; site_name: string; address: string; country_code: string; site_scope: string; source_name: string; source_identifier: string; source_url: string };
 
 export default function VendorsPage() {
   const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -27,6 +28,9 @@ export default function VendorsPage() {
   const [certificationReviews, setCertificationReviews] = useState<CertificationReview[]>([]);
   const [myVendorSubmissions, setMyVendorSubmissions] = useState<VendorSubmissionOption[]>([]);
   const [certificationRationales, setCertificationRationales] = useState<Record<string,string>>({});
+  const [siteReviews, setSiteReviews] = useState<VendorSiteReview[]>([]);
+  const [siteRationales, setSiteRationales] = useState<Record<string,string>>({});
+  const [siteForm, setSiteForm] = useState({vendor_id:"",site_name:"",address:"",country_code:"",site_scope:"",source_name:"",source_identifier:"",source_url:""});
   const [certificationForm, setCertificationForm] = useState({vendor_id:"",certification_name:"",issuing_body:"",certificate_reference:"",scope:"",valid_from:"",valid_until:"",source_name:"",source_identifier:"",source_url:""});
   const [linkForm, setLinkForm] = useState({ service_id:"", relationship_type:"peptide_supply", peptide_id:"", method_id:"", evidence_scope:"", limitations:"", source_name:"", source_identifier:"", source_url:"" });
   const [serviceForm, setServiceForm] = useState({ vendor_id: "", service_name: "", capability_description: "", source_name: "", source_identifier: "", source_url: "" });
@@ -63,7 +67,7 @@ export default function VendorsPage() {
       setToken(data.access_token); setRole(data.user.role); setPassword("");
       setMessage("Signed in as " + data.user.role + ".");
       await loadMySubmissions(data.access_token);
-      if (["organization_admin","curator","reviewer"].includes(data.user.role)) await loadReviewsWithToken(data.access_token);
+      if (["organization_admin","curator","reviewer"].includes(data.user.role)) { await loadReviewsWithToken(data.access_token); await loadSiteReviews(data.access_token); }
     } catch (e) { setError(e instanceof Error ? e.message : "Sign in failed."); }
     finally { setBusy(false); }
   }
@@ -151,6 +155,45 @@ export default function VendorsPage() {
       await loadServiceReviews();
       if (decision === "verified") await loadDirectory();
     } catch (e) { setError(e instanceof Error ? e.message : "Service decision failed."); }
+  }
+
+  async function submitVendorSite(e: FormEvent) {
+    e.preventDefault(); if (!token || !siteForm.vendor_id) return;
+    setBusy(true); setError(""); setMessage("");
+    try {
+      const {vendor_id,...payload}=siteForm;
+      const response=await fetch(API+"/api/v1/vendors/"+vendor_id+"/sites",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify(payload)});
+      const data=await response.json();
+      if(!response.ok)throw new Error(data.detail||"Facility submission failed.");
+      setMessage("Facility submitted for independent identity, address and scope review. It will not appear publicly until approved.");
+      setSiteForm(prev=>({...prev,site_name:"",address:"",country_code:"",site_scope:"",source_name:"",source_identifier:"",source_url:""}));
+      await loadMySubmissions();
+      if(["organization_admin","curator","reviewer"].includes(role)) await loadSiteReviews();
+    }catch(e){setError(e instanceof Error?e.message:"Facility submission failed.");}
+    finally{setBusy(false);}
+  }
+
+  async function loadSiteReviews(authToken:string=token) {
+    if(!authToken)return;
+    try{
+      const response=await fetch(API+"/api/v1/vendors/sites/reviews",{headers:{Authorization:"Bearer "+authToken}});
+      const data=await response.json();
+      if(!response.ok)throw new Error(data.detail||"Facility review queue unavailable.");
+      setSiteReviews(data.items||[]);
+    }catch(e){setError(e instanceof Error?e.message:"Facility review queue failed.");}
+  }
+
+  async function decideSite(item:VendorSiteReview,decision:"verified"|"rejected"|"needs_changes") {
+    const why=(siteRationales[item.id]||"").trim();
+    if(why.length<20){setError("Facility review rationale must contain at least 20 characters.");return;}
+    try{
+      const response=await fetch(API+"/api/v1/vendors/sites/"+item.id+"/decisions",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify({decision,rationale:why})});
+      const data=await response.json();
+      if(!response.ok)throw new Error(data.detail||"Facility decision failed.");
+      setMessage("Facility review decision recorded: "+decision+".");
+      setSiteRationales(prev=>({...prev,[item.id]:""}));
+      await loadSiteReviews();
+    }catch(e){setError(e instanceof Error?e.message:"Facility decision failed.");}
   }
 
   async function submitCertification(e: FormEvent) {
@@ -288,6 +331,21 @@ export default function VendorsPage() {
     <section className="mt-7"><div className="flex items-center justify-between"><h2 className="text-2xl font-semibold">Verified directory</h2><button onClick={()=>void loadDirectory()} className="text-sm text-emerald-300">Refresh</button></div>{vendors.length===0?<div className="panel mt-4 p-7 text-sm muted">No verified vendors are currently listed. Submit a source-backed record or refresh the directory.</div>:<div className="mt-4 grid gap-4 md:grid-cols-2">{vendors.map(v=><article key={v.id} className="panel p-5"><div className="flex items-start justify-between gap-3"><div><h3 className="text-lg font-semibold">{v.legal_name}</h3><p className="muted mt-1 text-xs">{v.vendor_type.replaceAll("_"," ")} · {v.country_code}</p></div><span className="rounded-full border border-emerald-400/40 px-3 py-1 text-xs text-emerald-200">Verified</span></div><a className="mt-3 inline-block text-sm text-emerald-300 underline" href={v.website_url} target="_blank" rel="noreferrer">Official website ↗</a><Link className="ml-4 inline-block text-sm text-emerald-300 underline" href={"/vendors/"+v.id+"/capabilities"}>Verified peptide & method capabilities ↗</Link>{v.services.length>0&&<div className="mt-4"><p className="text-xs font-semibold">Reviewed services</p>{v.services.map((s,i)=><p key={i} className="muted mt-2 text-sm">{s.service_name}: {s.capability_description}</p>)}</div>}{v.certifications.length>0&&<div className="mt-4"><p className="text-xs font-semibold">Certification records</p>{v.certifications.map((c,i)=><div key={i} className="mt-3 rounded-lg border border-slate-700 p-3"><p className="text-sm font-medium">{c.certification_name}</p><p className="muted mt-1 text-xs">{c.issuing_body || "Issuer not specified"} · {c.certificate_reference || "Reference not stated"}</p><p className="muted mt-1 text-xs">Verification: {c.verification_status} · Validity: {c.validity_status.replaceAll("_"," ")} · {c.valid_from || "Start not stated"} to {c.valid_until || "Expiry not stated"}</p>{c.scope&&<p className="muted mt-2 text-xs">Scope: {c.scope}</p>}{c.source_url&&<a className="mt-2 inline-block break-all text-xs text-emerald-300 underline" href={c.source_url} target="_blank" rel="noreferrer">Evidence: {c.source_name} · {c.source_identifier} ↗</a>}</div>)}</div>}</article>)}</div>}</section>
     {!token?<section className="panel mt-10 max-w-xl p-6"><h2 className="text-xl font-semibold">Sign in to submit a provider</h2><form onSubmit={signIn} className="mt-4 space-y-3"><label className="block"><span className={label}>Email</span><input className={field} type="email" required value={email} onChange={e=>setEmail(e.target.value)}/></label><label className="block"><span className={label}>Password</span><input className={field} type="password" required value={password} onChange={e=>setPassword(e.target.value)}/></label><button disabled={busy} className="rounded-full bg-emerald-400 px-5 py-3 text-sm font-semibold text-slate-950">Sign in</button></form></section>:<><section className="mt-10 grid gap-6 lg:grid-cols-2"><div className="panel p-6"><h2 className="text-xl font-semibold">Submit provider record</h2><p className="muted mt-2 text-xs">Signed in as {role}. Records remain in review until an authorized curator verifies them.</p><form onSubmit={submitVendor} className="mt-5 space-y-3">{([["legal_name","Legal name"],["website_url","Official website URL"],["country_code","Country code (ISO 2-letter)"],["source_name","Evidence source name"],["source_identifier","Source record identifier"],["source_url","Original source URL"],["evidence_scope","What does this source support?"]] as const).map(([key,title])=><label key={key} className="block"><span className={label}>{title}</span><input className={field} required value={form[key]} onChange={e=>setForm(prev=>({...prev,[key]:e.target.value}))}/></label>)}<label className="block"><span className={label}>Provider type</span><select className={field} value={form.vendor_type} onChange={e=>setForm(prev=>({...prev,vendor_type:e.target.value}))}><option value="analytical_laboratory">Analytical laboratory</option><option value="peptide_manufacturer">Peptide manufacturer</option><option value="cdmo">CDMO</option><option value="cro">CRO</option><option value="research_reagent_supplier">Research reagent supplier</option><option value="other">Other</option></select></label><button disabled={busy} className="rounded-full bg-emerald-400 px-5 py-3 text-sm font-semibold text-slate-950">Submit for review</button></form></div>
     <div className="panel p-6"><div className="flex items-center justify-between gap-3"><h2 className="text-xl font-semibold">Vendor review queue</h2><button onClick={()=>void loadReviews()} className="text-xs text-emerald-300">Refresh</button></div>{reviews.length===0?<p className="muted mt-4 text-sm">Load the queue to inspect records submitted by your organization. Reviewer permissions required.</p>:<div className="mt-4 space-y-4">{reviews.map(v=><article key={v.id} className="rounded-xl border border-slate-700 p-4"><h3 className="font-semibold">{v.legal_name}</h3><p className="muted mt-1 text-xs">{v.vendor_type} · {v.country_code}</p>{v.sources.map((s,i)=><a key={i} className="mt-2 block break-all text-xs text-emerald-300 underline" href={s.source_url} target="_blank" rel="noreferrer">{s.source_name}: {s.source_identifier} ↗</a>)}{["organization_admin","curator","reviewer"].includes(role)&&<><textarea className={field+" mt-3"} rows={2} value={rationale[v.id]||""} onChange={e=>setRationale(prev=>({...prev,[v.id]:e.target.value}))} placeholder="Review rationale (minimum 20 characters)"/><div className="mt-3 flex flex-wrap gap-2">{(["verified","rejected","needs_changes"] as const).map(d=><button key={d} onClick={()=>void decide(v,d)} className="rounded-full border border-slate-600 px-3 py-2 text-xs">{d.replace("_"," ")}</button>)}</div></>}</article>)}</div>}</div></section>
+    <section className="mt-8 grid gap-6 lg:grid-cols-2">
+      <div className="panel p-6">
+        <h2 className="text-xl font-semibold">Register a vendor facility</h2>
+        <p className="muted mt-2 text-xs">Facilities are separate records. Add the exact site address and the activities supported by the source; parent vendor approval does not automatically verify a facility.</p>
+        <form onSubmit={submitVendorSite} className="mt-4 space-y-3">
+          <label className="block"><span className={label}>Your verified vendor</span><select required className={field} value={siteForm.vendor_id} onChange={e=>setSiteForm(prev=>({...prev,vendor_id:e.target.value}))}><option value="">Select your verified vendor</option>{myVendorSubmissions.filter(v=>v.review_status==="verified"&&v.verification_status==="verified").map(v=><option key={v.id} value={v.id}>{v.legal_name}</option>)}</select></label>
+          {([["site_name","Facility / laboratory name"],["address","Full facility address"],["country_code","Country code (ISO 2-letter)"],["site_scope","What activities are performed at this site?"],["source_name","Evidence source name"],["source_identifier","Source identifier"],["source_url","Original source URL"]] as const).map(([key,title])=><label key={key} className="block"><span className={label}>{title}</span>{key==="site_scope"?<textarea required minLength={10} rows={3} className={field} value={siteForm[key]} onChange={e=>setSiteForm(prev=>({...prev,[key]:e.target.value}))}/>:<input required className={field} value={siteForm[key]} onChange={e=>setSiteForm(prev=>({...prev,[key]:e.target.value}))}/>}</label>)}
+          <button disabled={busy||!siteForm.vendor_id} className="rounded-full bg-emerald-400 px-5 py-3 text-sm font-semibold text-slate-950">Submit facility for review</button>
+        </form>
+      </div>
+      <div className="panel p-6">
+        <div className="flex items-center justify-between gap-3"><h2 className="text-xl font-semibold">Facility verification queue</h2><button onClick={()=>void loadSiteReviews()} className="text-xs text-emerald-300">Refresh</button></div>
+        {siteReviews.length===0?<p className="muted mt-4 text-sm">Refresh to inspect facility claims submitted within your organization. Curator/reviewer permission required.</p>:<div className="mt-4 space-y-4">{siteReviews.map(item=><article key={item.id} className="rounded-xl border border-slate-700 p-4"><h3 className="font-semibold">{item.site_name}</h3><p className="muted mt-1 text-xs">{item.legal_name} · {item.country_code}</p><p className="mt-2 text-sm">{item.address}</p><p className="muted mt-2 text-sm">{item.site_scope}</p><a href={item.source_url} target="_blank" rel="noreferrer" className="mt-2 block break-all text-xs text-emerald-300 underline">{item.source_name} · {item.source_identifier} ↗</a>{["organization_admin","curator","reviewer"].includes(role)&&<><textarea className={field+" mt-3"} rows={2} value={siteRationales[item.id]||""} onChange={e=>setSiteRationales(prev=>({...prev,[item.id]:e.target.value}))} placeholder="Review rationale (minimum 20 characters)"/><div className="mt-3 flex flex-wrap gap-2">{(["verified","rejected","needs_changes"] as const).map(d=><button key={d} onClick={()=>void decideSite(item,d)} className="rounded-full border border-slate-600 px-3 py-2 text-xs">{d.replace("_"," ")}</button>)}</div></>}</article>)}</div>}
+      </div>
+    </section>
     <section className="mt-8 grid gap-6 lg:grid-cols-2">
       <div className="panel p-6">
         <h2 className="text-xl font-semibold">Submit certification evidence</h2>

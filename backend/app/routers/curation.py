@@ -104,8 +104,13 @@ def list_reviews(
     rows = db.execute(text("""
         SELECT cr.id, cr.entity_type, cr.entity_id, cr.source_record_id,
                cr.review_status, cr.priority, cr.assigned_to, cr.submitted_by,
-               cr.reviewed_by, cr.reviewed_at, cr.created_at, cr.updated_at
+               cr.reviewed_by, cr.reviewed_at, cr.created_at, cr.updated_at,
+               COALESCE(p.preferred_name, ec.claim_text) AS record_label,
+               sr.source_name, sr.source_identifier, sr.source_url
         FROM curation_reviews cr
+        LEFT JOIN peptides p ON cr.entity_type = 'peptide' AND p.id = cr.entity_id
+        LEFT JOIN evidence_claims ec ON cr.entity_type = 'evidence_claim' AND ec.id = cr.entity_id
+        LEFT JOIN source_records sr ON sr.id = cr.source_record_id
         WHERE (:review_status IS NULL OR cr.review_status = CAST(:review_status AS review_status))
           AND EXISTS (
               SELECT 1 FROM organization_memberships om

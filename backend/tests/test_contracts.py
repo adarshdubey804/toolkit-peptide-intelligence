@@ -875,3 +875,10 @@ def test_extraction_field_review_routes_are_authenticated_and_registered():
     router = (Path(__file__).parents[1] / "app" / "routers" / "research.py").read_text(encoding="utf-8")
     assert "original AI output is never overwritten" in router
     assert "Curator or reviewer permissions are required." in router
+
+
+def test_cors_allows_patch_for_frontend_workflows():
+    from fastapi.middleware.cors import CORSMiddleware
+
+    cors = next(item for item in app.user_middleware if item.cls is CORSMiddleware)
+    assert "PATCH" in cors.options["allow_methods"]

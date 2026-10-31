@@ -41,29 +41,6 @@ def _safe_citations(citations: list[dict]) -> list[dict]:
     return safe
 
 
-def _audit_answer(answer: str, records: list[dict]) -> dict:
-    """Check citation identifiers and sentence-level citation presence."""
-    import re
-
-    allowed_ids = {item["citation_id"] for item in records}
-    cited_ids = re.findall(r"\[([^\]]+)\]", answer)
-    invalid_ids = sorted(set(cited_ids) - allowed_ids)
-    valid_ids = sorted(set(cited_ids) & allowed_ids)
-    sentences = [part.strip() for part in re.split(r"(?<=[.!?])\s+", answer) if part.strip()]
-    uncited_sentences = [
-        sentence for sentence in sentences
-        if not (set(re.findall(r"\[([^\]]+)\]", sentence)) & allowed_ids)
-    ]
-    return {
-        "valid_ids": valid_ids,
-        "invalid_ids": invalid_ids,
-        "uncited_sentence_count": len(uncited_sentences),
-        "uncited_sentences": uncited_sentences[:30],
-        "status": "warning" if invalid_ids or uncited_sentences else "passed",
-        "method": "identifier allowlist and sentence-level citation coverage; semantic claim-support is not evaluated",
-    }
-
-
 async def synthesize_with_sources(*, question: str, citations: list[dict], api_key: str,
                                   api_base_url: str, model: str) -> dict:
     """Call an OpenAI-compatible chat-completions endpoint with bounded source context."""
@@ -98,17 +75,32 @@ async def synthesize_with_sources(*, question: str, citations: list[dict], api_k
     answer = body["choices"][0]["message"]["content"]
     if not isinstance(answer, str) or not answer.strip():
         raise ValueError("AI provider returned an empty answer.")
-    citation_audit = _audit_answer(answer, records)
-    if citation_audit["invalid_ids"]:
-        answer += "\n\nCitation validation warning: the model emitted citation identifiers that were not in the retrieved source set. Treat those references as unverified."
-    if citation_audit["uncited_sentences"]:
-        answer += "\n\nCitation coverage warning: some sentences have no valid source identifier. Review the uncited-sentence audit before relying on this synthesis."
-
+    allowed_ids = {item["citation_id"] for item in records}
+    import re
+    cited_ids = re.findall(r"\\[([^\\]]+)\\]", answer)
+    invalid_ids = sorted(set(cited_ids) - allowed_ids)
+    valid_ids = sorted(set(cited_ids) & allowed_ids)
+    sentences = [part.strip() for part in re.split(r"(?<=[.!?])\\s+", answer) if part.strip()]
+    uncited_sentences = [
+        sentence for sentence in sentences
+        if not (set(re.findall(r"\\[([^\\]]+)\\]", sentence)) & allowed_ids)
+    ]
+    if invalid_ids:
+        answer += "\\n\\nCitation validation warning: the model emitted citation identifiers that were not in the retrieved source set. Treat those references as unverified."
+    if uncited_sentences:
+        answer += "\\n\\nCitation coverage warning: some sentences have no valid source identifier. Review the uncited-sentence audit before relying on this synthesis."
     return {
         "mode": "grounded_synthesis",
         "answer": answer,
         "citations": records,
-        "citation_validation": citation_audit,
+        "citation_validation": {
+            "valid_ids": valid_ids,
+            "invalid_ids": invalid_ids,
+            "uncited_sentence_count": len(uncited_sentences),
+            "uncited_sentences": uncited_sentences[:30],
+            "status": "warning" if invalid_ids or uncited_sentences else "passed",
+            "method": "identifier allowlist and sentence-level citation coverage; semantic claim-support is not evaluated",
+        },
         "limitations": [
             "Synthesis is generated from supplied discovery records, which may be incomplete or unreviewed.",
             "Citation matching checks identifiers, not whether each cited source truly supports its sentence.",

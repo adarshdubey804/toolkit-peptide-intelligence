@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Annotated, Literal
 from uuid import UUID
 from urllib.parse import urlsplit
@@ -259,8 +260,8 @@ class VendorCertificationSubmission(BaseModel):
     issuing_body: str = Field(min_length=2, max_length=200)
     certificate_reference: str = Field(min_length=2, max_length=200)
     scope: str = Field(min_length=5, max_length=2000)
-    valid_from: str | None = None
-    valid_until: str | None = None
+    valid_from: date | None = None
+    valid_until: date | None = None
     source_name: str = Field(min_length=2, max_length=120)
     source_identifier: str = Field(min_length=1, max_length=200)
     source_url: HttpUrl

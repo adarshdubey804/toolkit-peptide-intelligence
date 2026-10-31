@@ -23,8 +23,10 @@ services:
     depends_on:
       db: {condition: service_healthy}
   frontend:
-    build: ./frontend
-    environment: {NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}}
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
     ports: ["3000:3000"]
     depends_on: [backend]
 volumes:

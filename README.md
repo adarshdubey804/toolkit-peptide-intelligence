@@ -23,6 +23,13 @@ Scientific intelligence for peptide research and pharmaceutical development, bui
 
 Development startup applies all ordered SQL migrations in `database/migrations`.
 
+## Evidence intelligence and scientific appraisal
+
+- Migration 013 adds reviewer-authored `evidence_appraisals` and organization-scoped `publication_duplicate_candidates`.
+- Reviewer endpoints: GET `/api/v1/evidence-intelligence/claims`, POST `/api/v1/evidence-intelligence/appraisals`, GET `/api/v1/evidence-intelligence/appraisals/{claim_id}`, and duplicate candidate create/list/decision routes under `/api/v1/evidence-intelligence/duplicate-candidates`.
+- Evidence level, study design, risk of bias, replication and limitations remain distinct; no misleading composite evidence grade is inferred. Duplicate matching is a human-review queue and never automatically merges or deletes records.
+- Frontend: `/evidence-intelligence`. Access is limited to organization admins, curators and reviewers.
+
 ## Persistent agent research sessions
 
 - Migration 012 adds organization- and user-scoped `agent_sessions` and `agent_session_messages` tables.

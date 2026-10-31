@@ -126,3 +126,96 @@ async def unified_research_search(
         },
         "curation_notice": "All external discovery records are unreviewed. Search results are not verified peptide facts and must be checked against their original sources.",
     }
+
+
+@router.get("/assistant/brief")
+async def research_assistant_brief(
+    question: str = Query(min_length=8, max_length=500),
+    limit: int = Query(default=5, ge=1, le=10),
+):
+    """Build a source-grounded research brief from live records; no generative claims."""
+    query = question.strip()
+    providers = {
+        "clinicaltrials": ClinicalTrialsProvider().search(query, limit),
+        "uniprot": UniProtProvider().search(query, limit),
+        "rcsb": RCSBProvider().search(query, limit),
+    }
+    if settings.ncbi_email:
+        providers["pubmed"] = PubMedProvider(settings.ncbi_email, settings.ncbi_api_key).search(query, limit)
+
+    async def retrieve(name: str, operation):
+        try:
+            payload = await operation
+            return name, payload.get("items", [])
+        except Exception:
+            return name, []
+
+    retrieved = await asyncio.gather(
+        *(retrieve(name, operation) for name, operation in providers.items())
+    )
+    source_items = dict(retrieved)
+    citations = []
+    for source_name in ("pubmed", "clinicaltrials", "uniprot", "rcsb"):
+        for item in source_items.get(source_name, []):
+            identifier = (
+                item.get("pmid") or item.get("nct_id") or
+                item.get("accession") or item.get("pdb_id")
+            )
+            url = item.get("url")
+            if not identifier or not url:
+                continue
+            citations.append({
+                "citation_id": f"{source_name}:{identifier}",
+                "source": item.get("source", source_name),
+                "identifier": identifier,
+                "title": item.get("title") or item.get("protein_name") or item.get("entry_name") or item.get("pdb_id") or identifier,
+                "url": url,
+                "publication_date": item.get("publication_date"),
+                "study_type": item.get("study_type"),
+                "overall_status": item.get("overall_status"),
+                "organism": item.get("organism"),
+                "experimental_methods": item.get("experimental_methods"),
+                "curation_status": "not_reviewed",
+            })
+
+    available_sources = [
+        name for name, records in source_items.items() if records
+    ]
+    if citations:
+        answer = (
+            f"I retrieved {len(citations)} source records relevant to your question from "
+            f"{', '.join(available_sources)}. These records are discovery evidence, not a "
+            "validated scientific conclusion. Review the original sources and assess their "
+            "study models, methods, limitations and consistency before drawing conclusions."
+        )
+    else:
+        answer = (
+            "I could not retrieve source records for this question. This is not evidence that "
+            "the topic has no published research. Try a shorter peptide name, target, accession, "
+            "or a more specific scientific search phrase."
+        )
+
+    return {
+        "mode": "retrieval_only",
+        "question": query,
+        "answer": answer,
+        "citations": citations,
+        "retrieval_summary": {
+            "sources_queried": len(providers),
+            "sources_with_records": len(available_sources),
+            "records_retrieved": len(citations),
+            "sources": available_sources,
+        },
+        "limitations": [
+            "No generative language model was used to infer or synthesize scientific conclusions.",
+            "External records are unreviewed and may be incomplete, duplicated or irrelevant.",
+            "A search result is not evidence of efficacy, safety, causality or regulatory approval.",
+            "Absence of retrieved records does not establish absence of evidence.",
+        ],
+        "next_review_steps": [
+            "Open each original source and confirm the record identity.",
+            "Classify the evidence as clinical, preclinical, in-vitro or computational.",
+            "Extract study design, model, endpoints, results and limitations.",
+            "Compare independent sources and preserve conflicting findings.",
+        ],
+    }

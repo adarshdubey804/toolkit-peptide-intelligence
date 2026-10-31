@@ -107,19 +107,17 @@ def list_reviews(
                cr.reviewed_by, cr.reviewed_at, cr.created_at, cr.updated_at
         FROM curation_reviews cr
         WHERE (:review_status IS NULL OR cr.review_status = CAST(:review_status AS review_status))
+          AND EXISTS (
+              SELECT 1 FROM organization_memberships om
+              WHERE om.organization_id = :organization_id
+                AND om.user_id = cr.submitted_by
+                AND om.membership_status = 'active'
+          )
         ORDER BY CASE cr.priority WHEN 'high' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END,
                  cr.created_at ASC
         LIMIT :limit
-    """), {"review_status": review_status, "limit": limit}).mappings().all()
-    # The current schema has no organization_id on curation_reviews; only allow
-    # rows associated with records submitted by members of this organization.
-    member_rows = db.execute(text("""
-        SELECT user_id FROM organization_memberships
-        WHERE organization_id = :organization_id AND membership_status = 'active'
-    """), {"organization_id": organization_id}).scalars().all()
-    member_ids = {str(value) for value in member_rows}
-    visible = [dict(row) for row in rows if str(row["submitted_by"]) in member_ids]
-    return {"reviews": visible, "count": len(visible)}
+    """), {"review_status": review_status, "limit": limit, "organization_id": organization_id}).mappings().all()
+    return {"reviews": [dict(row) for row in rows], "count": len(rows)}
 
 
 @router.patch("/reviews/{review_id}/assignment")

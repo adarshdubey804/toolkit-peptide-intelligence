@@ -128,12 +128,16 @@ def observe_guidance_version(guidance_id:UUID,payload:VersionObservation,user:An
  parsed=urlsplit(str(payload.source_url))
  if parsed.scheme!="https" or not parsed.hostname or parsed.username or parsed.password: raise HTTPException(422,"Observed source must use HTTPS without embedded credentials.")
  prior=db.execute(text("SELECT id,version_or_revision,content_hash,effective_date FROM regulatory_guidance_versions WHERE guidance_id=:id ORDER BY observed_at DESC LIMIT 1"),{"id":guidance_id}).mappings().first()
+ normalized_hash=payload.content_hash.lower() if payload.content_hash else None
+ duplicate=db.execute(text("""SELECT id FROM regulatory_guidance_versions
+ WHERE guidance_id=:id AND source_url=:url
+ AND version_or_revision IS NOT DISTINCT FROM :version
+ AND content_hash IS NOT DISTINCT FROM :hash LIMIT 1"""),{"id":guidance_id,"url":str(payload.source_url),"version":payload.version_or_revision,"hash":normalized_hash}).scalar_one_or_none()
+ if duplicate:
+  raise HTTPException(409,"This exact version observation already exists.")
  version=db.execute(text("""INSERT INTO regulatory_guidance_versions(guidance_id,version_or_revision,publication_date,effective_date,source_url,content_hash,observed_by,observation_note)
  VALUES(:id,:version,:published,:effective,:url,:hash,:user,:note)
- ON CONFLICT(guidance_id,source_url,version_or_revision,content_hash) DO UPDATE SET observation_note=EXCLUDED.observation_note
- RETURNING id,version_or_revision,observed_at,review_status"""),{"id":guidance_id,"version":payload.version_or_revision,"published":payload.publication_date,"effective":payload.effective_date,"url":str(payload.source_url),"hash":payload.content_hash.lower() if payload.content_hash else None,"user":user["id"],"note":payload.observation_note}).mappings().one()
- if prior and str(prior["id"])==str(version["id"]):
-  raise HTTPException(409,"This exact version observation already exists.")
+ RETURNING id,version_or_revision,observed_at,review_status"""),{"id":guidance_id,"version":payload.version_or_revision,"published":payload.publication_date,"effective":payload.effective_date,"url":str(payload.source_url),"hash":normalized_hash,"user":user["id"],"note":payload.observation_note}).mappings().one()
  event=db.execute(text("""INSERT INTO regulatory_change_events(guidance_id,previous_version_id,new_version_id,change_type,change_summary,impact_assessment,submitted_by)
  VALUES(:guidance,:previous,:new,:type,:summary,:impact,:user)
  RETURNING id,status,created_at"""),{"guidance":guidance_id,"previous":prior["id"] if prior else None,"new":version["id"],"type":payload.change_type,"summary":payload.change_summary,"impact":payload.impact_assessment,"user":user["id"]}).mappings().one()
@@ -174,7 +178,7 @@ def decide_change(event_id:UUID,payload:ChangeDecision,user:Annotated[dict,Depen
  if str(event["submitted_by"])==user["id"]: raise HTTPException(403,"Submitters cannot review their own change observations.")
  db.execute(text("INSERT INTO regulatory_change_decisions(event_id,organization_id,reviewer_id,decision,rationale) VALUES(:id,:org,:user,:decision,:rationale)"),{"id":event_id,"org":org,"user":user["id"],"decision":payload.decision,"rationale":payload.rationale})
  db.execute(text("UPDATE regulatory_change_events SET status=:status,reviewed_by=:user,reviewed_at=now() WHERE id=:id"),{"status":payload.decision,"user":user["id"],"id":event_id})
- if payload.decision=="confirmed_change":
+ if payload.decision in {"confirmed_change","published"}:
   db.execute(text("UPDATE regulatory_guidance_versions SET review_status='accepted' WHERE id=:id"),{"id":event["new_version_id"]})
  elif payload.decision=="not_a_change":
   db.execute(text("UPDATE regulatory_guidance_versions SET review_status='rejected' WHERE id=:id"),{"id":event["new_version_id"]})

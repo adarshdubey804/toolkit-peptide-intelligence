@@ -20,6 +20,7 @@ type Candidate = {
   match_basis: string;
   curation_status: string;
 };
+type SavedCandidate = { id: string; peptide_id: string; preferred_name: string; source_name: string; source_identifier: string; source_url: string; title: string; candidate_status: string; submitted_by: string; };
 type EnrichmentResult = {
   peptide: { id: string; preferred_name: string; category?: string | null; existing_review_status: string };
   retrieval_query: string;
@@ -40,6 +41,11 @@ export default function EnrichmentPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [savedIds, setSavedIds] = useState<string[]>([]);
+  const [queue, setQueue] = useState<SavedCandidate[]>([]);
+  const [queueStatus, setQueueStatus] = useState("pending");
+  const [queueLoading, setQueueLoading] = useState(false);
+  const [rationales, setRationales] = useState<Record<string, string>>({});
 
   async function signIn(event: FormEvent) {
     event.preventDefault();
@@ -79,6 +85,59 @@ export default function EnrichmentPage() {
     } finally { setLoading(false); }
   }
 
+
+  async function saveCandidate(item: Candidate) {
+    if (!token || !result) return;
+    setError(""); setNotice("");
+    try {
+      const response = await fetch(API_BASE + "/api/v1/enrichment/peptides/" + result.peptide.id + "/candidates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+        body: JSON.stringify({
+          source: item.source, source_identifier: item.source_identifier, source_url: item.source_url,
+          title: item.title, summary: item.summary || null, match_basis: item.match_basis,
+          raw_metadata: { publication_date: item.publication_date, study_type: item.study_type,
+            overall_status: item.overall_status, organism: item.organism, sequence_length: item.sequence_length }
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Could not submit candidate.");
+      setSavedIds(prev => [...prev, item.candidate_id]);
+      setNotice("Candidate saved to your organization's curator queue.");
+    } catch (err) { setError(err instanceof Error ? err.message : "Candidate submission failed."); }
+  }
+
+  async function loadQueue() {
+    if (!token) return;
+    setQueueLoading(true); setError("");
+    try {
+      const response = await fetch(API_BASE + "/api/v1/enrichment/candidates?candidate_status=" + queueStatus + "&limit=100", {
+        headers: { Authorization: "Bearer " + token }
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Could not load enrichment queue.");
+      setQueue(data.items || []);
+    } catch (err) { setError(err instanceof Error ? err.message : "Queue request failed."); }
+    finally { setQueueLoading(false); }
+  }
+
+  async function decideCandidate(candidate: SavedCandidate, decision: "accepted" | "rejected" | "duplicate" | "needs_review") {
+    const rationale = (rationales[candidate.id] || "").trim();
+    if (rationale.length < 20) { setError("Please enter a rationale of at least 20 characters."); return; }
+    setError("");
+    try {
+      const response = await fetch(API_BASE + "/api/v1/enrichment/candidates/" + candidate.id + "/decisions", {
+        method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+        body: JSON.stringify({ decision, rationale })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Decision could not be recorded.");
+      setNotice("Candidate decision recorded: " + decision.replace("_", " ") + ".");
+      setRationales(prev => ({ ...prev, [candidate.id]: "" }));
+      await loadQueue();
+    } catch (err) { setError(err instanceof Error ? err.message : "Decision failed."); }
+  }
+
   const field = "w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-100 outline-none focus:border-emerald-400";
   const label = "mb-2 block text-xs font-medium text-slate-300";
 
@@ -100,7 +159,7 @@ export default function EnrichmentPage() {
     </section> : <>
       <div className="panel mt-7 flex flex-wrap items-center justify-between gap-3 p-4">
         <div><p className="text-sm font-semibold">{userLabel}</p><p className="muted mt-1 text-xs">Authenticated discovery session</p></div>
-        <button onClick={() => { setToken(""); setResult(null); setUserLabel(""); }} className="rounded-full border border-slate-600 px-4 py-2 text-xs">Sign out</button>
+        <div className="flex gap-2"><button onClick={() => void loadQueue()} className="rounded-full border border-slate-600 px-4 py-2 text-xs">Load curator queue</button><button onClick={() => { setToken(""); setResult(null); setUserLabel(""); setQueue([]); }} className="rounded-full border border-slate-600 px-4 py-2 text-xs">Sign out</button></div>
       </div>
       <section className="panel mt-5 p-5">
         <form onSubmit={discover} className="grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
@@ -130,10 +189,20 @@ export default function EnrichmentPage() {
           <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-400">{item.publication_date && <span>{item.publication_date}</span>}{item.study_type && <span>· {item.study_type}</span>}{item.overall_status && <span>· {item.overall_status}</span>}{item.organism && <span>· {item.organism}</span>}{item.sequence_length && <span>· {item.sequence_length} aa</span>}</div>
           {item.summary && <p className="mt-4 whitespace-pre-line text-sm leading-6 text-slate-300">{item.summary}</p>}
           <p className="muted mt-4 text-xs">{item.match_basis}</p>
-          <a href={item.source_url} target="_blank" rel="noreferrer" className="mt-3 inline-block break-all text-sm text-emerald-300 underline">Inspect original source ↗</a>
+          <div className="mt-3 flex flex-wrap items-center gap-4"><a href={item.source_url} target="_blank" rel="noreferrer" className="inline-block break-all text-sm text-emerald-300 underline">Inspect original source ↗</a><button disabled={savedIds.includes(item.candidate_id)} onClick={() => void saveCandidate(item)} className="rounded-full border border-emerald-400/50 px-4 py-2 text-xs text-emerald-200 disabled:opacity-50">{savedIds.includes(item.candidate_id) ? "Saved to review queue" : "Submit for curator review"}</button></div>
         </article>)}</div>}
       </section>
       <div className="panel mt-7 p-5"><h2 className="font-semibold">Scientific governance</h2><p className="muted mt-2 text-sm leading-6">{result.governance}</p><p className="mt-3 text-sm leading-6 text-slate-300">{result.next_step}</p><Link href="/curation" className="mt-4 inline-block text-sm text-emerald-300">Open curator review dashboard →</Link></div>
     </>}
+
+    {token && <section className="mt-10">
+      <div className="flex flex-wrap items-end justify-between gap-3"><div><p className="accent text-xs tracking-widest">ORGANIZATION WORKSPACE</p><h2 className="mt-2 text-2xl font-semibold">Enrichment review queue</h2><p className="muted mt-1 text-sm">Curators and reviewers can record decisions with a permanent rationale.</p></div><div className="flex gap-2"><select className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs" value={queueStatus} onChange={e => setQueueStatus(e.target.value)}><option value="pending">Pending</option><option value="accepted">Accepted</option><option value="rejected">Rejected</option><option value="duplicate">Duplicate</option><option value="needs_review">Needs review</option><option value="all">All</option></select><button onClick={() => void loadQueue()} className="rounded-full border border-slate-600 px-4 py-2 text-xs">Refresh</button></div></div>
+      {queueLoading && <div className="panel mt-4 p-5 text-sm muted">Loading candidates…</div>}
+      {!queueLoading && queue.length === 0 && <div className="panel mt-4 p-6 text-sm muted">No candidates in this queue view.</div>}
+      <div className="mt-4 space-y-3">{queue.map(candidate => <article key={candidate.id} className="panel p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="accent text-[10px] uppercase tracking-widest">{candidate.source_name} · {candidate.source_identifier}</p><h3 className="mt-2 text-lg font-semibold">{candidate.title}</h3><p className="muted mt-1 text-xs">{candidate.preferred_name} · {candidate.candidate_status}</p></div><a href={candidate.source_url} target="_blank" rel="noreferrer" className="text-xs text-emerald-300 underline">Original source ↗</a></div>
+        {candidate.candidate_status === "pending" && ["organization_admin","curator","reviewer"].some(role => userLabel.endsWith(role)) && <div className="mt-4"><label className="block"><span className={label}>Decision rationale (minimum 20 characters)</span><textarea className={field} rows={2} value={rationales[candidate.id] || ""} onChange={e => setRationales(prev => ({ ...prev, [candidate.id]: e.target.value }))} placeholder="Explain identity checks, relevance, duplication or evidence limitations."/></label><div className="mt-3 flex flex-wrap gap-2">{(["accepted","rejected","duplicate","needs_review"] as const).map(decision => <button key={decision} onClick={() => void decideCandidate(candidate, decision)} className="rounded-full border border-slate-600 px-3 py-2 text-xs hover:border-emerald-400">{decision.replace("_"," ")}</button>)}</div></div>}
+      </article>)}</div>
+    </section>}
   </main>;
 }

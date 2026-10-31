@@ -181,6 +181,25 @@ def submit_vendor_service(
     return dict(service)
 
 
+@router.get("/my-submissions")
+def my_vendor_submissions(
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    limit: int = Query(default=50, ge=1, le=100),
+):
+    organization_id, role = _membership(current_user, db)
+    if role not in SUBMIT_ROLES:
+        raise HTTPException(status_code=403, detail="Your role cannot access vendor submissions.")
+    rows = db.execute(text("""
+        SELECT id, legal_name, review_status, verification_status, created_at
+        FROM vendors
+        WHERE organization_id=:org AND submitted_by=:user_id
+          AND review_status IN ('in_review','verified')
+        ORDER BY created_at DESC LIMIT :limit
+    """), {"org": organization_id, "user_id": current_user["id"], "limit": limit}).mappings().all()
+    return {"items": [dict(row) for row in rows], "count": len(rows)}
+
+
 @router.get("/reviews")
 def vendor_review_queue(
     current_user: Annotated[dict, Depends(get_current_user)],

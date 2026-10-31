@@ -162,3 +162,13 @@ This is an early development scaffold, not production-ready software. Production
 - Duplicate-candidate decisions now preserve the rationale and reviewer identity in a dedicated append-only history table rather than relying only on the candidate's current status.
 - Decision history is available through the evidence-intelligence API. Database triggers reject updates and deletes to decision-history rows.
 - These controls improve traceability; they do not independently validate scientific conclusions or guarantee reviewer expertise.
+
+
+## Structured scientific evidence extraction (development pilot)
+- Migration 022 adds organization-scoped extraction runs and source-linked extracted evidence records.
+- POST `/api/v1/research/assistant/extract` retrieves bounded PubMed, ClinicalTrials.gov, UniProtKB and RCSB records, requests structured extraction, validates output fields and citation IDs, then persists records as `not_reviewed`.
+- GET `/api/v1/research/assistant/extractions/{run_id}` retrieves the run and its extracted records within the active organization.
+- Extracted fields include study design, evidence class, peptide identity, sequence, modifications, target, mechanism, model/population, sample size, methods, endpoints, findings, limitations, conflicts and extraction notes.
+- Unsupported or missing scalar fields remain null; missing list fields remain empty. Source citation IDs must match the retrieved source set. Unsupported classifications are rejected.
+- The endpoint is authenticated and organization-scoped but remains development-only while AI synthesis is disabled by default and production authentication/rate-limiting controls are not yet complete.
+- These are machine-generated research leads, not verified claims, measured results or scientific conclusions. Review the original source before accepting any extracted field. The current pilot stores one record per source and does not yet provide a field-by-field reviewer workflow.

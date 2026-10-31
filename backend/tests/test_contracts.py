@@ -653,3 +653,14 @@ def test_peptide_graph_includes_verified_development_relationships():
         assert table in source
     assert "appraisal_status='accepted'" in source
     assert "review_status='verified'" in source
+
+
+def test_related_peptide_graph_route_uses_verified_shared_evidence():
+    from app.routers import peptides
+    paths = {route.path for route in peptides.router.routes}
+    assert "/api/v1/peptides/{peptide_id}/graph/related" in paths
+    source = __import__("inspect").getsource(peptides.related_peptides)
+    assert "peptide_target_evidence" in source
+    assert "peptide_pathway_evidence" in source
+    assert "review_status='verified'" in source
+    assert "clinical interchangeability" in source

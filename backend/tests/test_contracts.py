@@ -735,3 +735,26 @@ def test_regulatory_source_registry_migration_is_organization_scoped():
     sql = (MIGRATIONS_DIR / "017_regulatory_source_registry.sql").read_text(encoding="utf-8")
     assert "organization_id" in sql
     assert "UNIQUE(organization_id,feed_url)" in sql
+
+
+def test_persistent_enrichment_ingestion_routes_and_migration():
+    paths = app.openapi()["paths"]
+    assert "/api/v1/enrichment/peptides/{peptide_id}/runs" in paths
+    assert "post" in paths["/api/v1/enrichment/peptides/{peptide_id}/runs"]
+    assert "/api/v1/enrichment/runs" in paths
+    sql = (MIGRATIONS_DIR / "018_enrichment_ingestion_runs.sql").read_text(encoding="utf-8")
+    assert "enrichment_ingestion_runs" in sql
+    assert "organization_id" in sql
+    assert "finished_at" in sql
+
+
+def test_ingestion_source_request_is_bounded_and_rejects_unknown_sources():
+    from app.routers.enrichment import IngestionRunRequest
+    from pydantic import ValidationError
+    assert IngestionRunRequest(sources=["PubMed"], limit_per_source=5).limit_per_source == 5
+    with pytest.raises(ValidationError):
+        IngestionRunRequest(sources=["arbitrary-url"])
+    with pytest.raises(ValidationError):
+        IngestionRunRequest(sources=["PubMed", "PubMed"])
+    with pytest.raises(ValidationError):
+        IngestionRunRequest(sources=["PubMed"], limit_per_source=1000)

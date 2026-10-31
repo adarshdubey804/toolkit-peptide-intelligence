@@ -875,3 +875,59 @@ def test_extraction_field_review_routes_are_authenticated_and_registered():
     router = (Path(__file__).parents[1] / "app" / "routers" / "research.py").read_text(encoding="utf-8")
     assert "original AI output is never overwritten" in router
     assert "Curator or reviewer permissions are required." in router
+
+
+class _FakeMigrationResult:
+    def __init__(self, value=None):
+        self.value = value
+
+    def scalar_one_or_none(self):
+        return self.value
+
+
+class _FakeMigrationConnection:
+    def __init__(self):
+        self.ledger = {}
+        self.executed_sql = []
+
+    def exec_driver_sql(self, statement):
+        self.executed_sql.append(statement)
+
+    def execute(self, statement, params=None):
+        sql = str(statement)
+        params = params or {}
+        if sql.startswith("SELECT checksum"):
+            return _FakeMigrationResult(self.ledger.get(params["version"]))
+        if sql.startswith("INSERT INTO toolkit_schema_migrations"):
+            self.ledger[params["version"]] = params["checksum"]
+            return _FakeMigrationResult()
+        raise AssertionError(f"Unexpected SQL in migration test: {sql}")
+
+
+def test_development_migration_ledger_applies_each_file_once(tmp_path):
+    from app.main import apply_development_migrations
+
+    (tmp_path / "001_first.sql").write_text("SELECT 1;", encoding="utf-8")
+    (tmp_path / "002_second.sql").write_text("SELECT 2;", encoding="utf-8")
+    connection = _FakeMigrationConnection()
+
+    apply_development_migrations(connection, tmp_path)
+    first_run_count = len(connection.executed_sql)
+    apply_development_migrations(connection, tmp_path)
+
+    assert first_run_count == 3  # ledger table plus two migration files
+    assert len(connection.executed_sql) == first_run_count
+    assert set(connection.ledger) == {"001_first.sql", "002_second.sql"}
+
+
+def test_development_migration_ledger_rejects_modified_applied_file(tmp_path):
+    from app.main import apply_development_migrations
+
+    migration = tmp_path / "001_first.sql"
+    migration.write_text("SELECT 1;", encoding="utf-8")
+    connection = _FakeMigrationConnection()
+    apply_development_migrations(connection, tmp_path)
+
+    migration.write_text("SELECT 2;", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="Applied migration 001_first.sql was modified"):
+        apply_development_migrations(connection, tmp_path)

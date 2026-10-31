@@ -135,3 +135,170 @@ async def discover_peptide_evidence(
         "next_step": "A curator must inspect each original source, confirm entity identity and study relevance, then submit accepted evidence through the existing dossier and curation workflow.",
         "governance": "Read-only discovery. No peptide, sequence, target, pathway, structure or evidence record was created or modified. Name matches do not prove peptide identity; sequence similarity and target associations are not inferred.",
     }
+
+
+import hashlib
+import json
+from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
+
+SOURCE_HOSTS = {
+    "PubMed": "pubmed.ncbi.nlm.nih.gov",
+    "ClinicalTrials.gov": "clinicaltrials.gov",
+    "UniProtKB": "www.uniprot.org",
+    "RCSB PDB": "www.rcsb.org",
+}
+
+
+class CandidateSubmission(BaseModel):
+    source: str = Field(min_length=2, max_length=80)
+    source_identifier: str = Field(min_length=1, max_length=120)
+    source_url: str = Field(min_length=10, max_length=1000)
+    title: str = Field(min_length=2, max_length=1000)
+    summary: str | None = Field(default=None, max_length=12000)
+    match_basis: str = Field(min_length=5, max_length=500)
+    raw_metadata: dict = Field(default_factory=dict)
+
+
+class CandidateDecision(BaseModel):
+    decision: str
+    rationale: str = Field(min_length=20, max_length=4000)
+
+
+def _candidate_membership(user: dict, db: Session):
+    organization_id = user.get("organization_id")
+    if not organization_id:
+        raise HTTPException(status_code=403, detail="Active organization membership required.")
+    role = db.execute(text("""
+        SELECT role FROM organization_memberships
+        WHERE organization_id=:org AND user_id=:user_id AND membership_status='active'
+    """), {"org": organization_id, "user_id": user["id"]}).scalar_one_or_none()
+    if not role:
+        raise HTTPException(status_code=403, detail="Active organization membership required.")
+    return organization_id, role
+
+
+def _validated_source_url(source: str, url: str) -> str:
+    from urllib.parse import urlsplit
+    expected_host = SOURCE_HOSTS.get(source)
+    parsed = urlsplit(url)
+    if not expected_host or parsed.scheme != "https" or parsed.hostname != expected_host or parsed.username or parsed.password:
+        raise HTTPException(status_code=422, detail="Source must be one of the supported providers and use its official HTTPS domain.")
+    return url
+
+
+@router.post("/peptides/{peptide_id}/candidates", status_code=201)
+def submit_enrichment_candidate(
+    peptide_id: UUID,
+    payload: CandidateSubmission,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    organization_id, role = _candidate_membership(current_user, db)
+    if role not in ALLOWED_ROLES:
+        raise HTTPException(status_code=403, detail="Your organization role cannot submit enrichment candidates.")
+    if not db.execute(text("SELECT 1 FROM peptides WHERE id=:id"), {"id": peptide_id}).first():
+        raise HTTPException(status_code=404, detail="Peptide record not found.")
+    source_url = _validated_source_url(payload.source, payload.source_url)
+    raw_metadata = payload.raw_metadata
+    if len(json.dumps(raw_metadata, ensure_ascii=False)) > 20000:
+        raise HTTPException(status_code=413, detail="Candidate metadata exceeds the 20 KB limit.")
+    content_hash = hashlib.sha256(json.dumps(raw_metadata, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+    try:
+        row = db.execute(text("""
+            INSERT INTO enrichment_candidates
+                (organization_id, peptide_id, source_name, source_identifier, source_url,
+                 title, summary, match_basis, raw_metadata, content_hash, submitted_by)
+            VALUES (:org, :peptide, :source, :identifier, :url, :title, :summary,
+                    :basis, CAST(:metadata AS jsonb), :hash, :submitter)
+            RETURNING id, candidate_status, created_at
+        """), {
+            "org": organization_id, "peptide": peptide_id, "source": payload.source,
+            "identifier": payload.source_identifier, "url": source_url, "title": payload.title,
+            "summary": payload.summary, "basis": payload.match_basis,
+            "metadata": json.dumps(raw_metadata), "hash": content_hash,
+            "submitter": current_user["id"],
+        }).mappings().one()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="This source candidate has already been submitted for this peptide in your organization.") from exc
+    db.execute(text("""
+        INSERT INTO audit_events (actor_user_id, organization_id, action, entity_type, entity_id, event_metadata)
+        VALUES (:actor, :org, 'enrichment_candidate_submitted', 'enrichment_candidate', :id,
+                jsonb_build_object('peptide_id', :peptide, 'source', :source, 'source_identifier', :identifier))
+    """), {"actor": current_user["id"], "org": organization_id, "id": row["id"],
+           "peptide": str(peptide_id), "source": payload.source, "identifier": payload.source_identifier})
+    db.commit()
+    return {"id": str(row["id"]), "status": row["candidate_status"], "created_at": row["created_at"]}
+
+
+@router.get("/candidates")
+def list_enrichment_candidates(
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    candidate_status: str = "pending",
+    limit: int = 50,
+):
+    organization_id, role = _candidate_membership(current_user, db)
+    if role not in {"organization_admin", "curator", "reviewer"}:
+        raise HTTPException(status_code=403, detail="Curator or reviewer permission is required.")
+    if candidate_status not in {"pending", "accepted", "rejected", "duplicate", "needs_review", "all"}:
+        raise HTTPException(status_code=422, detail="Invalid candidate status.")
+    if limit < 1 or limit > 100:
+        raise HTTPException(status_code=422, detail="Limit must be between 1 and 100.")
+    rows = db.execute(text("""
+        SELECT ec.id, ec.peptide_id, p.preferred_name, ec.source_name, ec.source_identifier,
+               ec.source_url, ec.title, ec.summary, ec.match_basis, ec.candidate_status,
+               ec.submitted_by, ec.reviewed_by, ec.review_rationale, ec.created_at, ec.reviewed_at
+        FROM enrichment_candidates ec
+        JOIN peptides p ON p.id=ec.peptide_id
+        WHERE ec.organization_id=:org
+          AND (:status='all' OR ec.candidate_status=CAST(:status AS enrichment_candidate_status))
+        ORDER BY ec.created_at DESC LIMIT :limit
+    """), {"org": organization_id, "status": candidate_status, "limit": limit}).mappings().all()
+    return {"items": [dict(row) for row in rows], "count": len(rows)}
+
+
+@router.post("/candidates/{candidate_id}/decisions", status_code=201)
+def decide_enrichment_candidate(
+    candidate_id: UUID,
+    payload: CandidateDecision,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    organization_id, role = _candidate_membership(current_user, db)
+    if role not in {"organization_admin", "curator", "reviewer"}:
+        raise HTTPException(status_code=403, detail="Curator or reviewer permission is required.")
+    if payload.decision not in {"accepted", "rejected", "duplicate", "needs_review"}:
+        raise HTTPException(status_code=422, detail="Decision must be accepted, rejected, duplicate or needs_review.")
+    candidate = db.execute(text("""
+        SELECT * FROM enrichment_candidates
+        WHERE id=:id AND organization_id=:org FOR UPDATE
+    """), {"id": candidate_id, "org": organization_id}).mappings().first()
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Enrichment candidate not found in this organization.")
+    if str(candidate["submitted_by"]) == current_user["id"]:
+        raise HTTPException(status_code=409, detail="The submitter cannot decide their own enrichment candidate.")
+    if candidate["candidate_status"] != "pending":
+        raise HTTPException(status_code=409, detail="This candidate has already been reviewed.")
+    db.execute(text("""
+        INSERT INTO enrichment_candidate_decisions
+            (candidate_id, organization_id, reviewer_id, decision, rationale)
+        VALUES (:candidate, :org, :reviewer, CAST(:decision AS enrichment_candidate_status), :rationale)
+    """), {"candidate": candidate_id, "org": organization_id, "reviewer": current_user["id"],
+           "decision": payload.decision, "rationale": payload.rationale.strip()})
+    db.execute(text("""
+        UPDATE enrichment_candidates
+        SET candidate_status=CAST(:decision AS enrichment_candidate_status),
+            reviewed_by=:reviewer, review_rationale=:rationale, reviewed_at=now(), updated_at=now()
+        WHERE id=:candidate
+    """), {"decision": payload.decision, "reviewer": current_user["id"],
+           "rationale": payload.rationale.strip(), "candidate": candidate_id})
+    db.execute(text("""
+        INSERT INTO audit_events (actor_user_id, organization_id, action, entity_type, entity_id, event_metadata)
+        VALUES (:actor, :org, 'enrichment_candidate_decided', 'enrichment_candidate', :id,
+                jsonb_build_object('decision', :decision, 'peptide_id', :peptide, 'source', :source))
+    """), {"actor": current_user["id"], "org": organization_id, "id": candidate_id,
+           "decision": payload.decision, "peptide": str(candidate["peptide_id"]), "source": candidate["source_name"]})
+    db.commit()
+    return {"candidate_id": str(candidate_id), "status": payload.decision, "reviewed_at": "recorded"}

@@ -182,6 +182,111 @@ def peptide_knowledge_graph(peptide_id: UUID, db: Session = Depends(get_db)):
                 add_edge(claim_id, publication_id, "cited_by")
                 seen_claim_edges.add(pair)
 
+
+    # Verified analytical methods linked through source-backed method references.
+    methods = db.execute(text("""
+        SELECT DISTINCT m.id, m.method_name, m.method_category, m.validation_status,
+               m.method_classification, m.instrument_platform, m.method_version,
+               ms.source_record_id
+        FROM formulation_profiles fp
+        JOIN formulation_stability_observations so ON so.formulation_id=fp.id
+        JOIN analytical_methods m ON m.id=so.analytical_method_id
+        LEFT JOIN analytical_method_sources ms ON ms.method_id=m.id
+        WHERE fp.peptide_id=:id AND fp.review_status='verified'
+          AND so.review_status='verified' AND m.review_status='verified'
+        ORDER BY m.method_name
+    """), {"id": peptide_id}).mappings().all()
+    for item in methods:
+        method_node=add_node(item["id"],item["method_name"],"analytical_method",
+            metadata={"category":item["method_category"],"validation_status":item["validation_status"],
+                      "classification":item["method_classification"],"platform":item["instrument_platform"],
+                      "version":item["method_version"]})
+        add_edge(peptide_id,method_node,"characterized_by_method","unknown",item["source_record_id"])
+
+    formulations=db.execute(text("""
+        SELECT id,formulation_name,formulation_type,delivery_system,development_stage
+        FROM formulation_profiles WHERE peptide_id=:id AND review_status='verified'
+        ORDER BY formulation_name
+    """),{"id":peptide_id}).mappings().all()
+    for item in formulations:
+        formulation_node=add_node(item["id"],item["formulation_name"],"formulation",
+            metadata={"formulation_type":item["formulation_type"],"delivery_system":item["delivery_system"],
+                      "development_stage":item["development_stage"]})
+        add_edge(peptide_id,formulation_node,"has_researched_formulation")
+        observations=db.execute(text("""
+            SELECT id,study_context,condition_description,duration_description,observed_change,
+                   measurement_type,limitations,source_id
+            FROM formulation_stability_observations
+            WHERE formulation_id=:id AND review_status='verified' ORDER BY created_at
+        """),{"id":item["id"]}).mappings().all()
+        for obs in observations:
+            obs_node=add_node(obs["id"],obs["study_context"],"stability_observation",
+                metadata={"condition":obs["condition_description"],"duration":obs["duration_description"],
+                          "observed_change":obs["observed_change"],"measurement_type":obs["measurement_type"],
+                          "limitations":obs["limitations"]})
+            add_edge(formulation_node,obs_node,"has_stability_observation","unknown",obs["source_id"])
+            if obs["source_id"]:
+                src=db.execute(text("SELECT id,source_name,source_identifier,source_url FROM source_records WHERE id=:id"),{"id":obs["source_id"]}).mappings().first()
+                if src:
+                    sn=add_node(src["id"],f"{src['source_name']}: {src['source_identifier']}","source",
+                        metadata={"url":src["source_url"]})
+                    add_edge(obs_node,sn,"supported_by_source")
+
+    processes=db.execute(text("""
+        SELECT id,profile_title,process_platform,development_context,process_overview
+        FROM process_knowledge_profiles WHERE peptide_id=:id AND review_status='verified'
+        ORDER BY profile_title
+    """),{"id":peptide_id}).mappings().all()
+    for item in processes:
+        process_node=add_node(item["id"],item["profile_title"],"process_knowledge",
+            metadata={"platform":item["process_platform"],"context":item["development_context"],
+                      "overview":item["process_overview"][:500]})
+        add_edge(peptide_id,process_node,"has_process_development_literature")
+        stages=db.execute(text("""
+            SELECT id,stage_name,stage_category,scientific_purpose,source_id
+            FROM process_knowledge_stages WHERE profile_id=:id AND review_status='verified'
+            ORDER BY stage_name
+        """),{"id":item["id"]}).mappings().all()
+        for stage in stages:
+            stage_node=add_node(stage["id"],stage["stage_name"],"process_stage",
+                metadata={"category":stage["stage_category"],"purpose":stage["scientific_purpose"]})
+            add_edge(process_node,stage_node,"describes_process_stage","unknown",stage["source_id"])
+
+    interactions=db.execute(text("""
+        SELECT a.id,t.id AS target_id,t.preferred_name,t.gene_symbol,a.interaction_method,
+               a.evidence_type,a.analysis_tool,a.analysis_version,a.score_name,a.score_value,
+               a.score_unit,a.score_interpretation,a.limitations,a.source_id
+        FROM molecular_interaction_assessments a JOIN targets t ON t.id=a.target_id
+        WHERE a.peptide_id=:id AND a.review_status='verified'
+        ORDER BY t.preferred_name
+    """),{"id":peptide_id}).mappings().all()
+    for item in interactions:
+        target_node=add_node(item["target_id"],item["preferred_name"],"target",
+            metadata={"gene_symbol":item["gene_symbol"]})
+        interaction_node=add_node(item["id"],f"{item['interaction_method']} assessment","interaction_assessment",
+            metadata={"method":item["interaction_method"],"tool":item["analysis_tool"],
+                      "version":item["analysis_version"],"score_name":item["score_name"],
+                      "score_value":float(item["score_value"]) if item["score_value"] is not None else None,
+                      "score_unit":item["score_unit"],"score_interpretation":item["score_interpretation"],
+                      "limitations":item["limitations"]})
+        add_edge(peptide_id,interaction_node,"has_interaction_assessment",item["evidence_type"],item["source_id"])
+        add_edge(interaction_node,target_node,"assesses_interaction_with",item["evidence_type"],item["source_id"])
+
+    appraisals=db.execute(text("""
+        SELECT ea.id,ea.claim_id,ea.study_design,ea.evidence_level,ea.risk_of_bias,
+               ea.replication_status,ea.limitations,ea.appraisal_status
+        FROM evidence_appraisals ea JOIN evidence_claims ec ON ec.id=ea.claim_id
+        WHERE ec.peptide_id=:id AND ec.review_status='verified'
+          AND ea.appraisal_status='accepted'
+        ORDER BY ea.created_at DESC
+    """),{"id":peptide_id}).mappings().all()
+    for item in appraisals:
+        appraisal_node=add_node(item["id"],f"Appraisal: {item['study_design']}","evidence_appraisal",
+            metadata={"study_design":item["study_design"],"evidence_level":item["evidence_level"],
+                      "risk_of_bias":item["risk_of_bias"],"replication":item["replication_status"],
+                      "limitations":item["limitations"]})
+        add_edge(item["claim_id"],appraisal_node,"has_accepted_appraisal")
+
     return {
         "peptide_id": str(peptide_id),
         "nodes": list(nodes.values()),

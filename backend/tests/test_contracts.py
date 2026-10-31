@@ -168,3 +168,12 @@ def test_unified_research_workspace_route_is_registered_and_bounded():
     assert params["q"]["schema"]["maxLength"] == 200
     assert params["limit"]["schema"]["minimum"] == 1
     assert params["limit"]["schema"]["maximum"] == 10
+
+
+def test_research_assistant_brief_route_is_registered_and_bounded():
+    operation = app.openapi()["paths"]["/api/v1/research/assistant/brief"]["get"]
+    params = {item["name"]: item for item in operation["parameters"]}
+    assert params["question"]["schema"]["minLength"] == 8
+    assert params["question"]["schema"]["maxLength"] == 500
+    assert params["limit"]["schema"]["minimum"] == 1
+    assert params["limit"]["schema"]["maximum"] == 10

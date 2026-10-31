@@ -92,3 +92,93 @@ def decide(guidance_id:UUID,payload:Decision,user:Annotated[dict,Depends(get_cur
  VALUES(:u,:o,'regulatory_guidance_decided','regulatory_guidance',:id,jsonb_build_object('decision',:decision))"""),{"u":user["id"],"o":org,"id":guidance_id,"decision":payload.decision})
  db.commit()
  return {"guidance_id":str(guidance_id),"decision":payload.decision}
+from datetime import date
+from typing import Annotated, Literal
+from uuid import UUID
+from urllib.parse import urlsplit
+from fastapi import Depends, HTTPException, Query
+from pydantic import BaseModel, Field, HttpUrl
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+from ..db import get_db
+from .auth import get_current_user
+
+class VersionObservation(BaseModel):
+ version_or_revision: str | None = Field(default=None,max_length=100)
+ publication_date: date | None = None
+ effective_date: date | None = None
+ source_url: HttpUrl
+ content_hash: str | None = Field(default=None,pattern=r"^[a-fA-F0-9]{64}$")
+ observation_note: str = Field(min_length=10,max_length=2000)
+ change_type: Literal["new_version","source_content_changed","effective_date_changed","metadata_changed","possible_withdrawal"]
+ change_summary: str = Field(min_length=20,max_length=4000)
+ impact_assessment: str | None = Field(default=None,max_length=3000)
+
+class ChangeDecision(BaseModel):
+ decision: Literal["confirmed_change","not_a_change","published"]
+ rationale: str = Field(min_length=20,max_length=4000)
+
+@router.post("/{guidance_id}/observations",status_code=201)
+def observe_guidance_version(guidance_id:UUID,payload:VersionObservation,user:Annotated[dict,Depends(get_current_user)],db:Annotated[Session,Depends(get_db)]):
+ org,role=membership(user,db)
+ if role not in SUBMIT: raise HTTPException(403,"Your role cannot submit monitoring observations.")
+ record=db.execute(text("SELECT id,source_record_id FROM regulatory_guidance_records WHERE id=:id AND organization_id=:org AND review_status='verified'"),{"id":guidance_id,"org":org}).mappings().first()
+ if not record: raise HTTPException(404,"Verified guidance record not found in your organization.")
+ parsed=urlsplit(str(payload.source_url))
+ if parsed.scheme!="https" or not parsed.hostname or parsed.username or parsed.password: raise HTTPException(422,"Observed source must use HTTPS without embedded credentials.")
+ prior=db.execute(text("SELECT id,version_or_revision,content_hash,effective_date FROM regulatory_guidance_versions WHERE guidance_id=:id ORDER BY observed_at DESC LIMIT 1"),{"id":guidance_id}).mappings().first()
+ version=db.execute(text("""INSERT INTO regulatory_guidance_versions(guidance_id,version_or_revision,publication_date,effective_date,source_url,content_hash,observed_by,observation_note)
+ VALUES(:id,:version,:published,:effective,:url,:hash,:user,:note)
+ ON CONFLICT(guidance_id,source_url,version_or_revision,content_hash) DO UPDATE SET observation_note=EXCLUDED.observation_note
+ RETURNING id,version_or_revision,observed_at,review_status"""),{"id":guidance_id,"version":payload.version_or_revision,"published":payload.publication_date,"effective":payload.effective_date,"url":str(payload.source_url),"hash":payload.content_hash.lower() if payload.content_hash else None,"user":user["id"],"note":payload.observation_note}).mappings().one()
+ if prior and str(prior["id"])==str(version["id"]):
+  raise HTTPException(409,"This exact version observation already exists.")
+ event=db.execute(text("""INSERT INTO regulatory_change_events(guidance_id,previous_version_id,new_version_id,change_type,change_summary,impact_assessment,submitted_by)
+ VALUES(:guidance,:previous,:new,:type,:summary,:impact,:user)
+ RETURNING id,status,created_at"""),{"guidance":guidance_id,"previous":prior["id"] if prior else None,"new":version["id"],"type":payload.change_type,"summary":payload.change_summary,"impact":payload.impact_assessment,"user":user["id"]}).mappings().one()
+ db.execute(text("""INSERT INTO audit_events(actor_user_id,organization_id,action,entity_type,entity_id,event_metadata)
+ VALUES(:u,:o,'regulatory_change_observed','regulatory_change_event',:id,jsonb_build_object('guidance_id',:guidance,'version_id',:version))"""),{"u":user["id"],"o":org,"id":event["id"],"guidance":str(guidance_id),"version":str(version["id"])})
+ db.commit()
+ return {"version":dict(version),"change_event":dict(event),"notice":"Observation is unverified and requires curator review; no automatic regulatory interpretation was made."}
+
+@router.get("/{guidance_id}/history")
+def guidance_history(guidance_id:UUID,db:Session=Depends(get_db),limit:int=Query(50,ge=1,le=100)):
+ rows=db.execute(text("""SELECT v.id,v.version_or_revision,v.publication_date,v.effective_date,v.source_url,v.content_hash,v.observed_at,v.review_status,
+ e.id AS event_id,e.change_type,e.change_summary,e.impact_assessment,e.status AS event_status,e.created_at
+ FROM regulatory_guidance_versions v LEFT JOIN regulatory_change_events e ON e.new_version_id=v.id
+ JOIN regulatory_guidance_records g ON g.id=v.guidance_id
+ WHERE v.guidance_id=:id AND g.review_status='verified' AND v.review_status='accepted'
+ ORDER BY v.observed_at DESC LIMIT :lim"""),{"id":guidance_id,"lim":limit}).mappings().all()
+ return {"items":[dict(x) for x in rows],"count":len(rows),"scope":"Only accepted version observations are shown. Change status reflects human review, not an automated determination."}
+
+@router.get("/changes/reviews")
+def change_review_queue(user:Annotated[dict,Depends(get_current_user)],db:Annotated[Session,Depends(get_db)],limit:int=Query(50,ge=1,le=100)):
+ org,role=membership(user,db)
+ if role not in REVIEW: raise HTTPException(403,"Curator or reviewer permission is required.")
+ rows=db.execute(text("""SELECT e.id,e.guidance_id,e.change_type,e.change_summary,e.impact_assessment,e.status,e.created_at,
+ g.authority,g.jurisdiction,g.document_title,v.version_or_revision,v.source_url,e.submitted_by
+ FROM regulatory_change_events e JOIN regulatory_guidance_records g ON g.id=e.guidance_id
+ JOIN regulatory_guidance_versions v ON v.id=e.new_version_id
+ WHERE g.organization_id=:org AND e.status='needs_review' ORDER BY e.created_at LIMIT :lim"""),{"org":org,"lim":limit}).mappings().all()
+ return {"items":[dict(x) for x in rows]}
+
+@router.post("/changes/{event_id}/decisions")
+def decide_change(event_id:UUID,payload:ChangeDecision,user:Annotated[dict,Depends(get_current_user)],db:Annotated[Session,Depends(get_db)]):
+ org,role=membership(user,db)
+ if role not in REVIEW: raise HTTPException(403,"Curator or reviewer permission is required.")
+ event=db.execute(text("""SELECT e.id,e.submitted_by,e.new_version_id,e.guidance_id
+ FROM regulatory_change_events e JOIN regulatory_guidance_records g ON g.id=e.guidance_id
+ WHERE e.id=:id AND g.organization_id=:org AND e.status='needs_review'"""),{"id":event_id,"org":org}).mappings().first()
+ if not event: raise HTTPException(404,"Open regulatory change event not found.")
+ if str(event["submitted_by"])==user["id"]: raise HTTPException(403,"Submitters cannot review their own change observations.")
+ db.execute(text("INSERT INTO regulatory_change_decisions(event_id,organization_id,reviewer_id,decision,rationale) VALUES(:id,:org,:user,:decision,:rationale)"),{"id":event_id,"org":org,"user":user["id"],"decision":payload.decision,"rationale":payload.rationale})
+ db.execute(text("UPDATE regulatory_change_events SET status=:status,reviewed_by=:user,reviewed_at=now() WHERE id=:id"),{"status":payload.decision,"user":user["id"],"id":event_id})
+ if payload.decision=="confirmed_change":
+  db.execute(text("UPDATE regulatory_guidance_versions SET review_status='accepted' WHERE id=:id"),{"id":event["new_version_id"]})
+ elif payload.decision=="not_a_change":
+  db.execute(text("UPDATE regulatory_guidance_versions SET review_status='rejected' WHERE id=:id"),{"id":event["new_version_id"]})
+ db.execute(text("""INSERT INTO audit_events(actor_user_id,organization_id,action,entity_type,entity_id,event_metadata)
+ VALUES(:u,:o,'regulatory_change_decided','regulatory_change_event',:id,jsonb_build_object('decision',:decision))"""),{"u":user["id"],"o":org,"id":event_id,"decision":payload.decision})
+ db.commit()
+ return {"event_id":str(event_id),"decision":payload.decision}

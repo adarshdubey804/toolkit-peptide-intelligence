@@ -356,3 +356,77 @@ def related_peptides(
         "count": len(rows),
         "scope": "Verified peptide records connected through shared curator-verified target or pathway evidence. Shared associations do not establish equivalent mechanism, efficacy or clinical interchangeability.",
     }
+
+
+@router.get("/compare")
+def compare_peptides(
+    ids: list[UUID] = Query(min_length=2, max_length=5),
+    db: Session = Depends(get_db),
+):
+    """Compare curator-verified peptide records without inferring equivalence."""
+    if len(set(ids)) != len(ids):
+        raise HTTPException(status_code=422, detail="Peptide identifiers must be unique.")
+    profiles = db.execute(text("""
+        SELECT id, preferred_name, peptide_category, development_status,
+               intended_use_class, description
+        FROM peptides
+        WHERE id = ANY(:ids) AND review_status='verified'
+    """), {"ids": ids}).mappings().all()
+    by_id = {str(row["id"]): dict(row) for row in profiles}
+    if len(by_id) != len(ids):
+        raise HTTPException(status_code=404, detail="One or more verified peptide records were not found.")
+    results = []
+    for peptide_id in ids:
+        profile = by_id[str(peptide_id)]
+        params = {"id": peptide_id}
+        sequences = db.execute(text("""
+            SELECT sequence,sequence_type,n_terminus,c_terminus,modifications,stereochemistry_notes
+            FROM peptide_sequences WHERE peptide_id=:id AND review_status='verified'
+        """), params).mappings().all()
+        chemistry = db.execute(text("""
+            SELECT chemical_form,molecular_formula,average_molecular_mass,monoisotopic_mass,
+                   property_origin,method_or_tool
+            FROM chemical_properties WHERE peptide_id=:id AND review_status='verified'
+        """), params).mappings().all()
+        targets = db.execute(text("""
+            SELECT t.id,t.preferred_name,t.gene_symbol,t.organism,e.evidence_type
+            FROM peptide_target_evidence e JOIN targets t ON t.id=e.target_id
+            WHERE e.peptide_id=:id AND e.review_status='verified'
+        """), params).mappings().all()
+        pathways = db.execute(text("""
+            SELECT w.id,w.preferred_name,w.database_name,w.organism,e.evidence_type
+            FROM peptide_pathway_evidence e JOIN pathways w ON w.id=e.pathway_id
+            WHERE e.peptide_id=:id AND e.review_status='verified'
+        """), params).mappings().all()
+        claims = db.execute(text("""
+            SELECT c.id,c.claim_text,c.claim_domain,c.evidence_type,c.limitations,
+                   p.title AS publication_title,p.doi,p.pmid,p.url AS publication_url
+            FROM evidence_claims c
+            LEFT JOIN claim_sources cs ON cs.claim_id=c.id
+            LEFT JOIN publications p ON p.id=cs.publication_id
+            WHERE c.peptide_id=:id AND c.review_status='verified'
+            ORDER BY c.id
+        """), params).mappings().all()
+        trials = db.execute(text("""
+            SELECT DISTINCT p.id,p.title,p.doi,p.pmid,p.url
+            FROM evidence_claims c
+            JOIN claim_sources cs ON cs.claim_id=c.id
+            JOIN publications p ON p.id=cs.publication_id
+            WHERE c.peptide_id=:id AND c.review_status='verified'
+              AND (p.pmid IS NOT NULL OR p.doi IS NOT NULL)
+            ORDER BY p.title LIMIT 100
+        """), params).mappings().all()
+        results.append({
+            "peptide": profile,
+            "sequences": [dict(x) for x in sequences],
+            "chemical_properties": [dict(x) for x in chemistry],
+            "targets": [dict(x) for x in targets],
+            "pathways": [dict(x) for x in pathways],
+            "evidence_claims": [dict(x) for x in claims],
+            "linked_publications": [dict(x) for x in trials],
+        })
+    return {
+        "items": results,
+        "comparison_count": len(results),
+        "scope": "Only curator-verified records are included. Missing data means no verified record is currently available, not that the property or relationship is absent. Publication links are not a clinical-trial registry and do not establish efficacy.",
+    }

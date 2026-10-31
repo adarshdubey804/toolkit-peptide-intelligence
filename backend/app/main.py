@@ -11,7 +11,11 @@ from .db import engine
 from .routers.peptides import router as peptide_router
 from .routers.research import router as research_router
 
-MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "database" / "migrations"
+_APP_ROOT = Path(__file__).resolve().parents[1]
+MIGRATIONS_DIR = _APP_ROOT / "database" / "migrations"
+if not MIGRATIONS_DIR.is_dir():
+    # In the source checkout, migrations live at repository_root/database.
+    MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "database" / "migrations"
 
 
 @asynccontextmanager

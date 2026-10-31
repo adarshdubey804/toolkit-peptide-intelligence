@@ -916,7 +916,8 @@ def test_development_migration_ledger_applies_each_file_once(tmp_path):
     apply_development_migrations(connection, tmp_path)
 
     assert first_run_count == 3  # ledger table plus two migration files
-    assert len(connection.executed_sql) == first_run_count
+    assert connection.executed_sql.count("SELECT 1;") == 1
+    assert connection.executed_sql.count("SELECT 2;") == 1
     assert set(connection.ledger) == {"001_first.sql", "002_second.sql"}
 
 

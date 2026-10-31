@@ -40,6 +40,26 @@ class MethodSubmission(BaseModel):
     evidence_scope: str = Field(min_length=5, max_length=1000)
 
 
+
+class ApplicabilitySubmission(BaseModel):
+    peptide_id: UUID
+    method_id: UUID
+    test_purpose: str = Field(min_length=5, max_length=500)
+    material_form: str | None = Field(default=None, max_length=300)
+    sample_matrix: str | None = Field(default=None, max_length=500)
+    applicability_rationale: str = Field(min_length=20, max_length=3000)
+    evidence_scope: str = Field(min_length=5, max_length=1000)
+    limitations: str = Field(min_length=10, max_length=2000)
+    source_name: str = Field(min_length=2, max_length=120)
+    source_identifier: str = Field(min_length=1, max_length=200)
+    source_url: HttpUrl
+
+
+class ApplicabilityDecision(BaseModel):
+    decision: Literal["verified", "rejected", "needs_changes"]
+    rationale: str = Field(min_length=20, max_length=4000)
+
+
 class MethodDecision(BaseModel):
     decision: Literal["verified", "rejected", "needs_changes"]
     rationale: str = Field(min_length=20, max_length=4000)
@@ -227,3 +247,161 @@ def decide_method(
     return {"method_id": str(method_id), "review_status": new_status, "decision": payload.decision,
             "validation_status": method["validation_status"],
             "note": "Curation verification does not establish analytical method validation."}
+
+
+@router.get("/applicability")
+def list_verified_applicability(
+    db: Annotated[Session, Depends(get_db)],
+    peptide_id: UUID | None = None,
+    method_id: UUID | None = None,
+    limit: int = Query(default=100, ge=1, le=250),
+):
+    """List source-backed, curator-verified method applicability for exact peptide records."""
+    rows = db.execute(text("""
+        SELECT a.id, a.peptide_id, p.preferred_name AS peptide_name,
+               a.method_id, m.method_name, m.method_category,
+               m.method_classification, m.validation_status,
+               a.test_purpose, a.material_form, a.sample_matrix,
+               a.applicability_rationale, a.evidence_scope, a.limitations,
+               sr.source_name, sr.source_identifier, sr.source_url,
+               a.reviewed_at
+        FROM peptide_method_applicability a
+        JOIN peptides p ON p.id=a.peptide_id AND p.review_status='verified'
+        JOIN analytical_methods m ON m.id=a.method_id AND m.review_status='verified'
+        JOIN source_records sr ON sr.id=a.source_id
+        WHERE a.review_status='verified'
+          AND (:peptide IS NULL OR a.peptide_id=:peptide)
+          AND (:method IS NULL OR a.method_id=:method)
+        ORDER BY p.preferred_name, a.test_purpose
+        LIMIT :limit
+    """), {"peptide": peptide_id, "method": method_id, "limit": limit}).mappings().all()
+    return {
+        "items": [dict(row) for row in rows],
+        "count": len(rows),
+        "scope": "Only peptide-specific applicability records reviewed as verified, linked to verified peptide and method records. This is not a universal test panel or a validated protocol.",
+    }
+
+
+@router.post("/applicability", status_code=201)
+def submit_method_applicability(
+    payload: ApplicabilitySubmission,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    organization_id, role = _membership(current_user, db)
+    if role not in SUBMIT_ROLES:
+        raise HTTPException(status_code=403, detail="Your role cannot submit method applicability.")
+    peptide = db.execute(text("""
+        SELECT id FROM peptides WHERE id=:id AND review_status='verified'
+    """), {"id": payload.peptide_id}).scalar_one_or_none()
+    if not peptide:
+        raise HTTPException(status_code=404, detail="Verified peptide record not found.")
+    method = db.execute(text("""
+        SELECT id FROM analytical_methods
+        WHERE id=:id AND review_status='verified'
+    """), {"id": payload.method_id}).scalar_one_or_none()
+    if not method:
+        raise HTTPException(status_code=404, detail="Verified analytical method not found.")
+    source_id = _source_record(db, payload.source_name, payload.source_identifier, str(payload.source_url))
+    row = db.execute(text("""
+        INSERT INTO peptide_method_applicability (
+            organization_id, peptide_id, method_id, test_purpose, material_form,
+            sample_matrix, applicability_rationale, evidence_scope, limitations,
+            source_id, review_status, submitted_by
+        ) VALUES (
+            :org, :peptide, :method, :purpose, :material, :matrix,
+            :rationale, :scope, :limitations, :source, 'in_review', :submitter
+        )
+        RETURNING id, peptide_id, method_id, test_purpose, review_status, created_at
+    """), {
+        "org": organization_id, "peptide": payload.peptide_id, "method": payload.method_id,
+        "purpose": payload.test_purpose.strip(), "material": payload.material_form,
+        "matrix": payload.sample_matrix, "rationale": payload.applicability_rationale.strip(),
+        "scope": payload.evidence_scope.strip(), "limitations": payload.limitations.strip(),
+        "source": source_id, "submitter": current_user["id"],
+    }).mappings().one()
+    db.execute(text("""
+        INSERT INTO audit_events (actor_user_id, organization_id, action, entity_type, entity_id, event_metadata)
+        VALUES (:actor, :org, 'peptide_method_applicability_submitted',
+                'peptide_method_applicability', :id,
+                jsonb_build_object('peptide_id', :peptide, 'method_id', :method))
+    """), {
+        "actor": current_user["id"], "org": organization_id, "id": row["id"],
+        "peptide": str(payload.peptide_id), "method": str(payload.method_id),
+    })
+    db.commit()
+    return dict(row)
+
+
+@router.get("/applicability/reviews")
+def applicability_review_queue(
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    limit: int = Query(default=50, ge=1, le=100),
+):
+    organization_id, role = _membership(current_user, db)
+    if role not in REVIEW_ROLES:
+        raise HTTPException(status_code=403, detail="Curator or reviewer permission is required.")
+    rows = db.execute(text("""
+        SELECT a.id, a.peptide_id, p.preferred_name AS peptide_name,
+               a.method_id, m.method_name, a.test_purpose, a.material_form,
+               a.sample_matrix, a.applicability_rationale, a.evidence_scope,
+               a.limitations, a.submitted_by, sr.source_name, sr.source_identifier,
+               sr.source_url, a.created_at
+        FROM peptide_method_applicability a
+        JOIN peptides p ON p.id=a.peptide_id
+        JOIN analytical_methods m ON m.id=a.method_id
+        JOIN source_records sr ON sr.id=a.source_id
+        WHERE a.organization_id=:org AND a.review_status='in_review'
+        ORDER BY a.created_at, a.id
+        LIMIT :limit
+    """), {"org": organization_id, "limit": limit}).mappings().all()
+    return {"items": [dict(row) for row in rows], "count": len(rows)}
+
+
+@router.post("/applicability/{applicability_id}/decisions", status_code=201)
+def decide_method_applicability(
+    applicability_id: UUID,
+    payload: ApplicabilityDecision,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    organization_id, role = _membership(current_user, db)
+    if role not in REVIEW_ROLES:
+        raise HTTPException(status_code=403, detail="Curator or reviewer permission is required.")
+    record = db.execute(text("""
+        SELECT * FROM peptide_method_applicability
+        WHERE id=:id AND organization_id=:org AND review_status='in_review'
+        FOR UPDATE
+    """), {"id": applicability_id, "org": organization_id}).mappings().first()
+    if not record:
+        raise HTTPException(status_code=404, detail="Applicability review not found in this organization.")
+    if str(record["submitted_by"]) == current_user["id"]:
+        raise HTTPException(status_code=409, detail="A submitter cannot review their own applicability record.")
+    db.execute(text("""
+        INSERT INTO peptide_method_applicability_decisions
+            (applicability_id, organization_id, reviewer_id, decision, rationale)
+        VALUES (:id, :org, :reviewer, :decision, :rationale)
+    """), {
+        "id": applicability_id, "org": organization_id, "reviewer": current_user["id"],
+        "decision": payload.decision, "rationale": payload.rationale.strip(),
+    })
+    new_status = "verified" if payload.decision == "verified" else ("rejected" if payload.decision == "rejected" else "draft")
+    db.execute(text("""
+        UPDATE peptide_method_applicability
+        SET review_status=:status, reviewed_by=:reviewer, reviewed_at=now()
+        WHERE id=:id
+    """), {"status": new_status, "reviewer": current_user["id"], "id": applicability_id})
+    db.execute(text("""
+        INSERT INTO audit_events (actor_user_id, organization_id, action, entity_type, entity_id, event_metadata)
+        VALUES (:actor, :org, 'peptide_method_applicability_review_decided',
+                'peptide_method_applicability', :id,
+                jsonb_build_object('decision', :decision))
+    """), {
+        "actor": current_user["id"], "org": organization_id, "id": applicability_id,
+        "decision": payload.decision,
+    })
+    db.commit()
+    return {"applicability_id": str(applicability_id), "review_status": new_status, "decision": payload.decision}
+
+

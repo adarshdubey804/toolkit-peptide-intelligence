@@ -101,6 +101,10 @@ def register(payload: RegisterRequest, db: Annotated[Session, Depends(get_db)]):
                 "password_hash": password_hash.hash(payload.password),
                 "display_name": payload.display_name.strip(),
             }).mappings().one()
+            db.execute(text("""
+                INSERT INTO organization_memberships (organization_id, user_id, role)
+                VALUES (:organization_id, :user_id, 'organization_admin')
+            """), {"organization_id": organization_id, "user_id": row["id"]})
         user = dict(row)
         user["organization_name"] = payload.organization_name.strip()
     except IntegrityError as exc:
@@ -140,11 +144,14 @@ def get_current_user(token: Annotated[str | None, Depends(oauth2_scheme)], db: A
     except (jwt.InvalidTokenError, KeyError, ValueError):
         raise unauthorized
     user = db.execute(text("""
-        SELECT up.id, up.email, up.display_name, up.organization_id,
-               up.role, up.is_active, o.name AS organization_name
+        SELECT up.id, up.email, up.display_name, om.organization_id,
+               om.role, up.is_active, o.name AS organization_name
         FROM user_profiles up
-        LEFT JOIN organizations o ON o.id = up.organization_id
-        WHERE up.id = :user_id
+        JOIN organization_memberships om ON om.user_id = up.id
+        JOIN organizations o ON o.id = om.organization_id
+        WHERE up.id = :user_id AND om.membership_status = 'active'
+        ORDER BY om.created_at
+        LIMIT 1
     """), {"user_id": user_id}).mappings().first()
     if not user or not user["is_active"]:
         raise unauthorized

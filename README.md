@@ -4,7 +4,7 @@ Scientific intelligence for peptide research and pharmaceutical development, bui
 
 ## Current foundation
 
-- Next.js frontend with peptide directory, scientific profile views, interactive knowledge graph and multi-source research workspace.
+- Next.js frontend with peptide directory, scientific profile views, interactive knowledge graph and multi-source research workspace and retrieval-only research assistant.
 - FastAPI backend with verified-record catalogue search, pagination, profile detail, verified peptide knowledge graph and readiness endpoints.
 - PostgreSQL + pgvector schema for peptide identity, sequences, chemical properties, structures, targets, pathways, publications, research studies, evidence claims, analytical methods, vendor records, certifications and regulatory status.
 - Read-only discovery integrations: PubMed, ClinicalTrials.gov API v2, UniProtKB, RCSB PDB and PubChem.
@@ -18,7 +18,7 @@ Scientific intelligence for peptide research and pharmaceutical development, bui
 2. Replace POSTGRES_PASSWORD and APP_SECRET_KEY with long, unique random values.
 3. Set NCBI_EMAIL to a valid contact email if you want to enable PubMed discovery. NCBI_API_KEY is optional.
 4. Run docker compose up --build.
-5. Open the frontend at http://localhost:3000, peptide directory at http://localhost:3000/peptides, knowledge graph at http://localhost:3000/knowledge-graph, research workspace at http://localhost:3000/research, and API docs at http://localhost:8000/docs.
+5. Open the frontend at http://localhost:3000, peptide directory at http://localhost:3000/peptides, knowledge graph at http://localhost:3000/knowledge-graph, research workspace at http://localhost:3000/research, research assistant at http://localhost:3000/research-assistant, and API docs at http://localhost:8000/docs.
 
 Development startup applies all ordered SQL migrations in `database/migrations`. Production deployments must run reviewed, versioned migrations as a separate deployment step.
 
@@ -28,7 +28,7 @@ Development startup applies all ordered SQL migrations in `database/migrations`.
 - GET /ready — database connectivity; returns 503 when unavailable.
 - GET /api/v1/peptides — curator-verified catalogue search.
 - GET /api/v1/peptides/{id} — verified profile; ID must be a UUID.\n- GET /api/v1/peptides/{id}/graph — curator-verified sequence, target, pathway, structure, claim and publication relationships.
-- GET /api/v1/research/workspace?q=... — parallel discovery across PubMed, ClinicalTrials.gov, UniProtKB and RCSB PDB; each source reports its own availability.\n- GET /api/v1/research/pubmed?q=... — PubMed discovery; requires NCBI_EMAIL.
+- GET /api/v1/research/workspace?q=... — parallel discovery across PubMed, ClinicalTrials.gov, UniProtKB and RCSB PDB; each source reports its own availability.\n- GET /api/v1/research/assistant/brief?question=... — source-grounded evidence retrieval brief with original-record citations and explicit limitations; not generative AI.\n- GET /api/v1/research/pubmed?q=... — PubMed discovery; requires NCBI_EMAIL.
 - GET /api/v1/research/clinicaltrials?q=... — ClinicalTrials.gov study discovery.
 - GET /api/v1/research/uniprot?q=... — UniProtKB protein discovery.
 - GET /api/v1/research/rcsb?q=... — RCSB PDB structure discovery.

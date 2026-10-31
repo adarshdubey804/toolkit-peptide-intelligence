@@ -77,18 +77,29 @@ async def synthesize_with_sources(*, question: str, citations: list[dict], api_k
         raise ValueError("AI provider returned an empty answer.")
     allowed_ids = {item["citation_id"] for item in records}
     import re
-    cited_ids = re.findall(r"\[([^\]]+)\]", answer)
+    cited_ids = re.findall(r"\\[([^\\]]+)\\]", answer)
     invalid_ids = sorted(set(cited_ids) - allowed_ids)
+    valid_ids = sorted(set(cited_ids) & allowed_ids)
+    sentences = [part.strip() for part in re.split(r"(?<=[.!?])\\s+", answer) if part.strip()]
+    uncited_sentences = [
+        sentence for sentence in sentences
+        if not (set(re.findall(r"\\[([^\\]]+)\\]", sentence)) & allowed_ids)
+    ]
     if invalid_ids:
-        answer += "\n\nCitation validation warning: the model emitted citation identifiers that were not in the retrieved source set. Treat those references as unverified."
+        answer += "\\n\\nCitation validation warning: the model emitted citation identifiers that were not in the retrieved source set. Treat those references as unverified."
+    if uncited_sentences:
+        answer += "\\n\\nCitation coverage warning: some sentences have no valid source identifier. Review the uncited-sentence audit before relying on this synthesis."
     return {
         "mode": "grounded_synthesis",
         "answer": answer,
         "citations": records,
         "citation_validation": {
-            "valid_ids": sorted(set(cited_ids) & allowed_ids),
+            "valid_ids": valid_ids,
             "invalid_ids": invalid_ids,
-            "status": "warning" if invalid_ids else "passed",
+            "uncited_sentence_count": len(uncited_sentences),
+            "uncited_sentences": uncited_sentences[:30],
+            "status": "warning" if invalid_ids or uncited_sentences else "passed",
+            "method": "identifier allowlist and sentence-level citation coverage; semantic claim-support is not evaluated",
         },
         "limitations": [
             "Synthesis is generated from supplied discovery records, which may be incomplete or unreviewed.",

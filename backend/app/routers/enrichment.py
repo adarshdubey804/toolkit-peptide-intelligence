@@ -153,6 +153,8 @@ SOURCE_HOSTS = {
     "ClinicalTrials.gov": "clinicaltrials.gov",
     "UniProtKB": "www.uniprot.org",
     "RCSB PDB": "www.rcsb.org",
+    "PubChem": "pubchem.ncbi.nlm.nih.gov",
+    "AlphaFold Protein Structure Database": "alphafold.ebi.ac.uk",
 }
 
 
@@ -308,3 +310,171 @@ def decide_enrichment_candidate(
            "decision": payload.decision, "peptide": str(candidate["peptide_id"]), "source": candidate["source_name"]})
     db.commit()
     return {"candidate_id": str(candidate_id), "status": payload.decision, "reviewed_at": "recorded"}
+
+
+from pydantic import field_validator
+from ..integrations.pubchem import PubChemProvider
+from ..integrations.alphafold import AlphaFoldProvider
+
+
+class IngestionRunRequest(BaseModel):
+    sources: list[str] = Field(default_factory=lambda: ["PubMed", "ClinicalTrials.gov", "UniProtKB", "RCSB PDB"], min_length=1, max_length=6)
+    limit_per_source: int = Field(default=10, ge=1, le=20)
+
+    @field_validator("sources")
+    @classmethod
+    def validate_sources(cls, values):
+        allowed = {"PubMed", "ClinicalTrials.gov", "UniProtKB", "RCSB PDB", "PubChem"}
+        if len(set(values)) != len(values) or any(value not in allowed for value in values):
+            raise ValueError("Choose unique supported sources only. AlphaFold requires a UniProt accession and is not a text-search source.")
+        return values
+
+
+@router.post("/peptides/{peptide_id}/runs", status_code=201)
+async def run_persistent_enrichment(
+    peptide_id: UUID,
+    payload: IngestionRunRequest,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """Run bounded official-source searches and persist unreviewed candidates for curator review."""
+    organization_id, role = _candidate_membership(current_user, db)
+    if role not in ALLOWED_ROLES:
+        raise HTTPException(status_code=403, detail="Researcher, curator or reviewer role required.")
+    peptide = db.execute(text("""
+        SELECT p.id, p.preferred_name, p.review_status FROM peptides p
+        WHERE p.id=:peptide AND (
+          p.review_status='verified' OR EXISTS (
+            SELECT 1 FROM curation_reviews cr
+            JOIN organization_memberships om ON om.user_id=cr.submitted_by
+            WHERE cr.entity_type='peptide' AND cr.entity_id=p.id
+              AND om.organization_id=:org AND om.membership_status='active'
+          ))
+    """), {"peptide": peptide_id, "org": organization_id}).mappings().first()
+    if not peptide:
+        raise HTTPException(status_code=404, detail="Peptide record not found.")
+    aliases = db.execute(text("SELECT alias FROM peptide_aliases WHERE peptide_id=:id ORDER BY alias LIMIT 8"), {"id": peptide_id}).scalars().all()
+    terms = list(dict.fromkeys([peptide["preferred_name"], *aliases]))
+    query = " OR ".join(f'"{term.replace(chr(34), "")}"' for term in terms[:5])
+    run = db.execute(text("""
+        INSERT INTO enrichment_ingestion_runs
+          (organization_id, peptide_id, started_by, search_query, requested_sources, status)
+        VALUES (:org,:peptide,:user,:query,CAST(:sources AS jsonb),'running')
+        RETURNING id, started_at
+    """), {"org": organization_id, "peptide": peptide_id, "user": current_user["id"],
+           "query": query, "sources": json.dumps(payload.sources)}).mappings().one()
+    db.commit()
+
+    operations = {}
+    for source in payload.sources:
+        if source == "PubMed":
+            if settings.ncbi_email:
+                operations[source] = PubMedProvider(settings.ncbi_email, settings.ncbi_api_key).search(query, payload.limit_per_source)
+        elif source == "ClinicalTrials.gov":
+            operations[source] = ClinicalTrialsProvider().search(query, payload.limit_per_source)
+        elif source == "UniProtKB":
+            operations[source] = UniProtProvider().search(query, payload.limit_per_source)
+        elif source == "RCSB PDB":
+            operations[source] = RCSBProvider().search(query, payload.limit_per_source)
+        elif source == "PubChem":
+            operations[source] = PubChemProvider().search_by_name(peptide["preferred_name"])
+
+    async def fetch_one(name, operation):
+        try:
+            result = await operation
+            return name, result, None
+        except Exception as exc:
+            return name, None, type(exc).__name__
+
+    fetched = await asyncio.gather(*(fetch_one(name, operation) for name, operation in operations.items()))
+    inserted = 0
+    duplicates = 0
+    failed_sources = []
+    source_counts = {}
+    for source, result, error in fetched:
+        if error:
+            failed_sources.append({"source": source, "error_type": error})
+            source_counts[source] = 0
+            continue
+        items = result.get("items", [])
+        source_counts[source] = len(items)
+        for item in items:
+            identifier = (item.get("pmid") or item.get("nct_id") or item.get("accession")
+                          or item.get("pdb_id") or item.get("cid"))
+            url = item.get("url")
+            if not identifier or not url:
+                continue
+            title = (item.get("title") or item.get("protein_name") or item.get("entry_name")
+                     or item.get("molecular_formula") or str(identifier))[:1000]
+            summary = (item.get("abstract") or item.get("brief_summary") or item.get("summary")
+                       or item.get("description"))
+            metadata = {key: value for key, value in item.items() if key not in {"abstract", "brief_summary", "summary", "description"}}
+            metadata["source_query"] = query
+            metadata["retrieved_at"] = datetime.now(timezone.utc).isoformat()
+            metadata["curation_status"] = "not_reviewed"
+            if len(json.dumps(metadata, ensure_ascii=False, default=str)) > 20000:
+                metadata = {"truncated": True, "source_identifier": str(identifier), "source_query": query}
+            try:
+                row = db.execute(text("""
+                    INSERT INTO enrichment_candidates
+                      (organization_id,peptide_id,source_name,source_identifier,source_url,title,summary,
+                       match_basis,raw_metadata,content_hash,submitted_by)
+                    VALUES (:org,:peptide,:source,:identifier,:url,:title,:summary,:basis,
+                      CAST(:metadata AS jsonb),:hash,:user)
+                    ON CONFLICT (organization_id,peptide_id,source_name,source_identifier) DO NOTHING
+                    RETURNING id
+                """), {"org": organization_id, "peptide": peptide_id, "source": source,
+                       "identifier": str(identifier)[:120], "url": url, "title": title,
+                       "summary": str(summary)[:12000] if summary else None,
+                       "basis": "Automated bounded name/alias search; entity identity and relevance require curator confirmation.",
+                       "metadata": json.dumps(metadata, ensure_ascii=False, default=str),
+                       "hash": hashlib.sha256(json.dumps(metadata, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest(),
+                       "user": current_user["id"]}).first()
+                if row:
+                    inserted += 1
+                else:
+                    duplicates += 1
+            except Exception:
+                db.rollback()
+                failed_sources.append({"source": source, "error_type": "persistence_error"})
+    final_status = "completed_with_errors" if failed_sources else "completed"
+    db.execute(text("""
+        UPDATE enrichment_ingestion_runs SET status=:status, finished_at=now(),
+          candidate_count=:inserted, duplicate_count=:duplicates,
+          source_results=CAST(:results AS jsonb), errors=CAST(:errors AS jsonb)
+        WHERE id=:id AND organization_id=:org
+    """), {"status": final_status, "inserted": inserted, "duplicates": duplicates,
+           "results": json.dumps(source_counts), "errors": json.dumps(failed_sources),
+           "id": run["id"], "org": organization_id})
+    db.execute(text("""
+        INSERT INTO audit_events(actor_user_id,organization_id,action,entity_type,entity_id,event_metadata)
+        VALUES (:user,:org,'enrichment_ingestion_completed','enrichment_ingestion_run',:id,
+          jsonb_build_object('inserted',:inserted,'duplicates',:duplicates,'status',:status))
+    """), {"user": current_user["id"], "org": organization_id, "id": run["id"],
+           "inserted": inserted, "duplicates": duplicates, "status": final_status})
+    db.commit()
+    return {"run_id": str(run["id"]), "status": final_status, "search_query": query,
+            "sources": source_counts, "new_candidates": inserted, "duplicates_skipped": duplicates,
+            "errors": failed_sources, "curation_status": "not_reviewed",
+            "note": "Candidates are persisted for curator review only; no canonical peptide, target, structure, trial or claim records are automatically created."}
+
+
+@router.get("/runs")
+def list_ingestion_runs(
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    limit: int = 30,
+):
+    organization_id, role = _candidate_membership(current_user, db)
+    if role not in {"organization_admin", "curator", "reviewer", "researcher"}:
+        raise HTTPException(status_code=403, detail="Research organization role required.")
+    if limit < 1 or limit > 100:
+        raise HTTPException(status_code=422, detail="Limit must be between 1 and 100.")
+    rows = db.execute(text("""
+        SELECT r.id,r.peptide_id,p.preferred_name,r.search_query,r.requested_sources,
+               r.status,r.candidate_count,r.duplicate_count,r.source_results,r.errors,
+               r.started_at,r.finished_at
+        FROM enrichment_ingestion_runs r JOIN peptides p ON p.id=r.peptide_id
+        WHERE r.organization_id=:org ORDER BY r.started_at DESC LIMIT :limit
+    """), {"org": organization_id, "limit": limit}).mappings().all()
+    return {"items": [dict(row) for row in rows], "count": len(rows)}

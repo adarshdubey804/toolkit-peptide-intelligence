@@ -16,6 +16,12 @@ class UniProtProvider:
             response = await client.get(BASE_URL, params=params)
             response.raise_for_status()
             payload = response.json()
+            total_header = response.headers.get("x-total-results")
+
+        try:
+            total = int(total_header) if total_header is not None else None
+        except ValueError:
+            total = None
 
         items = []
         for record in payload.get("results", []):
@@ -45,6 +51,6 @@ class UniProtProvider:
         return {
             "source": "UniProtKB",
             "query": query,
-            "total": payload.get("results", []) and payload.get("results", [{}])[0].get("total"),
+            "total": total,
             "items": items,
         }

@@ -234,6 +234,13 @@ def decide_review(
             SET review_status = CAST(:new_status AS review_status)
             WHERE id = :entity_id
         """), {"new_status": new_status, "entity_id": review["entity_id"]})
+        if review["entity_type"] == "peptide":
+            for child_table in ("peptide_sequences", "chemical_properties", "structures", "evidence_claims", "regulatory_status"):
+                db.execute(text(f"""
+                    UPDATE {child_table}
+                    SET review_status = CAST(:new_status AS review_status)
+                    WHERE peptide_id = :peptide_id AND review_status = 'in_review'
+                """), {"new_status": new_status, "peptide_id": review["entity_id"]})
 
     db.execute(text("""
         INSERT INTO audit_events (actor_user_id, organization_id, action, entity_type, entity_id, event_metadata)

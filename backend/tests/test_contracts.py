@@ -675,3 +675,14 @@ def test_peptide_comparison_route_is_verified_and_bounded():
     assert "review_status='verified'" in source
     assert "len(set(ids))" in source
     assert "clinical-trial registry" in source
+
+
+def test_peptide_research_report_is_source_traceable_and_verified():
+    from app.routers import peptides
+    paths = {route.path for route in peptides.router.routes}
+    assert "/api/v1/peptides/{peptide_id}/report" in paths
+    source = __import__("inspect").getsource(peptides.peptide_research_report)
+    assert "peptide_knowledge_graph" in source
+    assert "appraisal_status='accepted'" in source
+    assert "source_records" in source
+    assert "not clinical advice" in source

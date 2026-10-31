@@ -131,7 +131,7 @@ export default function VendorsPage() {
     if (!token || !vendorId) return;
     try {
       const [capRes, pepRes, methodRes] = await Promise.all([
-        fetch(API + "/api/v1/vendors/" + vendorId + "/capabilities", {headers:{Authorization:"Bearer "+token}}),
+        fetch(API + "/api/v1/vendors/" + vendorId + "/services", {headers:{Authorization:"Bearer "+token}}),
         fetch(API + "/api/v1/peptides?limit=100&offset=0"),
         fetch(API + "/api/v1/analytical-methods")
       ]);

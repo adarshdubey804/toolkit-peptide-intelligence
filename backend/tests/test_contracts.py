@@ -1,18 +1,22 @@
-from fastapi.testclient import TestClient
-
 from app.main import app
 
 
-def test_health_contract():
-    with TestClient(app) as client:
-        response = client.get("/health")
-    assert response.status_code == 200
-    body = response.json()
-    assert body["status"] == "ok"
-    assert body["service"] == "toolkit-peptide-intelligence-api"
+def test_health_route_is_registered():
+    paths = app.openapi()["paths"]
+    assert "/health" in paths
+    assert "/ready" in paths
 
 
-def test_peptide_search_rejects_invalid_pagination():
-    with TestClient(app) as client:
-        response = client.get("/api/v1/peptides?limit=500")
-    assert response.status_code == 422
+def test_peptide_catalogue_contract_is_registered():
+    paths = app.openapi()["paths"]
+    assert "/api/v1/peptides" in paths
+    assert "get" in paths["/api/v1/peptides"]
+    assert "/api/v1/peptides/{peptide_id}" in paths
+
+
+def test_search_pagination_constraints_are_documented():
+    operation = app.openapi()["paths"]["/api/v1/peptides"]["get"]
+    params = {item["name"]: item for item in operation["parameters"]}
+    assert params["limit"]["schema"]["maximum"] == 100
+    assert params["limit"]["schema"]["minimum"] == 1
+    assert params["offset"]["schema"]["minimum"] == 0

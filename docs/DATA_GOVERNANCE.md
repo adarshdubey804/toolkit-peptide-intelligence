@@ -1,0 +1,2 @@
+# Data governance
+For every published scientific claim retain claim text, source identifier/URL, retrieval date, study design/model, result, limitations, evidence classification, review status, reviewer and review date. Distinguish measured, calculated, predicted and manually curated values. Preserve conflicting records and correction history. High-impact clinical, analytical, regulatory and quality claims require qualified review.

@@ -132,3 +132,10 @@ This is an early development scaffold, not production-ready software. Production
 - Curators and organization admins can register sources; reviewers can inspect the organization registry.
 - Registration validates HTTPS and that the URL host matches the declared domain or a subdomain. It does not prove the domain is genuinely operated by the named authority.
 - This milestone stores source metadata only. It does not fetch feeds, crawl websites, run scheduled polling or send alerts. Retrieval connectors must be added with network/SSRF controls and authority-domain verification before enabling ingestion.
+
+
+## Regulatory RSS ingestion (controlled pilot)
+- Migration 019 stores organization-scoped feed observations with stable identifiers, content hashes, raw metadata and pending human-review status.
+- Curators/reviewers can manually poll RSS sources with POST `/api/v1/regulatory/sources/{source_id}/poll`, inspect pending observations at GET `/api/v1/regulatory/sources/observations`, and record accepted/rejected/duplicate decisions at POST `/api/v1/regulatory/sources/observations/{observation_id}/decision`.
+- Polling is limited to registered RSS feeds on a fixed platform allowlist: FDA, EMA, UK government, CDSCO and WHO domains. HTTPS only, redirects disabled, 15-second timeout, 2 MB response cap, XML content-type checks and DTD/entity rejection are enforced.
+- The allowlist is a network safety control, not proof of legal authority or source authenticity. Feed items remain observations and are not automatically promoted to verified regulatory guidance or interpreted as legal changes. Polling is manual; scheduled jobs and notifications remain future work.

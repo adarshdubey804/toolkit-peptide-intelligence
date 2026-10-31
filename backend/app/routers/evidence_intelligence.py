@@ -49,7 +49,7 @@ def claims(user:Annotated[dict,Depends(get_current_user)],db:Annotated[Session,D
       (SELECT count(*) FROM evidence_appraisals ea WHERE ea.claim_id=ec.id) appraisal_count
       FROM evidence_claims ec JOIN peptides p ON p.id=ec.peptide_id
       LEFT JOIN claim_sources cs ON cs.claim_id=ec.id LEFT JOIN source_records sr ON sr.id=cs.source_record_id
-      WHERE p.organization_id=:org AND (:q IS NULL OR ec.claim_text ILIKE :term OR p.preferred_name ILIKE :term)
+      WHERE EXISTS (SELECT 1 FROM curation_reviews cr JOIN organization_memberships om ON om.user_id=cr.submitted_by WHERE cr.entity_type='evidence_claim' AND cr.entity_id=ec.id AND om.organization_id=:org AND om.membership_status='active') AND (:q IS NULL OR ec.claim_text ILIKE :term OR p.preferred_name ILIKE :term)
       GROUP BY ec.id,p.preferred_name ORDER BY ec.created_at DESC LIMIT :limit
     """),{"org":org,"q":q,"term":f"%{q}%" if q else None,"limit":limit}).mappings().all()
     return {"items":[dict(x) for x in rows],"count":len(rows),"notice":"Evidence level and methodological risk are distinct; no composite evidence score is calculated."}
@@ -57,7 +57,7 @@ def claims(user:Annotated[dict,Depends(get_current_user)],db:Annotated[Session,D
 @router.post("/appraisals",status_code=201)
 def appraise(payload:Appraisal,user:Annotated[dict,Depends(get_current_user)],db:Annotated[Session,Depends(get_db)]):
     org=reviewer(user,db)
-    found=db.execute(text("SELECT ec.id FROM evidence_claims ec JOIN peptides p ON p.id=ec.peptide_id WHERE ec.id=:id AND p.organization_id=:org"),{"id":payload.claim_id,"org":org}).scalar_one_or_none()
+    found=db.execute(text("SELECT ec.id FROM evidence_claims ec WHERE ec.id=:id AND EXISTS (SELECT 1 FROM curation_reviews cr JOIN organization_memberships om ON om.user_id=cr.submitted_by WHERE cr.entity_type='evidence_claim' AND cr.entity_id=ec.id AND om.organization_id=:org AND om.membership_status='active')"),{"id":payload.claim_id,"org":org}).scalar_one_or_none()
     if not found: raise HTTPException(404,"Claim not found in this organization.")
     row=db.execute(text("""
       INSERT INTO evidence_appraisals(organization_id,claim_id,study_design,evidence_level,population_or_model,sample_size,endpoint,risk_of_bias,replication_status,methodological_domains,limitations,appraisal_rationale,reviewer_id)
@@ -71,7 +71,7 @@ def appraise(payload:Appraisal,user:Annotated[dict,Depends(get_current_user)],db
 @router.get("/appraisals/{claim_id}")
 def get_appraisals(claim_id:UUID,user:Annotated[dict,Depends(get_current_user)],db:Annotated[Session,Depends(get_db)]):
     org=reviewer(user,db)
-    rows=db.execute(text("SELECT ea.* FROM evidence_appraisals ea JOIN evidence_claims ec ON ec.id=ea.claim_id JOIN peptides p ON p.id=ec.peptide_id WHERE ea.claim_id=:claim AND ea.organization_id=:org AND p.organization_id=:org ORDER BY ea.created_at DESC"),{"claim":claim_id,"org":org}).mappings().all()
+    rows=db.execute(text("SELECT ea.* FROM evidence_appraisals ea JOIN evidence_claims ec ON ec.id=ea.claim_id JOIN peptides p ON p.id=ec.peptide_id WHERE ea.claim_id=:claim AND ea.organization_id=:org ORDER BY ea.created_at DESC"),{"claim":claim_id,"org":org}).mappings().all()
     return {"items":[dict(x) for x in rows],"count":len(rows)}
 
 @router.post("/duplicate-candidates",status_code=201)

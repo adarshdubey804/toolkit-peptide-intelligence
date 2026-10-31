@@ -7,7 +7,7 @@ Scientific intelligence for peptide research and pharmaceutical development, bui
 - Next.js frontend with peptide directory, scientific profile views, interactive knowledge graph and multi-source research workspace and retrieval-only research assistant.
 - FastAPI backend with verified-record catalogue search, pagination, profile detail, verified peptide knowledge graph and readiness endpoints.
 - PostgreSQL + pgvector schema for peptide identity, sequences, chemical properties, structures, targets, pathways, publications, research studies, evidence claims, analytical methods, vendor records, certifications and regulatory status.
-- Read-only discovery integrations: PubMed, ClinicalTrials.gov API v2, UniProtKB, RCSB PDB and PubChem.
+- Read-only discovery integrations with PubMed abstract retrieval: PubMed, ClinicalTrials.gov API v2, UniProtKB, RCSB PDB and PubChem.
 - Additive provenance and curation schema: source content hashes and versions, cross-database candidate entity links, review queue and append-only editorial decisions.
 - External results remain unreviewed and are never silently promoted into curated records.
 - GitHub Actions workflows for backend API-contract tests and frontend production builds.

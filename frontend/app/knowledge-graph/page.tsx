@@ -25,7 +25,9 @@ export default function KnowledgeGraphPage() {
   const [graph, setGraph] = useState<Graph | null>(null);
   const [loadingList, setLoadingList] = useState(true);
   const [loadingGraph, setLoadingGraph] = useState(false);
-  const [error, setError] = useState("");\n  const [related, setRelated] = useState<Related[]>([]);\n  const [evidenceFilter, setEvidenceFilter] = useState("all");
+  const [error, setError] = useState("");
+  const [related, setRelated] = useState<Related[]>([]);
+  const [evidenceFilter, setEvidenceFilter] = useState("all");
 
   useEffect(() => {
     const controller = new AbortController();

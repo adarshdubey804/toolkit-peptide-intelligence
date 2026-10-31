@@ -8,6 +8,7 @@ from sqlalchemy import text
 from .config import settings
 from .db import engine
 from .routers.peptides import router as peptide_router
+from .routers.research import router as research_router
 
 MIGRATION = Path(__file__).resolve().parents[1] / "database" / "migrations" / "001_initial_schema.sql"
 
@@ -35,6 +36,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(peptide_router)
+app.include_router(research_router)
 
 
 @app.get("/health", tags=["operations"])

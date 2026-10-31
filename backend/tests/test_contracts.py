@@ -664,3 +664,14 @@ def test_related_peptide_graph_route_uses_verified_shared_evidence():
     assert "peptide_pathway_evidence" in source
     assert "review_status='verified'" in source
     assert "clinical interchangeability" in source
+
+
+def test_peptide_comparison_route_is_verified_and_bounded():
+    from app.routers import peptides
+    from fastapi.routing import APIRoute
+    route = next(r for r in peptides.router.routes if isinstance(r, APIRoute) and r.path == "/api/v1/peptides/compare")
+    assert "GET" in route.methods
+    source = __import__("inspect").getsource(peptides.compare_peptides)
+    assert "review_status='verified'" in source
+    assert "len(set(ids))" in source
+    assert "clinical-trial registry" in source

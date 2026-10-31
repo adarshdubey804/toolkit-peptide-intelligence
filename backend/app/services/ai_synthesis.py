@@ -36,6 +36,7 @@ def _safe_citations(citations: list[dict]) -> list[dict]:
             "overall_status": str(item.get("overall_status") or "")[:100],
             "organism": str(item.get("organism") or "")[:150],
             "experimental_methods": str(item.get("experimental_methods") or "")[:500],
+            "evidence_summary": str(item.get("evidence_summary") or "")[:4000],
         })
     return safe
 

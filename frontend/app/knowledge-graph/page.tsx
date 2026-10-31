@@ -12,6 +12,9 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000"
 const nodeColors: Record<string, string> = {
   peptide: "#34d399", sequence: "#60a5fa", target: "#c084fc",
   pathway: "#fbbf24", structure: "#22d3ee", evidence_claim: "#fb923c", publication: "#f472b6",
+  analytical_method: "#818cf8", formulation: "#fb923c", stability_observation: "#facc15",
+  process_knowledge: "#2dd4bf", process_stage: "#14b8a6", interaction_assessment: "#e879f9",
+  evidence_appraisal: "#a3e635", source: "#94a3b8",
 };
 
 export default function KnowledgeGraphPage() {
@@ -67,7 +70,7 @@ export default function KnowledgeGraphPage() {
     <header className="mt-9 max-w-3xl">
       <p className="accent text-xs tracking-[.2em]">CONNECTED SCIENTIFIC INTELLIGENCE</p>
       <h1 className="mt-3 text-4xl font-semibold md:text-5xl">Peptide knowledge graph</h1>
-      <p className="muted mt-4 leading-7">Explore curator-verified connections between peptide identity, sequences, targets, pathways, structures, evidence claims and publications.</p>
+      <p className="muted mt-4 leading-7">Explore curator-verified connections across peptide identity, sequences, targets, pathways, structures, publications, analytical methods, formulation observations, process knowledge and molecular interaction assessments.</p>
     </header>
 
     <section className="panel mt-8 p-5">

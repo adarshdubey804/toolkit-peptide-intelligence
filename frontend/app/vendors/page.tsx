@@ -12,6 +12,7 @@ type PeptideOption = { id: string; preferred_name: string };
 type MethodOption = { id: string; method_name: string };
 type LinkReview = { id: string; service_id: string; legal_name: string; service_name: string; relationship_type: string; evidence_scope: string; limitations: string; peptide_id?: string; peptide_name?: string; method_id?: string; method_name?: string; source_name: string; source_identifier: string; source_url: string };
 type CertificationReview = { id: string; vendor_id: string; legal_name: string; certification_name: string; issuing_body: string; certificate_reference: string; scope: string; valid_from?: string; valid_until?: string; source_name?: string; source_identifier?: string; source_url?: string };
+type VendorSubmissionOption = { id: string; legal_name: string; review_status: string; verification_status: string };
 
 export default function VendorsPage() {
   const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -24,6 +25,7 @@ export default function VendorsPage() {
   const [linkReviews, setLinkReviews] = useState<LinkReview[]>([]);
   const [linkRationales, setLinkRationales] = useState<Record<string,string>>({});
   const [certificationReviews, setCertificationReviews] = useState<CertificationReview[]>([]);
+  const [myVendorSubmissions, setMyVendorSubmissions] = useState<VendorSubmissionOption[]>([]);
   const [certificationRationales, setCertificationRationales] = useState<Record<string,string>>({});
   const [certificationForm, setCertificationForm] = useState({vendor_id:"",certification_name:"",issuing_body:"",certificate_reference:"",scope:"",valid_from:"",valid_until:"",source_name:"",source_identifier:"",source_url:""});
   const [linkForm, setLinkForm] = useState({ service_id:"", relationship_type:"peptide_supply", peptide_id:"", method_id:"", evidence_scope:"", limitations:"", source_name:"", source_identifier:"", source_url:"" });
@@ -60,6 +62,8 @@ export default function VendorsPage() {
       if (!response.ok) throw new Error(data.detail || "Sign in failed.");
       setToken(data.access_token); setRole(data.user.role); setPassword("");
       setMessage("Signed in as " + data.user.role + ".");
+      await loadMySubmissions(data.access_token);
+      if (["organization_admin","curator","reviewer"].includes(data.user.role)) await loadReviewsWithToken(data.access_token);
     } catch (e) { setError(e instanceof Error ? e.message : "Sign in failed."); }
     finally { setBusy(false); }
   }
@@ -72,9 +76,27 @@ export default function VendorsPage() {
       if (!response.ok) throw new Error(data.detail || "Vendor submission failed.");
       setMessage("Vendor submitted for curator review. It is not yet visible in the public directory.");
       setForm({ legal_name:"", website_url:"", country_code:"", vendor_type:"analytical_laboratory", source_name:"", source_identifier:"", source_url:"", evidence_scope:"" });
-      await loadReviews();
+      await loadMySubmissions(token);
+      if (["organization_admin","curator","reviewer"].includes(role)) await loadReviews();
     } catch (e) { setError(e instanceof Error ? e.message : "Vendor submission failed."); }
     finally { setBusy(false); }
+  }
+
+  async function loadMySubmissions(authToken: string = token) {
+    if (!authToken) return;
+    try {
+      const response = await fetch(API + "/api/v1/vendors/my-submissions", {headers:{Authorization:"Bearer "+authToken}});
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Your vendor submissions could not be loaded.");
+      setMyVendorSubmissions(data.items || []);
+    } catch(e) { setError(e instanceof Error ? e.message : "Vendor submissions request failed."); }
+  }
+
+  async function loadReviewsWithToken(authToken: string) {
+    const response = await fetch(API + "/api/v1/vendors/reviews", {headers:{Authorization:"Bearer "+authToken}});
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Vendor review queue unavailable.");
+    setReviews(data.items || []);
   }
 
   async function loadReviews() {
@@ -270,7 +292,7 @@ export default function VendorsPage() {
         <h2 className="text-xl font-semibold">Submit certification evidence</h2>
         <p className="muted mt-2 text-xs">Attach certification claims to your own vendor submission while it is under identity review. Every certificate is independently reviewed after the vendor is verified.</p>
         <form onSubmit={submitCertification} className="mt-4 space-y-3">
-          <label className="block"><span className={label}>Your submitted vendor</span><select required className={field} value={certificationForm.vendor_id} onChange={e=>setCertificationForm(prev=>({...prev,vendor_id:e.target.value}))}><option value="">Select pending vendor submission</option>{reviews.map(v=><option key={v.id} value={v.id}>{v.legal_name}</option>)}</select></label>
+          <label className="block"><span className={label}>Your submitted vendor</span><select required className={field} value={certificationForm.vendor_id} onChange={e=>setCertificationForm(prev=>({...prev,vendor_id:e.target.value}))}><option value="">Select pending vendor submission</option>{myVendorSubmissions.filter(v=>v.review_status==="in_review").map(v=><option key={v.id} value={v.id}>{v.legal_name}</option>)}</select></label>
           {([["certification_name","Certification name"],["issuing_body","Issuing body"],["certificate_reference","Certificate / registration reference"],["scope","Certified scope and covered site"],["valid_from","Valid from"],["valid_until","Valid until"],["source_name","Evidence source name"],["source_identifier","Source identifier"],["source_url","Original source URL"]] as const).map(([key,title])=><label key={key} className="block"><span className={label}>{title}</span>{key==="scope"?<textarea required minLength={5} rows={3} className={field} value={certificationForm[key]} onChange={e=>setCertificationForm(prev=>({...prev,[key]:e.target.value}))}/>:<input required={key!=="valid_from"&&key!=="valid_until"} type={key==="valid_from"||key==="valid_until"?"date":"text"} className={field} value={certificationForm[key]} onChange={e=>setCertificationForm(prev=>({...prev,[key]:e.target.value}))}/>}</label>)}
           <button disabled={busy||!certificationForm.vendor_id} className="rounded-full bg-emerald-400 px-5 py-3 text-sm font-semibold text-slate-950">Submit certificate for independent review</button>
         </form>

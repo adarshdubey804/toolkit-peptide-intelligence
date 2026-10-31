@@ -81,7 +81,7 @@ def test_clinical_trials_normalization_preserves_source_and_evidence_state():
 
 def test_provenance_migration_is_present_and_applied_in_development_order():
     migrations = sorted(path.name for path in MIGRATIONS_DIR.glob("*.sql"))
-    assert migrations == ["001_initial_schema.sql", "002_provenance_curation.sql"]
+    assert migrations == ["001_initial_schema.sql", "002_provenance_curation.sql", "003_authentication.sql"]
     sql = (MIGRATIONS_DIR / "002_provenance_curation.sql").read_text(encoding="utf-8")
     assert "source_record_versions" in sql
     assert "external_entity_links" in sql
@@ -211,3 +211,24 @@ def test_pubmed_abstract_parser_handles_structured_sections():
 def test_pubmed_abstract_parser_allows_records_without_abstracts():
     from app.integrations.pubmed import parse_pubmed_abstracts
     assert parse_pubmed_abstracts("<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>9</PMID></MedlineCitation></PubmedArticle></PubmedArticleSet>") == {}
+
+
+def test_authentication_routes_and_password_schema_are_registered():
+    paths = app.openapi()["paths"]
+    assert "/api/v1/auth/register" in paths
+    assert "/api/v1/auth/login" in paths
+    assert "/api/v1/auth/me" in paths
+    assert "post" in paths["/api/v1/auth/register"]
+    auth_sql = (MIGRATIONS_DIR / "003_authentication.sql").read_text(encoding="utf-8")
+    assert "password_hash" in auth_sql
+    assert "uq_user_profiles_email_lower" in auth_sql
+    assert "is_active" in auth_sql
+
+
+def test_auth_registration_requires_long_password_and_valid_email():
+    from app.routers.auth import RegisterRequest
+    import pytest
+    with pytest.raises(Exception):
+        RegisterRequest(email="not-an-email", password="short", display_name="Test User", organization_name="Test Lab")
+    with pytest.raises(Exception):
+        RegisterRequest(email="test@example.org", password="short", display_name="Test User", organization_name="Test Lab")

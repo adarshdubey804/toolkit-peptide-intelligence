@@ -23,6 +23,13 @@ Scientific intelligence for peptide research and pharmaceutical development, bui
 
 Development startup applies all ordered SQL migrations in `database/migrations`.
 
+## Persistent agent research sessions
+
+- Migration 012 adds organization- and user-scoped `agent_sessions` and `agent_session_messages` tables.
+- Authenticated endpoints: GET/POST `/api/v1/agents/sessions`, GET `/api/v1/agents/sessions/{session_id}`, POST `/api/v1/agents/sessions/{session_id}/messages`, and PATCH `/api/v1/agents/sessions/{session_id}/archive`.
+- Agent messages retain the question, retrieval response, source citation list and workflow metadata. Users can attach an exact verified peptide UUID to include its curator-verified profile and claims in session context.
+- Frontend workspace: `/agent-workspace`. Sessions are currently private to their creator even when associated with an organization/project; cross-member collaboration and generative chat are not implemented.
+
 ## Specialized research agents
 
 - GET `/api/v1/agents` lists nine specialized research workflows: peptide literature, sequence, structure, target interaction, analytical methods, formulation, process development, regulatory/quality and scientific review.

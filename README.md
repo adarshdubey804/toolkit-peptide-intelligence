@@ -5,7 +5,7 @@ Scientific intelligence for peptide research and pharmaceutical development, bui
 ## Current foundation
 
 - Next.js frontend with peptide directory, scientific profile views, interactive knowledge graph and multi-source research workspace and retrieval-only research assistant.
-- FastAPI backend with JWT authentication, organization registration, membership-based roles, organization-scoped research projects, researcher profiles, verified-record catalogue search, pagination, profile detail, verified peptide knowledge graph and readiness endpoints.
+- FastAPI backend with JWT authentication, organization registration, membership-based roles, organization-scoped research projects, scientific review submission/assignment/decision APIs, append-only curation decisions, researcher profiles, verified-record catalogue search, pagination, profile detail, verified peptide knowledge graph and readiness endpoints.
 - PostgreSQL + pgvector schema for peptide identity, sequences, chemical properties, structures, targets, pathways, publications, research studies, evidence claims, analytical methods, vendor records, certifications and regulatory status.
 - Read-only discovery integrations with PubMed abstract retrieval: PubMed, ClinicalTrials.gov API v2, UniProtKB, RCSB PDB and PubChem.
 - Additive provenance and curation schema: source content hashes and versions, cross-database candidate entity links, review queue and append-only editorial decisions.
@@ -33,7 +33,7 @@ Development startup applies all ordered SQL migrations in `database/migrations`.
 
 Organization workspace endpoints include `GET /api/v1/organizations/me`, `GET /api/v1/organizations/members`, `PATCH /api/v1/organizations/members/{user_id}/role`, `POST /api/v1/organizations/projects` and `GET /api/v1/organizations/projects`. Membership roles are organization_admin, curator, reviewer, researcher and viewer. Project visibility is organization-wide or private; private projects are visible only to their creator or explicitly assigned project members. Membership and project access is scoped to the caller's active organization.
 
-This is an initial authentication foundation, not a complete production identity system: email verification, password reset, refresh-token rotation/revocation, MFA, invitation workflows, edge-level rate limiting and security review remain required. Existing research/catalogue routes remain public; authentication is not yet enforced on all catalogue, research discovery or curation operations. Organization workspace endpoints require authentication. Production deployments must run reviewed, versioned migrations as a separate deployment step.
+This is an initial authentication foundation, not a complete production identity system: email verification, password reset, refresh-token rotation/revocation, MFA, invitation workflows, edge-level rate limiting and security review remain required. Existing research/catalogue routes remain public; authentication is not yet enforced on all catalogue, research discovery or curation operations. Organization workspace and curation endpoints require authentication. Curation submission is limited to organization admins, researchers and curators; review assignment/decisions are limited to organization admins, curators and reviewers. Submitters cannot decide their own reviews, and decision history is protected against update/delete at the database layer. Production deployments must run reviewed, versioned migrations as a separate deployment step.
 
 ## API routes
 
@@ -42,6 +42,10 @@ This is an initial authentication foundation, not a complete production identity
 - GET /api/v1/peptides — curator-verified catalogue search.
 - GET /api/v1/peptides/{id} — verified profile; ID must be a UUID.
 - GET /api/v1/peptides/{id}/graph — curator-verified sequence, target, pathway, structure, claim and publication relationships.
+- POST /api/v1/curation/reviews — submit a peptide or evidence claim for review.
+- GET /api/v1/curation/reviews — list the current organization's submitted review queue for reviewers.
+- PATCH /api/v1/curation/reviews/{id}/assignment — assign an open review to an organization curator/reviewer.
+- POST /api/v1/curation/reviews/{id}/decisions — append a verified, rejected, needs-changes or archived decision with rationale.
 - GET /api/v1/research/workspace?q=... — parallel discovery across PubMed, ClinicalTrials.gov, UniProtKB and RCSB PDB; each source reports its own availability.
 - GET /api/v1/research/assistant/brief?question=... — source-grounded evidence retrieval brief with original-record citations and explicit limitations; retrieval-only.
 - POST /api/v1/research/assistant/synthesize — optional development-only AI synthesis over server-retrieved records; disabled by default and blocked outside development pending authentication and rate limiting.

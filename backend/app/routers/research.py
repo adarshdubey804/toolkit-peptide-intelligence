@@ -1,4 +1,5 @@
 import httpx
+from pydantic import BaseModel, Field
 from fastapi import APIRouter, HTTPException, Query
 
 from ..config import settings
@@ -219,3 +220,35 @@ async def research_assistant_brief(
             "Compare independent sources and preserve conflicting findings.",
         ],
     }
+
+
+
+class AssistantSynthesisRequest(BaseModel):
+    question: str = Field(min_length=8, max_length=500)
+    citations: list[dict] = Field(min_length=1, max_length=20)
+
+
+@router.post("/assistant/synthesize")
+async def synthesize_research_answer(request: AssistantSynthesisRequest):
+    """Development-only, source-constrained synthesis. Production access awaits authentication and rate limiting."""
+    if not settings.ai_synthesis_enabled or not settings.ai_api_key:
+        raise HTTPException(status_code=503, detail="AI synthesis is disabled or not configured.")
+    if settings.app_env != "development":
+        raise HTTPException(
+            status_code=503,
+            detail="AI synthesis is not enabled outside development until authenticated access and rate limiting are deployed.",
+        )
+
+    from ..services.ai_synthesis import synthesize_with_sources
+
+    try:
+        result = await synthesize_with_sources(
+            question=request.question,
+            citations=request.citations,
+            api_key=settings.ai_api_key,
+            api_base_url=settings.ai_api_base_url,
+            model=settings.ai_model,
+        )
+    except (httpx.HTTPError, ValueError) as exc:
+        raise HTTPException(status_code=502, detail="AI synthesis provider failed or returned an invalid response.") from exc
+    return result

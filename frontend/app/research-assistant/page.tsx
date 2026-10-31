@@ -15,7 +15,7 @@ type Citation = {
   organism?: string | null;
   experimental_methods?: string | null;
   evidence_summary?: string | null;
-  curation_status: string;
+  curation_status?: string;
 };
 type Brief = {
   mode: string;

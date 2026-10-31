@@ -15,6 +15,7 @@ from .routers.enrichment import router as enrichment_router
 from .routers.organizations import router as organization_router
 from .routers.peptides import router as peptide_router
 from .routers.research import router as research_router
+from .routers.vendors import router as vendor_router
 
 _APP_ROOT = Path(__file__).resolve().parents[1]
 MIGRATIONS_DIR = _APP_ROOT / "database" / "migrations"
@@ -53,6 +54,7 @@ app.include_router(enrichment_router)
 app.include_router(organization_router)
 app.include_router(peptide_router)
 app.include_router(research_router)
+app.include_router(vendor_router)
 
 
 @app.get("/health", tags=["operations"])

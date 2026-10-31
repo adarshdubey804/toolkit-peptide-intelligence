@@ -890,7 +890,7 @@ class _FakeMigrationConnection:
         self.ledger = {}
         self.executed_sql = []
 
-    def exec_driver_sql(self, statement):
+    def exec_driver_sql(self, statement, execution_options=None):
         self.executed_sql.append(statement)
 
     def execute(self, statement, params=None):

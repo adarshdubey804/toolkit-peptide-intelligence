@@ -1,9 +1,10 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 from .config import settings
 from .db import engine
@@ -24,7 +25,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Toolkit Peptide Intelligence API",
-    version="0.2.0",
+    version="0.2.1",
     description="Source-traceable peptide research information API; not a clinical decision system.",
     lifespan=lifespan,
 )
@@ -41,11 +42,14 @@ app.include_router(research_router)
 
 @app.get("/health", tags=["operations"])
 def health():
-    return {"status": "ok", "service": "toolkit-peptide-intelligence-api", "version": "0.2.0"}
+    return {"status": "ok", "service": "toolkit-peptide-intelligence-api", "version": "0.2.1"}
 
 
 @app.get("/ready", tags=["operations"])
 def readiness():
-    with engine.connect() as connection:
-        connection.execute(text("SELECT 1"))
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+    except SQLAlchemyError as exc:
+        raise HTTPException(status_code=503, detail="Database is not ready.") from exc
     return {"status": "ready", "database": "reachable"}

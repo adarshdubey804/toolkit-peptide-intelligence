@@ -112,6 +112,9 @@ def verified_vendor_directory(
                    'issuing_body', vc.issuing_body,
                    'certificate_reference', vc.certificate_reference,
                    'scope', vc.scope,
+                   'site_id', cert_site.id,
+                   'site_name', cert_site.site_name,
+                   'site_address', cert_site.address,
                    'valid_from', vc.valid_from,
                    'valid_until', vc.valid_until,
                    'verification_status', vc.verification_status,
@@ -145,6 +148,11 @@ def verified_vendor_directory(
         LEFT JOIN vendor_services vs ON vs.vendor_id=v.id AND vs.review_status='verified'
         LEFT JOIN vendor_sites service_site ON service_site.id=vs.site_id AND service_site.review_status='verified'
         LEFT JOIN vendor_certifications vc ON vc.vendor_id=v.id AND vc.verification_status='verified'
+            AND (vc.site_id IS NULL OR EXISTS (
+                SELECT 1 FROM vendor_sites verified_cert_site
+                WHERE verified_cert_site.id=vc.site_id AND verified_cert_site.review_status='verified'
+            ))
+        LEFT JOIN vendor_sites cert_site ON cert_site.id=vc.site_id AND cert_site.review_status='verified'
         LEFT JOIN source_records cert_source ON cert_source.id=vc.verification_source_id
         WHERE v.review_status='verified' AND v.verification_status='verified'
           AND (:q IS NULL OR v.legal_name ILIKE '%' || :q || '%' OR v.vendor_type ILIKE '%' || :q || '%')
@@ -430,6 +438,7 @@ class VendorServiceEvidenceLinkDecision(BaseModel):
 
 
 class VendorCertificationSubmission(BaseModel):
+    site_id: UUID | None = None
     certification_name: str = Field(min_length=2, max_length=200)
     issuing_body: str = Field(min_length=2, max_length=200)
     certificate_reference: str = Field(min_length=2, max_length=200)
@@ -453,21 +462,41 @@ def submit_vendor_certification(
         raise HTTPException(status_code=403, detail="Your role cannot submit certification evidence.")
     if payload.valid_from and payload.valid_until and payload.valid_until < payload.valid_from:
         raise HTTPException(status_code=422, detail="Certification expiry date cannot precede its start date.")
-    vendor = db.execute(text("SELECT id, submitted_by FROM vendors WHERE id=:id AND organization_id=:org AND review_status='in_review'"),
-                        {"id": vendor_id, "org": organization_id}).mappings().first()
-    if not vendor or str(vendor["submitted_by"]) != current_user["id"]:
-        raise HTTPException(status_code=404, detail="Your submitted vendor record was not found.")
+    vendor = db.execute(text("""
+        SELECT id, submitted_by, review_status, verification_status
+        FROM vendors
+        WHERE id=:id AND organization_id=:org
+          AND review_status IN ('in_review','verified')
+    """), {"id": vendor_id, "org": organization_id}).mappings().first()
+    if not vendor:
+        raise HTTPException(status_code=404, detail="Vendor record was not found in this organization.")
+    if vendor["review_status"] == "in_review":
+        if str(vendor["submitted_by"]) != current_user["id"] or payload.site_id is not None:
+            raise HTTPException(status_code=409, detail="A pending vendor certification must be submitted by its vendor submitter and cannot claim an unverified facility.")
+    else:
+        if not payload.site_id:
+            raise HTTPException(status_code=422, detail="A certification for a verified vendor must identify its independently verified facility.")
+        site = db.execute(text("""
+            SELECT id FROM vendor_sites
+            WHERE id=:site AND vendor_id=:vendor AND organization_id=:org
+              AND review_status='verified'
+        """), {"site": payload.site_id, "vendor": vendor_id, "org": organization_id}).mappings().first()
+        if not site:
+            raise HTTPException(status_code=422, detail="Certification facility must be independently verified and belong to this vendor.")
     source_id = _source_record(db, payload.source_name, payload.source_identifier, str(payload.source_url))
     certification = db.execute(text("""
         INSERT INTO vendor_certifications
-            (vendor_id, certification_name, issuing_body, certificate_reference, scope,
-             valid_from, valid_until, verification_source_id, verification_status)
-        VALUES (:vendor, :name, :issuer, :reference, :scope, :valid_from, :valid_until, :source, 'unverified')
-        RETURNING id, certification_name, issuing_body, scope, valid_from, valid_until, verification_status
-    """), {"vendor": vendor_id, "name": payload.certification_name.strip(),
+            (vendor_id, site_id, certification_name, issuing_body, certificate_reference, scope,
+             valid_from, valid_until, verification_source_id, verification_status, submitted_by)
+        VALUES (:vendor, :site, :name, :issuer, :reference, :scope,
+                :valid_from, :valid_until, :source, 'unverified', :submitter)
+        RETURNING id, vendor_id, site_id, certification_name, issuing_body, scope,
+                  valid_from, valid_until, verification_status
+    """), {"vendor": vendor_id, "site": payload.site_id, "name": payload.certification_name.strip(),
            "issuer": payload.issuing_body.strip(), "reference": payload.certificate_reference.strip(),
            "scope": payload.scope.strip(), "valid_from": payload.valid_from,
-           "valid_until": payload.valid_until, "source": source_id}).mappings().one()
+           "valid_until": payload.valid_until, "source": source_id,
+           "submitter": current_user["id"]}).mappings().one()
     db.execute(text("""
         INSERT INTO vendor_sources (vendor_id, source_record_id, evidence_scope)
         VALUES (:vendor, :source, :scope) ON CONFLICT DO NOTHING
@@ -501,13 +530,16 @@ def vendor_certification_review_queue(
         SELECT vc.id, vc.vendor_id, v.legal_name, vc.certification_name,
                vc.issuing_body, vc.certificate_reference, vc.scope,
                vc.valid_from, vc.valid_until, vc.verification_status,
+               vc.site_id, cert_site.site_name, cert_site.address AS site_address,
                sr.source_name, sr.source_identifier, sr.source_url,
                v.submitted_by
         FROM vendor_certifications vc
         JOIN vendors v ON v.id=vc.vendor_id
+        LEFT JOIN vendor_sites cert_site ON cert_site.id=vc.site_id AND cert_site.review_status='verified'
         LEFT JOIN source_records sr ON sr.id=vc.verification_source_id
         WHERE v.organization_id=:org AND vc.verification_status='unverified'
           AND v.review_status='verified' AND v.verification_status='verified'
+          AND (vc.site_id IS NULL OR cert_site.id IS NOT NULL)
         ORDER BY vc.id LIMIT :limit
     """), {"org": organization_id, "limit": limit}).mappings().all()
     return {"items": [dict(row) for row in rows], "count": len(rows),
@@ -526,11 +558,13 @@ def decide_vendor_certification(
         raise HTTPException(status_code=403, detail="Curator or reviewer permission is required.")
     certification = db.execute(text("""
         SELECT vc.id, vc.vendor_id, vc.verification_source_id, vc.verification_status,
-               v.submitted_by
+               COALESCE(vc.submitted_by, v.submitted_by) AS submitted_by
         FROM vendor_certifications vc
         JOIN vendors v ON v.id=vc.vendor_id
+        LEFT JOIN vendor_sites cert_site ON cert_site.id=vc.site_id AND cert_site.review_status='verified'
         WHERE vc.id=:id AND v.organization_id=:org
           AND v.review_status='verified' AND v.verification_status='verified'
+          AND (vc.site_id IS NULL OR cert_site.id IS NOT NULL)
         FOR UPDATE OF vc
     """), {"id": certification_id, "org": organization_id}).mappings().first()
     if not certification or certification["verification_status"] != "unverified":

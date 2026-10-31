@@ -101,8 +101,58 @@ def duplicate_queue(user:Annotated[dict,Depends(get_current_user)],db:Annotated[
 @router.post("/duplicate-candidates/{candidate_id}/decision")
 def decide_duplicate(candidate_id:UUID,payload:DuplicateDecision,user:Annotated[dict,Depends(get_current_user)],db:Annotated[Session,Depends(get_db)]):
     org=reviewer(user,db)
-    row=db.execute(text("UPDATE publication_duplicate_candidates SET status=:status,reviewed_by=:reviewer,reviewed_at=now() WHERE id=:id AND organization_id=:org AND status='needs_review' RETURNING id,status,reviewed_by,reviewed_at"),{"status":payload.status,"reviewer":user["id"],"id":candidate_id,"org":org}).mappings().first()
-    if not row: raise HTTPException(404,"Open duplicate candidate not found.")
+    candidate=db.execute(text("SELECT id,status FROM publication_duplicate_candidates WHERE id=:id AND organization_id=:org FOR UPDATE"),{"id":candidate_id,"org":org}).mappings().first()
+    if not candidate or candidate["status"]!="needs_review": raise HTTPException(404,"Open duplicate candidate not found.")
+    db.execute(text("""INSERT INTO publication_duplicate_decisions(organization_id,candidate_id,decision,rationale,reviewer_id)
+      VALUES(:org,:candidate,:decision,:rationale,:reviewer)"""),{"org":org,"candidate":candidate_id,"decision":payload.status,"rationale":payload.rationale.strip(),"reviewer":user["id"]})
+    row=db.execute(text("UPDATE publication_duplicate_candidates SET status=:status,reviewed_by=:reviewer,reviewed_at=now() WHERE id=:id AND organization_id=:org RETURNING id,status,reviewed_by,reviewed_at"),{"status":payload.status,"reviewer":user["id"],"id":candidate_id,"org":org}).mappings().first()
     db.execute(text("INSERT INTO audit_events(actor_user_id,organization_id,action,entity_type,entity_id,event_metadata) VALUES(:actor,:org,'publication_duplicate_reviewed','publication_duplicate_candidate',:id,jsonb_build_object('status',:status,'rationale',:rationale))"),{"actor":user["id"],"org":org,"id":candidate_id,"status":payload.status,"rationale":payload.rationale.strip()})
     db.commit()
     return dict(row)
+
+
+class AppraisalDecision(BaseModel):
+    decision:Literal["accepted","rejected","superseded"]
+    rationale:str=Field(min_length=20,max_length=4000)
+
+
+@router.post("/appraisals/{appraisal_id}/decision")
+def decide_appraisal(appraisal_id:UUID,payload:AppraisalDecision,user:Annotated[dict,Depends(get_current_user)],db:Annotated[Session,Depends(get_db)]):
+    org=reviewer(user,db)
+    appraisal=db.execute(text("""
+      SELECT id,reviewer_id,appraisal_status FROM evidence_appraisals
+      WHERE id=:id AND organization_id=:org FOR UPDATE
+    """),{"id":appraisal_id,"org":org}).mappings().first()
+    if not appraisal: raise HTTPException(404,"Appraisal not found in this organization.")
+    if str(appraisal["reviewer_id"])==str(user["id"]):
+        raise HTTPException(409,"An appraisal must be independently reviewed by a different reviewer.")
+    if appraisal["appraisal_status"]!="in_review":
+        raise HTTPException(409,"Only appraisals awaiting review can receive a decision.")
+    db.execute(text("""
+      INSERT INTO evidence_appraisal_decisions(organization_id,appraisal_id,decision,rationale,reviewer_id)
+      VALUES(:org,:appraisal,:decision,:rationale,:reviewer)
+    """),{"org":org,"appraisal":appraisal_id,"decision":payload.decision,"rationale":payload.rationale.strip(),"reviewer":user["id"]})
+    db.execute(text("UPDATE evidence_appraisals SET appraisal_status=:decision WHERE id=:id AND organization_id=:org"),{"decision":payload.decision,"id":appraisal_id,"org":org})
+    db.execute(text("""INSERT INTO audit_events(actor_user_id,organization_id,action,entity_type,entity_id,event_metadata)
+      VALUES(:actor,:org,'evidence_appraisal_decided','evidence_appraisal',:id,jsonb_build_object('decision',:decision))"""),
+      {"actor":user["id"],"org":org,"id":appraisal_id,"decision":payload.decision})
+    db.commit()
+    return {"appraisal_id":str(appraisal_id),"decision":payload.decision,"reviewer_id":str(user["id"])}
+
+
+@router.get("/appraisals/{appraisal_id}/decisions")
+def appraisal_decision_history(appraisal_id:UUID,user:Annotated[dict,Depends(get_current_user)],db:Annotated[Session,Depends(get_db)]):
+    org=reviewer(user,db)
+    rows=db.execute(text("""SELECT id,decision,rationale,reviewer_id,created_at
+      FROM evidence_appraisal_decisions WHERE appraisal_id=:id AND organization_id=:org
+      ORDER BY created_at ASC"""),{"id":appraisal_id,"org":org}).mappings().all()
+    return {"items":[dict(row) for row in rows],"count":len(rows)}
+
+
+@router.get("/duplicate-candidates/{candidate_id}/decisions")
+def duplicate_decision_history(candidate_id:UUID,user:Annotated[dict,Depends(get_current_user)],db:Annotated[Session,Depends(get_db)]):
+    org=reviewer(user,db)
+    rows=db.execute(text("""SELECT id,decision,rationale,reviewer_id,created_at
+      FROM publication_duplicate_decisions WHERE candidate_id=:id AND organization_id=:org
+      ORDER BY created_at ASC"""),{"id":candidate_id,"org":org}).mappings().all()
+    return {"items":[dict(row) for row in rows],"count":len(rows)}

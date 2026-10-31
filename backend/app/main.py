@@ -58,7 +58,7 @@ def apply_development_migrations(connection, migrations_dir: Path = MIGRATIONS_D
                 )
             continue
 
-        connection.exec_driver_sql(sql)
+        connection.exec_driver_sql(sql, execution_options={"no_parameters": True})
         connection.execute(
             text("""
                 INSERT INTO toolkit_schema_migrations (version, checksum)

@@ -81,7 +81,7 @@ def test_clinical_trials_normalization_preserves_source_and_evidence_state():
 
 def test_provenance_migration_is_present_and_applied_in_development_order():
     migrations = sorted(path.name for path in MIGRATIONS_DIR.glob("*.sql"))
-    assert migrations == ["001_initial_schema.sql", "002_provenance_curation.sql", "003_authentication.sql"]
+    assert migrations == ["001_initial_schema.sql", "002_provenance_curation.sql", "003_authentication.sql", "004_organization_workspaces.sql"]
     sql = (MIGRATIONS_DIR / "002_provenance_curation.sql").read_text(encoding="utf-8")
     assert "source_record_versions" in sql
     assert "external_entity_links" in sql
@@ -232,3 +232,24 @@ def test_auth_registration_requires_long_password_and_valid_email():
         RegisterRequest(email="not-an-email", password="short", display_name="Test User", organization_name="Test Lab")
     with pytest.raises(Exception):
         RegisterRequest(email="test@example.org", password="short", display_name="Test User", organization_name="Test Lab")
+
+
+def test_organization_workspace_routes_and_membership_migration_are_registered():
+    paths = app.openapi()["paths"]
+    assert "/api/v1/organizations/me" in paths
+    assert "/api/v1/organizations/members" in paths
+    assert "/api/v1/organizations/members/{user_id}/role" in paths
+    assert "/api/v1/organizations/projects" in paths
+    sql = (MIGRATIONS_DIR / "004_organization_workspaces.sql").read_text(encoding="utf-8")
+    assert "organization_memberships" in sql
+    assert "research_projects" in sql
+    assert "project_memberships" in sql
+
+
+def test_project_visibility_and_role_update_are_constrained():
+    from app.routers.organizations import ProjectCreate, RoleUpdate
+    import pytest
+    with pytest.raises(Exception):
+        ProjectCreate(name="Valid project", visibility="public")
+    with pytest.raises(Exception):
+        RoleUpdate(role="superadmin")

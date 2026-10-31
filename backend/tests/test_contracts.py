@@ -188,3 +188,14 @@ def test_ai_synthesis_is_opt_in_and_development_guarded():
     assert "citations" not in schema.get("properties", {})
     from app.config import settings
     assert settings.ai_synthesis_enabled is False
+
+
+def test_ai_synthesis_service_rejects_untrusted_or_invalid_source_urls():
+    from app.services.ai_synthesis import _safe_citations
+    records = _safe_citations([
+        {"citation_id": "pubmed:1", "url": "https://pubmed.ncbi.nlm.nih.gov/1/", "title": "Valid"},
+        {"citation_id": "fake:2", "url": "http://example.org/2", "title": "Insecure"},
+        {"citation_id": "fake:3", "url": "javascript:alert(1)", "title": "Invalid"},
+    ])
+    assert len(records) == 1
+    assert records[0]["citation_id"] == "pubmed:1"

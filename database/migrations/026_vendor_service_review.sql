@@ -5,6 +5,12 @@ ALTER TABLE vendor_services
     ADD COLUMN IF NOT EXISTS reviewed_by UUID REFERENCES user_profiles(id),
     ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;
 
+-- Pre-existing service rows have no attributable submitter; keep them out of review
+-- rather than allowing an unknown submitter to bypass self-review prevention.
+UPDATE vendor_services
+SET review_status='draft'
+WHERE submitted_by IS NULL;
+
 CREATE INDEX IF NOT EXISTS idx_vendor_services_review
     ON vendor_services(review_status, vendor_id);
 

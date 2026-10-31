@@ -12,7 +12,7 @@ type PeptideOption = { id: string; preferred_name: string };
 type MethodOption = { id: string; method_name: string };
 type LinkReview = { id: string; service_id: string; legal_name: string; service_name: string; site_name?: string; site_address?: string; relationship_type: string; evidence_scope: string; limitations: string; peptide_id?: string; peptide_name?: string; method_id?: string; method_name?: string; source_name: string; source_identifier: string; source_url: string };
 type CertificationReview = { id: string; vendor_id: string; legal_name: string; certification_name: string; issuing_body: string; certificate_reference: string; scope: string; site_id?: string|null; site_name?: string|null; site_address?: string|null; valid_from?: string; valid_until?: string; source_name?: string; source_identifier?: string; source_url?: string };
-type VendorSubmissionOption = { id: string; legal_name: string; review_status: string; verification_status: string };
+type VendorSubmissionOption = { id: string; legal_name: string; review_status: string; verification_status: string; sites: {id:string;site_name:string;address:string;country_code:string;site_scope:string}[] };
 type VendorSiteReview = { id: string; vendor_id: string; legal_name: string; site_name: string; address: string; country_code: string; site_scope: string; source_name: string; source_identifier: string; source_url: string };
 
 export default function VendorsPage() {
@@ -27,6 +27,7 @@ export default function VendorsPage() {
   const [linkRationales, setLinkRationales] = useState<Record<string,string>>({});
   const [certificationReviews, setCertificationReviews] = useState<CertificationReview[]>([]);
   const [myVendorSubmissions, setMyVendorSubmissions] = useState<VendorSubmissionOption[]>([]);
+  const [organizationVendors, setOrganizationVendors] = useState<VendorSubmissionOption[]>([]);
   const [certificationRationales, setCertificationRationales] = useState<Record<string,string>>({});
   const [siteReviews, setSiteReviews] = useState<VendorSiteReview[]>([]);
   const [siteRationales, setSiteRationales] = useState<Record<string,string>>({});
@@ -67,6 +68,7 @@ export default function VendorsPage() {
       setToken(data.access_token); setRole(data.user.role); setPassword("");
       setMessage("Signed in as " + data.user.role + ".");
       await loadMySubmissions(data.access_token);
+      await loadOrganizationOptions(data.access_token);
       if (["organization_admin","curator","reviewer"].includes(data.user.role)) { await loadReviewsWithToken(data.access_token); await loadSiteReviews(data.access_token); }
     } catch (e) { setError(e instanceof Error ? e.message : "Sign in failed."); }
     finally { setBusy(false); }
@@ -84,6 +86,16 @@ export default function VendorsPage() {
       if (["organization_admin","curator","reviewer"].includes(role)) await loadReviews();
     } catch (e) { setError(e instanceof Error ? e.message : "Vendor submission failed."); }
     finally { setBusy(false); }
+  }
+
+  async function loadOrganizationOptions(authToken: string = token) {
+    if (!authToken) return;
+    try {
+      const response=await fetch(API+"/api/v1/vendors/organization-options",{headers:{Authorization:"Bearer "+authToken}});
+      const data=await response.json();
+      if(!response.ok)throw new Error(data.detail||"Organization vendor options unavailable.");
+      setOrganizationVendors(data.items||[]);
+    }catch(e){setError(e instanceof Error?e.message:"Organization vendor options request failed.");}
   }
 
   async function loadMySubmissions(authToken: string = token) {
@@ -336,7 +348,7 @@ export default function VendorsPage() {
         <h2 className="text-xl font-semibold">Register a vendor facility</h2>
         <p className="muted mt-2 text-xs">Facilities are separate records. Add the exact site address and the activities supported by the source; parent vendor approval does not automatically verify a facility.</p>
         <form onSubmit={submitVendorSite} className="mt-4 space-y-3">
-          <label className="block"><span className={label}>Your verified vendor</span><select required className={field} value={siteForm.vendor_id} onChange={e=>setSiteForm(prev=>({...prev,vendor_id:e.target.value}))}><option value="">Select your verified vendor</option>{myVendorSubmissions.filter(v=>v.review_status==="verified"&&v.verification_status==="verified").map(v=><option key={v.id} value={v.id}>{v.legal_name}</option>)}</select></label>
+          <label className="block"><span className={label}>Your verified vendor</span><select required className={field} value={siteForm.vendor_id} onChange={e=>setSiteForm(prev=>({...prev,vendor_id:e.target.value}))}><option value="">Select your verified vendor</option>{organizationVendors.filter(v=>v.review_status==="verified"&&v.verification_status==="verified").map(v=><option key={v.id} value={v.id}>{v.legal_name}</option>)}</select></label>
           {([["site_name","Facility / laboratory name"],["address","Full facility address"],["country_code","Country code (ISO 2-letter)"],["site_scope","What activities are performed at this site?"],["source_name","Evidence source name"],["source_identifier","Source identifier"],["source_url","Original source URL"]] as const).map(([key,title])=><label key={key} className="block"><span className={label}>{title}</span>{key==="site_scope"?<textarea required minLength={10} rows={3} className={field} value={siteForm[key]} onChange={e=>setSiteForm(prev=>({...prev,[key]:e.target.value}))}/>:<input required className={field} value={siteForm[key]} onChange={e=>setSiteForm(prev=>({...prev,[key]:e.target.value}))}/>}</label>)}
           <button disabled={busy||!siteForm.vendor_id} className="rounded-full bg-emerald-400 px-5 py-3 text-sm font-semibold text-slate-950">Submit facility for review</button>
         </form>
@@ -351,9 +363,9 @@ export default function VendorsPage() {
         <h2 className="text-xl font-semibold">Submit certification evidence</h2>
         <p className="muted mt-2 text-xs">Attach certification claims to your own vendor submission while it is under identity review. Every certificate is independently reviewed after the vendor is verified.</p>
         <form onSubmit={submitCertification} className="mt-4 space-y-3">
-          <label className="block"><span className={label}>Your submitted vendor</span><select required className={field} value={certificationForm.vendor_id} onChange={e=>setCertificationForm(prev=>({...prev,vendor_id:e.target.value,site_id:""}))}><option value="">Select your vendor submission</option>{myVendorSubmissions.filter(v=>v.review_status==="in_review"||v.review_status==="verified").map(v=><option key={v.id} value={v.id}>{v.legal_name} · {v.review_status==="verified"?"verified":"pending"}</option>)}</select></label>
-          {myVendorSubmissions.find(v=>v.id===certificationForm.vendor_id)?.review_status==="verified"&&<label className="block"><span className={label}>Verified facility covered by this certificate</span><select required className={field} value={certificationForm.site_id} onChange={e=>setCertificationForm(prev=>({...prev,site_id:e.target.value}))}><option value="">Select a verified facility</option>{(vendors.find(v=>v.id===certificationForm.vendor_id)?.sites||[]).map(site=><option key={site.id} value={site.id}>{site.site_name} · {site.address}</option>)}</select><span className="muted mt-1 block text-xs">If no facility appears, register and verify the facility first. Facility-level certificates cannot be submitted against an unverified site.</span></label>}
-          {myVendorSubmissions.find(v=>v.id===certificationForm.vendor_id)?.review_status==="in_review"&&<p className="muted text-xs">This certificate will be attached to the pending vendor identity record. Facility-specific certification evidence can be added after the facility is independently verified.</p>}
+          <label className="block"><span className={label}>Your submitted vendor</span><select required className={field} value={certificationForm.vendor_id} onChange={e=>setCertificationForm(prev=>({...prev,vendor_id:e.target.value,site_id:""}))}><option value="">Select your vendor submission</option>{organizationVendors.map(v=><option key={v.id} value={v.id}>{v.legal_name} · {v.review_status==="verified"?"verified":"pending"}</option>)}</select></label>
+          {organizationVendors.find(v=>v.id===certificationForm.vendor_id)?.review_status==="verified"&&<label className="block"><span className={label}>Verified facility covered by this certificate</span><select required className={field} value={certificationForm.site_id} onChange={e=>setCertificationForm(prev=>({...prev,site_id:e.target.value}))}><option value="">Select a verified facility</option>{(organizationVendors.find(v=>v.id===certificationForm.vendor_id)?.sites||[]).map(site=><option key={site.id} value={site.id}>{site.site_name} · {site.address}</option>)}</select><span className="muted mt-1 block text-xs">If no facility appears, register and verify the facility first. Facility-level certificates cannot be submitted against an unverified site.</span></label>}
+          {organizationVendors.find(v=>v.id===certificationForm.vendor_id)?.review_status==="in_review"&&<p className="muted text-xs">This certificate will be attached to the pending vendor identity record. Facility-specific certification evidence can be added after the facility is independently verified.</p>}
           {([["certification_name","Certification name"],["issuing_body","Issuing body"],["certificate_reference","Certificate / registration reference"],["scope","Certified scope and covered site"],["valid_from","Valid from"],["valid_until","Valid until"],["source_name","Evidence source name"],["source_identifier","Source identifier"],["source_url","Original source URL"]] as const).map(([key,title])=><label key={key} className="block"><span className={label}>{title}</span>{key==="scope"?<textarea required minLength={5} rows={3} className={field} value={certificationForm[key]} onChange={e=>setCertificationForm(prev=>({...prev,[key]:e.target.value}))}/>:<input required={key!=="valid_from"&&key!=="valid_until"} type={key==="valid_from"||key==="valid_until"?"date":"text"} className={field} value={certificationForm[key]} onChange={e=>setCertificationForm(prev=>({...prev,[key]:e.target.value}))}/>}</label>)}
           <button disabled={busy||!certificationForm.vendor_id} className="rounded-full bg-emerald-400 px-5 py-3 text-sm font-semibold text-slate-950">Submit certificate for independent review</button>
         </form>
@@ -368,8 +380,8 @@ export default function VendorsPage() {
         <p className="muted mt-2 text-xs">Only already verified vendors can receive new service claims. Each capability needs its own source and curator review.</p>
         <button type="button" onClick={()=>void loadDirectory()} className="mt-3 text-xs text-emerald-300">Load verified vendors</button>
         <form onSubmit={submitService} className="mt-4 space-y-3">
-          <label className="block"><span className={label}>Verified vendor</span><select className={field} required value={serviceForm.vendor_id} onChange={e=>setServiceForm(prev=>({...prev,vendor_id:e.target.value,site_id:""}))}><option value="">Select a verified vendor</option>{vendors.map(v=><option key={v.id} value={v.id}>{v.legal_name}</option>)}</select></label>
-          <label className="block"><span className={label}>Verified facility where this service is performed</span><select className={field} required value={serviceForm.site_id} onChange={e=>setServiceForm(prev=>({...prev,site_id:e.target.value}))}><option value="">Select a verified facility</option>{(vendors.find(v=>v.id===serviceForm.vendor_id)?.sites||[]).map(site=><option key={site.id} value={site.id}>{site.site_name} · {site.address}</option>)}</select></label>
+          <label className="block"><span className={label}>Verified vendor</span><select className={field} required value={serviceForm.vendor_id} onChange={e=>setServiceForm(prev=>({...prev,vendor_id:e.target.value,site_id:""}))}><option value="">Select a verified vendor</option>{organizationVendors.filter(v=>v.review_status==="verified"&&v.verification_status==="verified").map(v=><option key={v.id} value={v.id}>{v.legal_name}</option>)}</select></label>
+          <label className="block"><span className={label}>Verified facility where this service is performed</span><select className={field} required value={serviceForm.site_id} onChange={e=>setServiceForm(prev=>({...prev,site_id:e.target.value}))}><option value="">Select a verified facility</option>{(organizationVendors.find(v=>v.id===serviceForm.vendor_id)?.sites||[]).map(site=><option key={site.id} value={site.id}>{site.site_name} · {site.address}</option>)}</select></label>
           {([["service_name","Service name"],["capability_description","What capability is evidenced?"],["source_name","Evidence source name"],["source_identifier","Source identifier"],["source_url","Original source URL"]] as const).map(([key,title])=><label key={key} className="block"><span className={label}>{title}</span>{key==="capability_description"?<textarea className={field} rows={3} required value={serviceForm[key]} onChange={e=>setServiceForm(prev=>({...prev,[key]:e.target.value}))}/>:<input className={field} required value={serviceForm[key]} onChange={e=>setServiceForm(prev=>({...prev,[key]:e.target.value}))}/>}</label>)}
           <button disabled={busy} className="rounded-full bg-emerald-400 px-5 py-3 text-sm font-semibold text-slate-950">Submit service for review</button>
         </form>
@@ -383,7 +395,7 @@ export default function VendorsPage() {
       <div className="panel p-6">
         <h2 className="text-xl font-semibold">Link a verified service to a peptide or method</h2>
         <p className="muted mt-2 text-xs">Choose a verified vendor, then load its independently reviewed services and the verified peptide/method catalogues. Each relationship needs its own source and limitations.</p>
-        <label className="mt-4 block"><span className={label}>Verified vendor</span><select className={field} value={serviceForm.vendor_id} onChange={e=>{setServiceForm(prev=>({...prev,vendor_id:e.target.value}));void loadLinkOptions(e.target.value);}}><option value="">Select vendor</option>{vendors.map(v=><option key={v.id} value={v.id}>{v.legal_name}</option>)}</select></label>
+        <label className="mt-4 block"><span className={label}>Verified vendor</span><select className={field} value={serviceForm.vendor_id} onChange={e=>{setServiceForm(prev=>({...prev,vendor_id:e.target.value}));void loadLinkOptions(e.target.value);}}><option value="">Select vendor</option>{organizationVendors.filter(v=>v.review_status==="verified"&&v.verification_status==="verified").map(v=><option key={v.id} value={v.id}>{v.legal_name}</option>)}</select></label>
         <form onSubmit={submitEvidenceLink} className="mt-4 space-y-3">
           <label className="block"><span className={label}>Verified service</span><select required className={field} value={linkForm.service_id} onChange={e=>setLinkForm(prev=>({...prev,service_id:e.target.value}))}><option value="">Select reviewed service</option>{capabilityOptions.map(s=><option key={s.service_id} value={s.service_id}>{s.service_name} · {s.site_name}</option>)}</select></label>
           <label className="block"><span className={label}>Relationship type</span><select className={field} value={linkForm.relationship_type} onChange={e=>setLinkForm(prev=>({...prev,relationship_type:e.target.value}))}>{[["peptide_supply","Peptide supply"],["peptide_manufacturing","Peptide manufacturing"],["peptide_specific_testing","Peptide-specific testing"],["method_service","Analytical method service"],["formulation_development","Formulation development"]].map(([value,labelText])=><option key={value} value={value}>{labelText}</option>)}</select></label>

@@ -628,6 +628,26 @@ def decide_vendor_service_evidence_link(
     return {"link_id": str(link_id), "review_status": new_status, "decision": payload.decision}
 
 
+@router.get("/{vendor_id}/services")
+def verified_vendor_services(
+    vendor_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+):
+    vendor = db.execute(text("""
+        SELECT id FROM vendors
+        WHERE id=:id AND review_status='verified' AND verification_status='verified'
+    """), {"id": vendor_id}).mappings().first()
+    if not vendor:
+        raise HTTPException(status_code=404, detail="Verified vendor was not found.")
+    rows = db.execute(text("""
+        SELECT id AS service_id, service_name, capability_description
+        FROM vendor_services
+        WHERE vendor_id=:vendor AND review_status='verified'
+        ORDER BY service_name
+    """), {"vendor": vendor_id}).mappings().all()
+    return {"items": [dict(row) for row in rows], "count": len(rows)}
+
+
 @router.get("/{vendor_id}/capabilities")
 def verified_vendor_capabilities(
     vendor_id: UUID,

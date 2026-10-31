@@ -1,12 +1,15 @@
+from urllib.parse import quote
+
 import httpx
 
 BASE_URL = "https://pubchem.ncbi.nlm.nih.gov/rest/pug"
-PROPERTIES = "MolecularFormula,MolecularWeight,CanonicalSMILES,IsomericSMILES,InChI,InChIKey"
+PROPERTIES = "MolecularFormula,MolecularWeight,ConnectivitySMILES,SMILES,InChI,InChIKey"
 
 
 class PubChemProvider:
     async def search_by_name(self, name: str) -> dict:
-        url = f"{BASE_URL}/compound/name/{httpx.URL('').copy_with(path=name).raw_path.decode('utf-8').lstrip('/')}/property/{PROPERTIES}/JSON"
+        encoded_name = quote(name.strip(), safe="")
+        url = f"{BASE_URL}/compound/name/{encoded_name}/property/{PROPERTIES}/JSON"
         timeout = httpx.Timeout(25.0, connect=5.0)
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
             response = await client.get(url)

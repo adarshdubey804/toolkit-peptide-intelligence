@@ -932,3 +932,22 @@ def test_development_migration_ledger_rejects_modified_applied_file(tmp_path):
     migration.write_text("SELECT 2;", encoding="utf-8")
     with pytest.raises(RuntimeError, match="Applied migration 001_first.sql was modified"):
         apply_development_migrations(connection, tmp_path)
+
+
+def test_ai_synthesis_citation_audit_matches_ids_and_splits_sentences():
+    from app.services.ai_synthesis import _audit_answer
+
+    records = [{"citation_id": "pubmed:123"}]
+    audit = _audit_answer(
+        "Supported finding [pubmed:123]. This sentence has no citation.",
+        records,
+    )
+    assert audit["valid_ids"] == ["pubmed:123"]
+    assert audit["invalid_ids"] == []
+    assert audit["uncited_sentence_count"] == 1
+    assert audit["uncited_sentences"] == ["This sentence has no citation."]
+    assert audit["status"] == "warning"
+
+    invalid = _audit_answer("Unsupported identifier [fake:999].", records)
+    assert invalid["invalid_ids"] == ["fake:999"]
+    assert invalid["valid_ids"] == []

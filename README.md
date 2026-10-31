@@ -147,3 +147,10 @@ This is an early development scaffold, not production-ready software. Production
 - Row claiming uses PostgreSQL `FOR UPDATE SKIP LOCKED` and advances the next due time before network I/O to reduce duplicate work when scheduler instances overlap. Per-source successes/failures are recorded; failed sources are eligible again at their next configured interval.
 - Authenticated reviewer endpoints expose the schedule at GET `/api/v1/regulatory/sources/due` and run history at GET `/api/v1/regulatory/sources/poll-runs`.
 - No cron/Kubernetes schedule is installed by this repository change. Operators must provision the recurring invocation and monitor failures. Automated polling still creates unreviewed observations only.
+
+
+## AI research synthesis citation audit
+- The development-only source-constrained synthesis endpoint now checks every emitted citation identifier against the retrieved source allowlist and performs a conservative sentence-level citation-coverage audit.
+- The response reports valid identifiers, unknown identifiers, and sentences with no valid citation, with a warning status when coverage is incomplete.
+- This is a citation-presence check only. It does not establish that a cited paper semantically supports the sentence, that the retrieved record is relevant, or that a scientific conclusion is correct. Human review of original full-text sources remains mandatory.
+- AI synthesis remains disabled by default and is blocked outside development until authenticated access, rate limiting and production security controls are implemented.

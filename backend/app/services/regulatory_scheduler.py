@@ -53,7 +53,7 @@ async def poll_due_sources(limit: int = MAX_SOURCES_PER_RUN) -> dict:
                 WHERE is_active=true AND source_type='rss'
                   AND (next_poll_at IS NULL OR next_poll_at <= now())
                 ORDER BY COALESCE(next_poll_at, to_timestamp(0)), created_at
-                FOR UPDATE SKIP LOCKED LIMIT 1
+                LIMIT 1 FOR UPDATE SKIP LOCKED
             """)).mappings().first()
             if not source:
                 db.rollback()

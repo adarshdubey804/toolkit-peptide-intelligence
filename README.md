@@ -23,6 +23,12 @@ Scientific intelligence for peptide research and pharmaceutical development, bui
 
 Development startup applies all ordered SQL migrations in `database/migrations`.
 
+## Specialized research agents
+
+- GET `/api/v1/agents` lists nine specialized research workflows: peptide literature, sequence, structure, target interaction, analytical methods, formulation, process development, regulatory/quality and scientific review.
+- POST `/api/v1/agents/{agent_id}/run` invokes a bounded source-grounded workflow using the research retrieval layer and returns source records plus a domain-specific review plan.
+- Frontend workbench: `/agents`. The initial release is deterministic orchestration and review framing, not nine autonomous LLM agents. Scientific claims remain unverified until human curation; no clinical decisions, dosing or executable manufacturing instructions are generated.
+
 ## Peptide-target interaction intelligence
 
 - GET/POST `/api/v1/interactions` lists verified interaction assessments and accepts source-linked researcher submissions.

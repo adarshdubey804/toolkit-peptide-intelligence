@@ -371,7 +371,7 @@ def test_enrichment_candidate_submission_restricts_official_source_domains():
         _validated_source_url("PubMed", "https://fake-pubmed.example/123")
     with pytest.raises(Exception):
         _validated_source_url("PubMed", "http://pubmed.ncbi.nlm.nih.gov/123/")
-    assert len(SOURCE_HOSTS) == 4
+    assert {"PubMed", "ClinicalTrials.gov", "UniProtKB", "RCSB PDB", "PubChem"} <= set(SOURCE_HOSTS)
 
 
 def test_vendor_directory_routes_and_migration_are_registered():

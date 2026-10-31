@@ -38,6 +38,20 @@ def test_clinical_trials_discovery_is_registered_and_bounded():
     assert "page_token" in params
 
 
+def test_uniprot_rcsb_pubchem_routes_are_registered_and_bounded():
+    paths = app.openapi()["paths"]
+    for route in (
+        "/api/v1/research/uniprot",
+        "/api/v1/research/rcsb",
+        "/api/v1/research/pubchem",
+    ):
+        assert "get" in paths[route]
+    for route in ("/api/v1/research/uniprot", "/api/v1/research/rcsb"):
+        params = {item["name"]: item for item in paths[route]["get"]["parameters"]}
+        assert params["limit"]["schema"]["maximum"] == 20
+        assert params["limit"]["schema"]["minimum"] == 1
+
+
 def test_peptide_profile_requires_uuid_path_parameter():
     operation = app.openapi()["paths"]["/api/v1/peptides/{peptide_id}"]["get"]
     parameter = next(item for item in operation["parameters"] if item["name"] == "peptide_id")

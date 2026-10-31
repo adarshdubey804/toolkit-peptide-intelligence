@@ -121,6 +121,22 @@ def verified_vendor_directory(
                    'source_identifier', cert_source.source_identifier,
                    'source_url', cert_source.source_url
                )) FILTER (WHERE vc.id IS NOT NULL), '[]'::jsonb) AS certifications
+        , COALESCE((
+            SELECT jsonb_agg(jsonb_build_object(
+                'id', site.id,
+                'site_name', site.site_name,
+                'address', site.address,
+                'country_code', site.country_code,
+                'site_scope', site.site_scope,
+                'source_name', site_source.source_name,
+                'source_identifier', site_source.source_identifier,
+                'source_url', site_source.source_url
+            ) ORDER BY site.site_name)
+            FROM vendor_sites site
+            JOIN vendor_site_sources site_provenance ON site_provenance.site_id=site.id
+            JOIN source_records site_source ON site_source.id=site_provenance.source_record_id
+            WHERE site.vendor_id=v.id AND site.review_status='verified'
+        ), '[]'::jsonb) AS sites
         FROM vendors v
         LEFT JOIN vendor_services vs ON vs.vendor_id=v.id AND vs.review_status='verified'
         LEFT JOIN vendor_certifications vc ON vc.vendor_id=v.id AND vc.verification_status='verified'

@@ -1,6 +1,6 @@
 import httpx
 from pydantic import BaseModel, Field
-from fastapi import APIRouter, HTTPException, Query
+from typing import Annotated\nfrom uuid import UUID\nimport json\n\nimport httpx\nfrom fastapi import APIRouter, HTTPException, Query, Depends\nfrom pydantic import BaseModel, Field\nfrom sqlalchemy import text\nfrom sqlalchemy.orm import Session\n\nfrom ..db import get_db\nfrom .auth import get_current_user
 
 from ..config import settings
 from ..integrations.alphafold import AlphaFoldProvider
@@ -267,3 +267,102 @@ async def synthesize_research_answer(request: AssistantSynthesisRequest):
     except (httpx.HTTPError, ValueError) as exc:
         raise HTTPException(status_code=502, detail="AI synthesis provider failed or returned an invalid response.") from exc
     return result
+
+
+class EvidenceExtractionRequest(BaseModel):
+    question: str = Field(min_length=8, max_length=500)
+    limit: int = Field(default=5, ge=1, le=10)
+
+
+@router.post("/assistant/extract", status_code=201)
+async def extract_structured_evidence(
+    request: EvidenceExtractionRequest,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """Persist machine-extracted evidence fields for human review; never creates verified claims."""
+    if not settings.ai_synthesis_enabled or not settings.ai_api_key:
+        raise HTTPException(status_code=503, detail="AI extraction is disabled or not configured.")
+    if settings.app_env != "development":
+        raise HTTPException(status_code=503, detail="AI extraction remains development-only pending production security review.")
+    org = current_user.get("organization_id")
+    if not org:
+        raise HTTPException(status_code=403, detail="Active organization membership required.")
+    from ..services.evidence_extraction import extract_evidence
+    brief = await research_assistant_brief(request.question, request.limit)
+    citations = brief["citations"]
+    records = []
+    status = "no_sources"
+    if citations:
+        try:
+            records = await extract_evidence(
+                question=request.question,
+                citations=citations,
+                api_key=settings.ai_api_key,
+                api_base_url=settings.ai_api_base_url,
+                model=settings.ai_model,
+            )
+            status = "completed"
+        except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+            raise HTTPException(status_code=502, detail="Evidence extraction provider failed or returned invalid structured data.") from exc
+    run = db.execute(text("""
+        INSERT INTO evidence_extraction_runs
+          (organization_id,requested_by,question,model_name,status,source_count,record_count)
+        VALUES(:org,:user,:question,:model,:status,:source_count,:record_count)
+        RETURNING id,created_at
+    """), {
+        "org": org, "user": current_user["id"], "question": request.question.strip(),
+        "model": settings.ai_model, "status": status, "source_count": len(citations),
+        "record_count": len(records),
+    }).mappings().one()
+    citation_map = {item["citation_id"]: item for item in citations}
+    persisted = []
+    for record in records:
+        source = citation_map[record["source_citation_id"]]
+        row = db.execute(text("""
+            INSERT INTO extracted_evidence_records
+              (organization_id,run_id,source_citation_id,source_name,source_identifier,
+               source_url,source_title,extraction,extraction_model)
+            VALUES(:org,:run,:citation,:source,:identifier,:url,:title,CAST(:extraction AS jsonb),:model)
+            RETURNING id,review_status,created_at
+        """), {
+            "org": org, "run": run["id"], "citation": record["source_citation_id"],
+            "source": source["source"], "identifier": source["identifier"],
+            "url": source["url"], "title": source["title"],
+            "extraction": json.dumps(record), "model": settings.ai_model,
+        }).mappings().one()
+        persisted.append({"id": str(row["id"]), "source_citation_id": record["source_citation_id"],
+                          "source_title": source["title"], "extraction": record,
+                          "review_status": row["review_status"]})
+    db.commit()
+    return {
+        "run_id": str(run["id"]), "created_at": run["created_at"],
+        "status": status, "records": persisted,
+        "source_count": len(citations), "record_count": len(persisted),
+        "notice": "Machine-extracted fields are unverified research leads. They are not canonical claims, clinical conclusions or validated measurements. Human review against original sources is required.",
+    }
+
+
+@router.get("/assistant/extractions/{run_id}")
+def get_structured_extraction_run(
+    run_id: UUID,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    org = current_user.get("organization_id")
+    if not org:
+        raise HTTPException(status_code=403, detail="Active organization membership required.")
+    run = db.execute(text("""
+        SELECT id,question,model_name,status,source_count,record_count,created_at
+        FROM evidence_extraction_runs WHERE id=:id AND organization_id=:org
+    """), {"id": run_id, "org": org}).mappings().first()
+    if not run:
+        raise HTTPException(status_code=404, detail="Evidence extraction run not found.")
+    rows = db.execute(text("""
+        SELECT id,source_citation_id,source_name,source_identifier,source_url,source_title,
+               extraction,review_status,created_at
+        FROM extracted_evidence_records
+        WHERE run_id=:run AND organization_id=:org ORDER BY created_at,id
+    """), {"run": run_id, "org": org}).mappings().all()
+    return {"run": dict(run), "records": [dict(row) for row in rows],
+            "notice": "Extraction records remain unreviewed and are not promoted to verified evidence claims."}

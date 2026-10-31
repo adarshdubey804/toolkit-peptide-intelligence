@@ -1,4 +1,8 @@
 from datetime import date
+import hashlib
+import json
+import xml.etree.ElementTree as ET
+import httpx
 from typing import Annotated, Literal
 from uuid import UUID
 from urllib.parse import urlsplit
@@ -12,6 +16,7 @@ from .auth import get_current_user
 router=APIRouter(prefix="/api/v1/regulatory",tags=["regulatory and quality intelligence"])
 SUBMIT={"organization_admin","curator","researcher"}
 REVIEW={"organization_admin","curator","reviewer"}
+APPROVED_REGULATORY_DOMAINS={"fda.gov","ema.europa.eu","gov.uk","cdsco.gov.in","who.int"}
 
 def membership(user,db):
  org=user.get("organization_id")
@@ -213,7 +218,7 @@ def register_regulatory_source(payload:RegulatorySourceInput,user:Annotated[dict
  parsed=urlsplit(str(payload.feed_url))
  domain=payload.official_domain.lower().rstrip(".")
  host=(parsed.hostname or "").lower().rstrip(".")
- if parsed.scheme!="https" or not host or parsed.username or parsed.password or (host!=domain and not host.endswith("."+domain)):
+ if domain not in APPROVED_REGULATORY_DOMAINS or parsed.scheme!="https" or not host or parsed.username or parsed.password or (host!=domain and not host.endswith("."+domain)):
   raise HTTPException(422,"Feed URL must use HTTPS and its host must equal or be a subdomain of the declared official domain.")
  row=db.execute(text("""INSERT INTO regulatory_source_registry(organization_id,authority,jurisdiction,source_name,source_type,feed_url,official_domain,description,polling_interval_hours,created_by)
  VALUES(:org,:authority,:jurisdiction,:name,:type,:url,:domain,:description,:interval,:user)
@@ -224,3 +229,87 @@ def register_regulatory_source(payload:RegulatorySourceInput,user:Annotated[dict
  VALUES(:u,:o,'regulatory_source_registered','regulatory_source',:id,jsonb_build_object('feed_url',:url,'official_domain',:domain))"""),{"u":user["id"],"o":org,"id":row["id"],"url":str(payload.feed_url),"domain":domain})
  db.commit()
  return dict(row)
+
+
+def _parse_rss_items(xml_bytes: bytes):
+ if b"<!DOCTYPE" in xml_bytes.upper() or b"<!ENTITY" in xml_bytes.upper():
+  raise ValueError("DTD and entity declarations are not accepted.")
+ root=ET.fromstring(xml_bytes)
+ items=[]
+ for node in root.findall(".//item")[:100]:
+  def value(tag):
+   child=node.find(tag)
+   return " ".join("".join(child.itertext()).split())[:4000] if child is not None else None
+  title=value("title")
+  link=value("link")
+  guid=value("guid") or link
+  if not title or not link or not guid: continue
+  parsed=urlsplit(link)
+  if parsed.scheme!="https" or not parsed.hostname or parsed.username or parsed.password: continue
+  items.append({"guid":guid[:1000],"title":title[:1000],"url":link[:2000],"published":value("pubDate"),"summary":value("description")})
+ return items
+
+
+@router.post("/sources/{source_id}/poll")
+async def poll_regulatory_source(source_id:UUID,user:Annotated[dict,Depends(get_current_user)],db:Annotated[Session,Depends(get_db)]):
+ org,role=membership(user,db)
+ if role not in REVIEW: raise HTTPException(403,"Curator or reviewer permission is required.")
+ source=db.execute(text("SELECT * FROM regulatory_source_registry WHERE id=:id AND organization_id=:org AND is_active=true FOR UPDATE"),{"id":source_id,"org":org}).mappings().first()
+ if not source: raise HTTPException(404,"Active registered source not found.")
+ if source["source_type"]!="rss": raise HTTPException(422,"Only RSS sources are supported by this polling endpoint.")
+ domain=str(source["official_domain"]).lower().rstrip(".")
+ host=(urlsplit(source["feed_url"]).hostname or "").lower().rstrip(".")
+ if domain not in APPROVED_REGULATORY_DOMAINS or (host!=domain and not host.endswith("."+domain)):
+  raise HTTPException(422,"Source domain is not on the platform allowlist.")
+ try:
+  async with httpx.AsyncClient(timeout=httpx.Timeout(15.0,connect=4.0),follow_redirects=False,headers={"User-Agent":"ToolkitPeptideIntelligence/0.1","Accept":"application/rss+xml, application/xml, text/xml"}) as client:
+   response=await client.get(source["feed_url"])
+   response.raise_for_status()
+   if len(response.content)>2_000_000: raise HTTPException(413,"Feed exceeds the 2 MB response limit.")
+   content_type=response.headers.get("content-type","").lower()
+   if not any(x in content_type for x in ("xml","rss","atom")): raise HTTPException(415,"Source did not return an XML feed.")
+   items=_parse_rss_items(response.content)
+ except HTTPException: raise
+ except (httpx.HTTPError,ValueError,ET.ParseError) as exc:
+  raise HTTPException(502,"Registered RSS source could not be safely retrieved or parsed.") from exc
+ inserted=0
+ for item in items:
+  digest=hashlib.sha256(json.dumps(item,sort_keys=True,separators=(",",":"),ensure_ascii=False).encode()).hexdigest()
+  result=db.execute(text("""INSERT INTO regulatory_source_observations(organization_id,source_id,external_identifier,item_title,item_url,published_at,summary,content_hash,raw_metadata)
+  VALUES(:org,:source,:guid,:title,:url,:published,:summary,:hash,CAST(:metadata AS jsonb))
+  ON CONFLICT(source_id,external_identifier) DO NOTHING RETURNING id"""),
+  {"org":org,"source":source_id,"guid":item["guid"],"title":item["title"],"url":item["url"],"published":item["published"],"summary":item["summary"],"hash":digest,"metadata":json.dumps(item)}).first()
+  if result: inserted+=1
+ db.execute(text("""INSERT INTO audit_events(actor_user_id,organization_id,action,entity_type,entity_id,event_metadata)
+ VALUES(:u,:o,'regulatory_source_polled','regulatory_source',:id,jsonb_build_object('items_seen',:seen,'items_added',:added))"""),
+ {"u":user["id"],"o":org,"id":source_id,"seen":len(items),"added":inserted})
+ db.commit()
+ return {"source_id":str(source_id),"items_seen":len(items),"new_observations":inserted,"duplicates_skipped":len(items)-inserted,"curation_status":"not_reviewed","notice":"Feed observations require curator review; no regulatory interpretation or guidance promotion occurs automatically."}
+
+
+@router.get("/sources/observations")
+def list_regulatory_source_observations(user:Annotated[dict,Depends(get_current_user)],db:Annotated[Session,Depends(get_db)],limit:int=Query(50,ge=1,le=100)):
+ org,role=membership(user,db)
+ if role not in REVIEW: raise HTTPException(403,"Curator or reviewer permission is required.")
+ rows=db.execute(text("""SELECT o.id,o.source_id,s.authority,s.jurisdiction,s.source_name,o.external_identifier,o.item_title,o.item_url,o.published_at,o.summary,o.content_hash,o.review_status,o.observed_at
+ FROM regulatory_source_observations o JOIN regulatory_source_registry s ON s.id=o.source_id
+ WHERE o.organization_id=:org AND o.review_status='pending_review' ORDER BY o.observed_at DESC LIMIT :limit"""),{"org":org,"limit":limit}).mappings().all()
+ return {"items":[dict(row) for row in rows],"count":len(rows),"notice":"Unreviewed feed observations, not verified regulatory guidance."}
+
+
+class RegulatoryFeedDecision(BaseModel):
+ decision:Literal["accepted","rejected","duplicate"]
+ rationale:str=Field(min_length=20,max_length=4000)
+
+
+@router.post("/sources/observations/{observation_id}/decision")
+def decide_regulatory_source_observation(observation_id:UUID,payload:RegulatoryFeedDecision,user:Annotated[dict,Depends(get_current_user)],db:Annotated[Session,Depends(get_db)]):
+ org,role=membership(user,db)
+ if role not in REVIEW: raise HTTPException(403,"Curator or reviewer permission is required.")
+ row=db.execute(text("SELECT id FROM regulatory_source_observations WHERE id=:id AND organization_id=:org AND review_status='pending_review' FOR UPDATE"),{"id":observation_id,"org":org}).mappings().first()
+ if not row: raise HTTPException(404,"Pending feed observation not found.")
+ db.execute(text("UPDATE regulatory_source_observations SET review_status=:decision,reviewed_by=:user,review_rationale=:rationale,reviewed_at=now() WHERE id=:id"),{"decision":payload.decision,"user":user["id"],"rationale":payload.rationale.strip(),"id":observation_id})
+ db.execute(text("""INSERT INTO audit_events(actor_user_id,organization_id,action,entity_type,entity_id,event_metadata)
+ VALUES(:u,:o,'regulatory_feed_observation_decided','regulatory_source_observation',:id,jsonb_build_object('decision',:decision))"""),{"u":user["id"],"o":org,"id":observation_id,"decision":payload.decision})
+ db.commit()
+ return {"observation_id":str(observation_id),"decision":payload.decision}

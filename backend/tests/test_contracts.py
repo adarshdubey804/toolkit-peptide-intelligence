@@ -881,4 +881,4 @@ def test_cors_allows_patch_for_frontend_workflows():
     from fastapi.middleware.cors import CORSMiddleware
 
     cors = next(item for item in app.user_middleware if item.cls is CORSMiddleware)
-    assert "PATCH" in cors.options["allow_methods"]
+    assert "PATCH" in cors.kwargs["allow_methods"]

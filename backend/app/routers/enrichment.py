@@ -55,7 +55,13 @@ async def discover_peptide_evidence(
         SELECT p.id, p.preferred_name, p.peptide_category, p.review_status
         FROM peptides p
         WHERE p.id = :peptide_id
-    """), {"peptide_id": peptide_id}).mappings().first()
+          AND (p.review_status = 'verified' OR EXISTS (
+              SELECT 1 FROM curation_reviews cr
+              JOIN organization_memberships om ON om.user_id = cr.submitted_by
+              WHERE cr.entity_type = 'peptide' AND cr.entity_id = p.id
+                AND om.organization_id = :organization_id AND om.membership_status = 'active'
+          ))
+    """), {"peptide_id": peptide_id, "organization_id": organization_id}).mappings().first()
     if peptide is None:
         raise HTTPException(status_code=404, detail="Peptide record not found.")
 
@@ -253,7 +259,7 @@ def list_enrichment_candidates(
         FROM enrichment_candidates ec
         JOIN peptides p ON p.id=ec.peptide_id
         WHERE ec.organization_id=:org
-          AND (:status='all' OR ec.candidate_status=CAST(:status AS enrichment_candidate_status))
+          AND (:status='all' OR ec.candidate_status::text=:status)
         ORDER BY ec.created_at DESC LIMIT :limit
     """), {"org": organization_id, "status": candidate_status, "limit": limit}).mappings().all()
     return {"items": [dict(row) for row in rows], "count": len(rows)}

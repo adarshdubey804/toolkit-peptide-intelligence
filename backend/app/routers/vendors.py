@@ -140,6 +140,7 @@ def verified_vendor_directory(
         ), '[]'::jsonb) AS sites
         FROM vendors v
         LEFT JOIN vendor_services vs ON vs.vendor_id=v.id AND vs.review_status='verified'
+        LEFT JOIN vendor_sites service_site ON service_site.id=vs.site_id AND service_site.review_status='verified'
         LEFT JOIN vendor_certifications vc ON vc.vendor_id=v.id AND vc.verification_status='verified'
         LEFT JOIN source_records cert_source ON cert_source.id=vc.verification_source_id
         WHERE v.review_status='verified' AND v.verification_status='verified'
@@ -576,8 +577,9 @@ def submit_vendor_service_evidence_link(
     if role not in SUBMIT_ROLES:
         raise HTTPException(status_code=403, detail="Your role cannot submit vendor capability evidence.")
     service = db.execute(text("""
-        SELECT vs.id, vs.vendor_id FROM vendor_services vs
+        SELECT vs.id, vs.vendor_id, vs.site_id FROM vendor_services vs
         JOIN vendors v ON v.id=vs.vendor_id
+        JOIN vendor_sites site ON site.id=vs.site_id AND site.review_status='verified'
         WHERE vs.id=:id AND v.organization_id=:org
           AND v.review_status='verified' AND v.verification_status='verified'
           AND vs.review_status='verified'
@@ -881,7 +883,7 @@ def verified_vendor_capabilities(
                am.id AS method_id, am.method_name,
                sr.source_name, sr.source_identifier, sr.source_url
         FROM vendor_services vs
-        LEFT JOIN vendor_sites site ON site.id=vs.site_id AND site.review_status='verified'
+        JOIN vendor_sites site ON site.id=vs.site_id AND site.review_status='verified'
         JOIN vendor_service_evidence_links l ON l.service_id=vs.id AND l.review_status='verified'
         LEFT JOIN peptides p ON p.id=l.peptide_id AND p.review_status='verified'
         LEFT JOIN analytical_methods am ON am.id=l.method_id AND am.review_status='verified'

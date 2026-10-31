@@ -686,3 +686,15 @@ def test_peptide_research_report_is_source_traceable_and_verified():
     assert "appraisal_status='accepted'" in source
     assert "source_records" in source
     assert "not clinical advice" in source
+
+
+def test_regulatory_guidance_api_is_source_backed_and_reviewed():
+    from app.routers import regulatory
+    paths = {route.path for route in regulatory.router.routes}
+    assert "/api/v1/regulatory" in paths
+    assert "/api/v1/regulatory/reviews" in paths
+    assert "/api/v1/regulatory/{guidance_id}/decisions" in paths
+    source = __import__("inspect").getsource(regulatory)
+    assert "source_record_id" in source
+    assert "review_status='verified'" in source
+    assert "Submitters cannot review their own records." in source

@@ -9,7 +9,7 @@ from .config import settings
 from .db import engine
 from .routers.peptides import router as peptide_router
 
-MIGRATION = Path(__file__).resolve().parents[2] / "database" / "migrations" / "001_initial_schema.sql"
+MIGRATION = Path(__file__).resolve().parents[1] / "database" / "migrations" / "001_initial_schema.sql"
 
 
 @asynccontextmanager

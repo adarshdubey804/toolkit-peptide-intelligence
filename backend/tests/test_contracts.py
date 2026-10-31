@@ -894,7 +894,7 @@ class _FakeMigrationConnection:
         self.executed_sql.append(statement)
 
     def execute(self, statement, params=None):
-        sql = str(statement)
+        sql = str(statement).lstrip()
         params = params or {}
         if sql.startswith("SELECT checksum"):
             return _FakeMigrationResult(self.ledger.get(params["version"]))

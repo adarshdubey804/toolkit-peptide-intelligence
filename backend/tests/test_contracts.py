@@ -81,7 +81,7 @@ def test_clinical_trials_normalization_preserves_source_and_evidence_state():
 
 def test_provenance_migration_is_present_and_applied_in_development_order():
     migrations = sorted(path.name for path in MIGRATIONS_DIR.glob("*.sql"))
-    assert migrations == ["001_initial_schema.sql", "002_provenance_curation.sql", "003_authentication.sql", "004_organization_workspaces.sql"]
+    assert migrations == ["001_initial_schema.sql", "002_provenance_curation.sql", "003_authentication.sql", "004_organization_workspaces.sql", "005_curation_workflow.sql"]
     sql = (MIGRATIONS_DIR / "002_provenance_curation.sql").read_text(encoding="utf-8")
     assert "source_record_versions" in sql
     assert "external_entity_links" in sql
@@ -253,3 +253,29 @@ def test_project_visibility_and_role_update_are_constrained():
         ProjectCreate(name="Valid project", visibility="public")
     with pytest.raises(Exception):
         RoleUpdate(role="superadmin")
+
+
+def test_curation_review_and_decision_routes_are_registered():
+    paths = app.openapi()["paths"]
+    assert "/api/v1/curation/reviews" in paths
+    assert "post" in paths["/api/v1/curation/reviews"]
+    assert "get" in paths["/api/v1/curation/reviews"]
+    assert "/api/v1/curation/reviews/{review_id}/assignment" in paths
+    assert "/api/v1/curation/reviews/{review_id}/decisions" in paths
+
+
+def test_curation_workflow_enforces_role_and_decision_contracts():
+    from app.routers.curation import CurationDecision, ReviewSubmission
+    import pytest
+    with pytest.raises(Exception):
+        ReviewSubmission(entity_type="vendor", entity_id="00000000-0000-0000-0000-000000000001")
+    with pytest.raises(Exception):
+        CurationDecision(decision="approved", rationale="This is a sufficiently long rationale.")
+    with pytest.raises(Exception):
+        CurationDecision(decision="verified", rationale="too short")
+
+
+def test_curation_decision_history_is_database_append_only():
+    sql = (MIGRATIONS_DIR / "005_curation_workflow.sql").read_text(encoding="utf-8")
+    assert "BEFORE UPDATE OR DELETE ON curation_decisions" in sql
+    assert "append-only" in sql

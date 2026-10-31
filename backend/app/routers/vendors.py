@@ -268,8 +268,8 @@ def submit_vendor_certification(
     organization_id, role = _membership(current_user, db)
     if role not in SUBMIT_ROLES:
         raise HTTPException(status_code=403, detail="Your role cannot submit certification evidence.")
-    vendor = db.execute(text("SELECT id, submitted_by FROM vendors WHERE id=:id AND review_status='in_review'"),
-                        {"id": vendor_id}).mappings().first()
+    vendor = db.execute(text("SELECT id, submitted_by FROM vendors WHERE id=:id AND organization_id=:org AND review_status='in_review'"),
+                        {"id": vendor_id, "org": organization_id}).mappings().first()
     if not vendor or str(vendor["submitted_by"]) != current_user["id"]:
         raise HTTPException(status_code=404, detail="Your submitted vendor record was not found.")
     source_id = _source_record(db, payload.source_name, payload.source_identifier, str(payload.source_url))
@@ -323,7 +323,7 @@ def vendor_certification_review_queue(
         LEFT JOIN source_records sr ON sr.id=vc.verification_source_id
         WHERE v.organization_id=:org AND vc.verification_status='unverified'
           AND v.review_status='verified' AND v.verification_status='verified'
-        ORDER BY vc.created_at ASC LIMIT :limit
+        ORDER BY vc.id LIMIT :limit
     """), {"org": organization_id, "limit": limit}).mappings().all()
     return {"items": [dict(row) for row in rows], "count": len(rows),
             "scope": "Certification claims are reviewed independently of vendor identity."}

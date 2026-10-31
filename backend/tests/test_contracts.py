@@ -81,7 +81,7 @@ def test_clinical_trials_normalization_preserves_source_and_evidence_state():
 
 def test_provenance_migration_is_present_and_applied_in_development_order():
     migrations = sorted(path.name for path in MIGRATIONS_DIR.glob("*.sql"))
-    assert migrations == ["001_initial_schema.sql", "002_provenance_curation.sql", "003_authentication.sql", "004_organization_workspaces.sql", "005_curation_workflow.sql", "006_enrichment_candidates.sql", "007_vendor_directory.sql", "008_analytical_method_intelligence.sql", "009_formulation_stability_intelligence.sql", "010_process_development_intelligence.sql", "011_molecular_interaction_intelligence.sql", "012_agent_sessions.sql"]
+    assert migrations == ["001_initial_schema.sql", "002_provenance_curation.sql", "003_authentication.sql", "004_organization_workspaces.sql", "005_curation_workflow.sql", "006_enrichment_candidates.sql", "007_vendor_directory.sql", "008_analytical_method_intelligence.sql", "009_formulation_stability_intelligence.sql", "010_process_development_intelligence.sql", "011_molecular_interaction_intelligence.sql", "012_agent_sessions.sql", "013_evidence_intelligence.sql"]
     sql = (MIGRATIONS_DIR / "002_provenance_curation.sql").read_text(encoding="utf-8")
     assert "source_record_versions" in sql
     assert "external_entity_links" in sql
@@ -605,3 +605,37 @@ def test_agent_message_request_is_bounded_and_supports_exact_peptide_context():
     assert payload.peptide_id is not None
     with pytest.raises(ValidationError):
         AgentMessageCreate(message="short")
+
+
+def test_evidence_intelligence_routes_and_migration_contract():
+    paths = app.openapi()["paths"]
+    assert "/api/v1/evidence-intelligence/claims" in paths
+    assert "/api/v1/evidence-intelligence/appraisals" in paths
+    assert "/api/v1/evidence-intelligence/appraisals/{claim_id}" in paths
+    assert "/api/v1/evidence-intelligence/duplicate-candidates" in paths
+    assert "/api/v1/evidence-intelligence/duplicate-candidates/{candidate_id}/decision" in paths
+    sql = (MIGRATIONS_DIR / "013_evidence_intelligence.sql").read_text(encoding="utf-8")
+    assert "evidence_appraisals" in sql
+    assert "publication_duplicate_candidates" in sql
+    assert "Evidence level is not a quality score" in sql
+
+
+def test_evidence_appraisal_keeps_level_and_bias_orthogonal():
+    from app.routers.evidence_intelligence import Appraisal
+    from pydantic import ValidationError
+    payload = Appraisal(
+        claim_id="00000000-0000-0000-0000-000000000001",
+        study_design="computational", evidence_level="computational",
+        risk_of_bias="high_concern", replication_status="single_study",
+        limitations="Computational prediction is not experimental validation.",
+        appraisal_rationale="A single in-silico study with limited independent confirmation."
+    )
+    assert payload.evidence_level == "computational"
+    assert payload.risk_of_bias == "high_concern"
+    with pytest.raises(ValidationError):
+        Appraisal(
+            claim_id="00000000-0000-0000-0000-000000000001",
+            study_design="computational", evidence_level="clinical_human",
+            risk_of_bias="impossible", limitations="Not enough details to appraise.",
+            appraisal_rationale="This is a test of schema constraints."
+        )

@@ -46,7 +46,7 @@ class AlphaFoldProvider:
                 "fraction_plddt_very_low": record.get("fractionPlddtVeryLow"),
                 "pdb_url": record.get("pdbUrl"),
                 "cif_url": record.get("cifUrl"),
-                "pae_image_url": record.get(" paeImageUrl") or record.get("paeImageUrl"),
+                "pae_image_url": record.get("paeImageUrl"),
                 "source_url": f"https://alphafold.ebi.ac.uk/entry/{accession}",
                 "source": "AlphaFold Protein Structure Database",
                 "curation_status": "not_reviewed",

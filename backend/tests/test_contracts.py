@@ -382,6 +382,8 @@ def test_vendor_directory_routes_and_migration_are_registered():
     assert "post" in paths["/api/v1/vendors"]
     assert "/api/v1/vendors/{vendor_id}/services" in paths
     assert "/api/v1/vendors/{vendor_id}/certifications" in paths
+    assert "/api/v1/vendors/my-submissions" in paths
+    assert "get" in paths["/api/v1/vendors/my-submissions"]
     assert "/api/v1/vendors/reviews" in paths
     assert "/api/v1/vendors/{vendor_id}/decisions" in paths
     sql = (MIGRATIONS_DIR / "007_vendor_directory.sql").read_text(encoding="utf-8")

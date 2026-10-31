@@ -252,3 +252,55 @@ def decide_vendor(
     """), {"actor": current_user["id"], "org": organization_id, "id": vendor_id, "decision": payload.decision})
     db.commit()
     return {"vendor_id": str(vendor_id), "review_status": new_status, "decision": payload.decision}
+
+
+class VendorCertificationSubmission(BaseModel):
+    certification_name: str = Field(min_length=2, max_length=200)
+    issuing_body: str = Field(min_length=2, max_length=200)
+    certificate_reference: str = Field(min_length=2, max_length=200)
+    scope: str = Field(min_length=5, max_length=2000)
+    valid_from: str | None = None
+    valid_until: str | None = None
+    source_name: str = Field(min_length=2, max_length=120)
+    source_identifier: str = Field(min_length=1, max_length=200)
+    source_url: HttpUrl
+
+
+@router.post("/{vendor_id}/certifications", status_code=201)
+def submit_vendor_certification(
+    vendor_id: UUID,
+    payload: VendorCertificationSubmission,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    organization_id, role = _membership(current_user, db)
+    if role not in SUBMIT_ROLES:
+        raise HTTPException(status_code=403, detail="Your role cannot submit certification evidence.")
+    vendor = db.execute(text("SELECT id, submitted_by FROM vendors WHERE id=:id AND review_status='in_review'"),
+                        {"id": vendor_id}).mappings().first()
+    if not vendor or str(vendor["submitted_by"]) != current_user["id"]:
+        raise HTTPException(status_code=404, detail="Your submitted vendor record was not found.")
+    source_id = _source_record(db, payload.source_name, payload.source_identifier, str(payload.source_url))
+    certification = db.execute(text("""
+        INSERT INTO vendor_certifications
+            (vendor_id, certification_name, issuing_body, certificate_reference, scope,
+             valid_from, valid_until, verification_source_id, verification_status)
+        VALUES (:vendor, :name, :issuer, :reference, :scope, :valid_from, :valid_until, :source, 'unverified')
+        RETURNING id, certification_name, issuing_body, scope, valid_from, valid_until, verification_status
+    """), {"vendor": vendor_id, "name": payload.certification_name.strip(),
+           "issuer": payload.issuing_body.strip(), "reference": payload.certificate_reference.strip(),
+           "scope": payload.scope.strip(), "valid_from": payload.valid_from,
+           "valid_until": payload.valid_until, "source": source_id}).mappings().one()
+    db.execute(text("""
+        INSERT INTO vendor_sources (vendor_id, source_record_id, evidence_scope)
+        VALUES (:vendor, :source, :scope) ON CONFLICT DO NOTHING
+    """), {"vendor": vendor_id, "source": source_id,
+           "scope": "Certification evidence: " + payload.certification_name})
+    db.execute(text("""
+        INSERT INTO audit_events (actor_user_id, organization_id, action, entity_type, entity_id, event_metadata)
+        VALUES (:actor, :org, 'vendor_certification_submitted', 'vendor', :id,
+                jsonb_build_object('certification_id', :certification, 'source_record_id', :source))
+    """), {"actor": current_user["id"], "org": organization_id, "id": vendor_id,
+           "certification": str(certification["id"]), "source": str(source_id)})
+    db.commit()
+    return dict(certification)

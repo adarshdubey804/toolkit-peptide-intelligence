@@ -50,7 +50,11 @@ This is an initial authentication foundation, not a complete production identity
 - PATCH /api/v1/curation/reviews/{id}/assignment — assign an open review to an organization curator/reviewer.
 - POST /api/v1/curation/reviews/{id}/decisions — append a verified, rejected, needs-changes or archived decision with rationale.
 
-- GET `/api/v1/enrichment/peptides/{id}` — authenticated, read-only peptide-specific discovery across PubMed, ClinicalTrials.gov, UniProtKB and RCSB PDB. Returns source-linked, unreviewed candidates; no automatic entity linking or scientific record mutation.
+- GET `/api/v1/enrichment/peptides/{id}` — authenticated, read-only peptide-specific discovery across PubMed, ClinicalTrials.gov, UniProtKB and RCSB PDB. Returns source-linked, unreviewed candidates.
+- POST `/api/v1/enrichment/peptides/{id}/candidates` — persist an organization-scoped source candidate for curator review; only official HTTPS provider domains are accepted.
+- GET `/api/v1/enrichment/candidates` — list the organization's enrichment review queue.
+- POST `/api/v1/enrichment/candidates/{id}/decisions` — append an accepted, rejected, duplicate or needs-review decision with rationale and audit event.
+- Migration 006 adds organization-scoped enrichment candidate storage and append-only decision history. Accepting a candidate does not create a verified scientific claim or peptide relationship.
 - GET /api/v1/research/workspace?q=... — parallel discovery across PubMed, ClinicalTrials.gov, UniProtKB and RCSB PDB; each source reports its own availability.
 - GET /api/v1/research/assistant/brief?question=... — source-grounded evidence retrieval brief with original-record citations and explicit limitations; retrieval-only.
 - POST /api/v1/research/assistant/synthesize — optional development-only AI synthesis over server-retrieved records; disabled by default and blocked outside development pending authentication and rate limiting.

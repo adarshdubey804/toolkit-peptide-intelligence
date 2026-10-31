@@ -416,8 +416,8 @@ def review_extracted_evidence_field(
             (field_name in scalar_fields and (value is None or isinstance(value, str)))
             or (field_name in list_fields and isinstance(value, list) and all(isinstance(item, str) for item in value))
             or (field_name == "sample_size" and (value is None or (isinstance(value, int) and not isinstance(value, bool) and value >= 0)))
-            or (field_name == "study_design" and value in {"systematic_review", "meta_analysis", "randomized_trial", "observational_human", "animal", "in_vitro", "computational", "case_report", "other", "unknown"})
-            or (field_name == "evidence_level" and value in {"clinical_human", "preclinical_animal", "in_vitro", "computational", "secondary_research", "unknown"})
+            or (field_name == "study_design" and isinstance(value, str) and value in {"systematic_review", "meta_analysis", "randomized_trial", "observational_human", "animal", "in_vitro", "computational", "case_report", "other", "unknown"})
+            or (field_name == "evidence_level" and isinstance(value, str) and value in {"clinical_human", "preclinical_animal", "in_vitro", "computational", "secondary_research", "unknown"})
         )
         if not valid:
             raise HTTPException(status_code=422, detail="Corrected value does not match the field's data type or allowed classification.")

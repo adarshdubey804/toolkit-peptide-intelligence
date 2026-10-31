@@ -186,3 +186,41 @@ def decide_change(event_id:UUID,payload:ChangeDecision,user:Annotated[dict,Depen
  VALUES(:u,:o,'regulatory_change_decided','regulatory_change_event',:id,jsonb_build_object('decision',:decision))"""),{"u":user["id"],"o":org,"id":event_id,"decision":payload.decision})
  db.commit()
  return {"event_id":str(event_id),"decision":payload.decision}
+
+
+class RegulatorySourceInput(BaseModel):
+ authority: str = Field(min_length=2,max_length=150)
+ jurisdiction: str = Field(min_length=2,max_length=100)
+ source_name: str = Field(min_length=2,max_length=150)
+ source_type: Literal["rss","api","manual"] = "manual"
+ feed_url: HttpUrl
+ official_domain: str = Field(min_length=4,max_length=253,pattern=r"^[A-Za-z0-9.-]+$")
+ description: str = Field(min_length=10,max_length=1500)
+ polling_interval_hours: int = Field(default=24,ge=1,le=720)
+
+@router.get("/sources")
+def list_regulatory_sources(user:Annotated[dict,Depends(get_current_user)],db:Annotated[Session,Depends(get_db)]):
+ org,role=membership(user,db)
+ if role not in REVIEW: raise HTTPException(403,"Curator or reviewer permission is required.")
+ rows=db.execute(text("""SELECT id,authority,jurisdiction,source_name,source_type,feed_url,official_domain,description,polling_interval_hours,is_active,created_at
+ FROM regulatory_source_registry WHERE organization_id=:org ORDER BY authority,source_name"""),{"org":org}).mappings().all()
+ return {"items":[dict(x) for x in rows],"count":len(rows),"notice":"Registry entries are organization-managed source metadata; registration does not certify an authority or initiate automated polling."}
+
+@router.post("/sources",status_code=201)
+def register_regulatory_source(payload:RegulatorySourceInput,user:Annotated[dict,Depends(get_current_user)],db:Annotated[Session,Depends(get_db)]):
+ org,role=membership(user,db)
+ if role not in {"organization_admin","curator"}: raise HTTPException(403,"Organization admin or curator permission is required.")
+ parsed=urlsplit(str(payload.feed_url))
+ domain=payload.official_domain.lower().rstrip(".")
+ host=(parsed.hostname or "").lower().rstrip(".")
+ if parsed.scheme!="https" or not host or parsed.username or parsed.password or (host!=domain and not host.endswith("."+domain)):
+  raise HTTPException(422,"Feed URL must use HTTPS and its host must equal or be a subdomain of the declared official domain.")
+ row=db.execute(text("""INSERT INTO regulatory_source_registry(organization_id,authority,jurisdiction,source_name,source_type,feed_url,official_domain,description,polling_interval_hours,created_by)
+ VALUES(:org,:authority,:jurisdiction,:name,:type,:url,:domain,:description,:interval,:user)
+ ON CONFLICT(organization_id,feed_url) DO NOTHING
+ RETURNING id,authority,jurisdiction,source_name,source_type,feed_url,official_domain,description,polling_interval_hours,is_active,created_at"""),{"org":org,"authority":payload.authority,"jurisdiction":payload.jurisdiction,"name":payload.source_name,"type":payload.source_type,"url":str(payload.feed_url),"domain":domain,"description":payload.description,"interval":payload.polling_interval_hours,"user":user["id"]}).mappings().first()
+ if not row: raise HTTPException(409,"This source URL is already registered in the organization.")
+ db.execute(text("""INSERT INTO audit_events(actor_user_id,organization_id,action,entity_type,entity_id,event_metadata)
+ VALUES(:u,:o,'regulatory_source_registered','regulatory_source',:id,jsonb_build_object('feed_url',:url,'official_domain',:domain))"""),{"u":user["id"],"o":org,"id":row["id"],"url":str(payload.feed_url),"domain":domain})
+ db.commit()
+ return dict(row)

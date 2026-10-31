@@ -978,3 +978,11 @@ def test_vendor_certification_review_routes_are_registered():
     assert "get" in paths["/api/v1/vendors/services/reviews"]
     assert "/api/v1/vendors/services/{service_id}/decisions" in paths
     assert "post" in paths["/api/v1/vendors/services/{service_id}/decisions"]
+    assert "/api/v1/vendors/services/{service_id}/evidence-links" in paths
+    assert "post" in paths["/api/v1/vendors/services/{service_id}/evidence-links"]
+    assert "/api/v1/vendors/service-evidence-links/reviews" in paths
+    assert "get" in paths["/api/v1/vendors/service-evidence-links/reviews"]
+    assert "/api/v1/vendors/service-evidence-links/{link_id}/decisions" in paths
+    assert "post" in paths["/api/v1/vendors/service-evidence-links/{link_id}/decisions"]
+    assert "/api/v1/vendors/{vendor_id}/capabilities" in paths
+    assert "get" in paths["/api/v1/vendors/{vendor_id}/capabilities"]

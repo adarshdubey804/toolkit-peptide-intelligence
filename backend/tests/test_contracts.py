@@ -199,3 +199,15 @@ def test_ai_synthesis_service_rejects_untrusted_or_invalid_source_urls():
     ])
     assert len(records) == 1
     assert records[0]["citation_id"] == "pubmed:1"
+
+
+def test_pubmed_abstract_parser_handles_structured_sections():
+    from app.integrations.pubmed import parse_pubmed_abstracts
+    xml = """<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>12345</PMID><Article><Abstract><AbstractText Label="BACKGROUND">Context.</AbstractText><AbstractText Label="METHODS">Approach.</AbstractText></Abstract></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>"""
+    parsed = parse_pubmed_abstracts(xml)
+    assert parsed["12345"] == "BACKGROUND: Context.\nMETHODS: Approach."
+
+
+def test_pubmed_abstract_parser_allows_records_without_abstracts():
+    from app.integrations.pubmed import parse_pubmed_abstracts
+    assert parse_pubmed_abstracts("<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>9</PMID></MedlineCitation></PubmedArticle></PubmedArticleSet>") == {}

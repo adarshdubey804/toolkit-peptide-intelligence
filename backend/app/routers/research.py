@@ -1,6 +1,17 @@
 import httpx
 from pydantic import BaseModel, Field
-from typing import Annotated\nfrom uuid import UUID\nimport json\n\nimport httpx\nfrom fastapi import APIRouter, HTTPException, Query, Depends\nfrom pydantic import BaseModel, Field\nfrom sqlalchemy import text\nfrom sqlalchemy.orm import Session\n\nfrom ..db import get_db\nfrom .auth import get_current_user
+from typing import Annotated
+from uuid import UUID
+import json
+
+import httpx
+from fastapi import APIRouter, HTTPException, Query, Depends
+from pydantic import BaseModel, Field
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+from ..db import get_db
+from .auth import get_current_user
 
 from ..config import settings
 from ..integrations.alphafold import AlphaFoldProvider

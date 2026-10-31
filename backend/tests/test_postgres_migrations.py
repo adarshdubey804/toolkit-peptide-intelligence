@@ -55,3 +55,12 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             )
         """)).scalar_one()
         assert site_column_exists, "Legacy vendor services must remain nullable while new submissions require a verified site"
+
+        certification_submitter_exists = connection.execute(text("""
+            SELECT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema='public' AND table_name='vendor_certifications'
+                  AND column_name='submitted_by'
+            )
+        """)).scalar_one()
+        assert certification_submitter_exists, "Certification submitter attribution is required for self-review prevention"

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { FormEvent, useState } from "react";
 
 type RecordItem = {
-  [key: string]: unknown;
+  [key: string]: string | number | boolean | null | undefined | string[] | Record<string, unknown>;
   source?: string;
   curation_status?: string;
   url?: string | null;

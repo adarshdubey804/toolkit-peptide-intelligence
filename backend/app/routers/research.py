@@ -60,3 +60,69 @@ async def search_pubchem(name: str = Query(min_length=2, max_length=200)):
         return await PubChemProvider().search_by_name(name)
     except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
         raise HTTPException(status_code=502, detail="PubChem could not be reached or returned an invalid response.") from exc
+
+
+import asyncio
+from datetime import datetime, timezone
+
+
+@router.get("/workspace")
+async def unified_research_search(
+    q: str = Query(min_length=3, max_length=200),
+    limit: int = Query(default=5, ge=1, le=10),
+):
+    """Search supported research sources together; upstream records remain unreviewed."""
+    providers = {
+        "clinicaltrials": ClinicalTrialsProvider().search(q, limit),
+        "uniprot": UniProtProvider().search(q, limit),
+        "rcsb": RCSBProvider().search(q, limit),
+    }
+    if settings.ncbi_email:
+        providers["pubmed"] = PubMedProvider(settings.ncbi_email, settings.ncbi_api_key).search(q, limit)
+
+    async def run_provider(name: str, operation):
+        try:
+            result = await operation
+            return name, {
+                "status": "success",
+                "source": result.get("source", name),
+                "total": result.get("total"),
+                "items": result.get("items", []),
+            }
+        except Exception as exc:
+            # Keep one upstream failure from suppressing other discovery sources.
+            return name, {
+                "status": "unavailable",
+                "source": name,
+                "total": None,
+                "items": [],
+                "error": "Source unavailable; retry later.",
+                "error_type": type(exc).__name__,
+            }
+
+    results = await asyncio.gather(
+        *(run_provider(name, operation) for name, operation in providers.items())
+    )
+    sources = dict(results)
+    for name in ("pubmed", "clinicaltrials", "uniprot", "rcsb"):
+        if name not in sources:
+            sources[name] = {
+                "status": "not_configured",
+                "source": name,
+                "total": None,
+                "items": [],
+                "error": "Configure NCBI_EMAIL to enable PubMed discovery." if name == "pubmed" else None,
+            }
+
+    successful = sum(source["status"] == "success" for source in sources.values())
+    return {
+        "query": q,
+        "retrieved_at": datetime.now(timezone.utc).isoformat(),
+        "sources": sources,
+        "summary": {
+            "sources_available": successful,
+            "sources_total": len(sources),
+            "records_returned": sum(len(source["items"]) for source in sources.values()),
+        },
+        "curation_notice": "All external discovery records are unreviewed. Search results are not verified peptide facts and must be checked against their original sources.",
+    }

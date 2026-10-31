@@ -81,7 +81,7 @@ def test_clinical_trials_normalization_preserves_source_and_evidence_state():
 
 def test_provenance_migration_is_present_and_applied_in_development_order():
     migrations = sorted(path.name for path in MIGRATIONS_DIR.glob("*.sql"))
-    assert migrations == ["001_initial_schema.sql", "002_provenance_curation.sql", "003_authentication.sql", "004_organization_workspaces.sql", "005_curation_workflow.sql", "006_enrichment_candidates.sql", "007_vendor_directory.sql", "008_analytical_method_intelligence.sql", "009_formulation_stability_intelligence.sql"]
+    assert migrations == ["001_initial_schema.sql", "002_provenance_curation.sql", "003_authentication.sql", "004_organization_workspaces.sql", "005_curation_workflow.sql", "006_enrichment_candidates.sql", "007_vendor_directory.sql", "008_analytical_method_intelligence.sql", "009_formulation_stability_intelligence.sql", "010_process_development_intelligence.sql"]
     sql = (MIGRATIONS_DIR / "002_provenance_curation.sql").read_text(encoding="utf-8")
     assert "source_record_versions" in sql
     assert "external_entity_links" in sql
@@ -462,3 +462,31 @@ def test_formulation_submission_keeps_evidence_and_validation_boundaries():
     )
     assert payload.development_stage == "research"
     assert payload.stability_observations == []
+
+
+def test_process_knowledge_routes_and_schema_contract():
+    paths = app.openapi()["paths"]
+    assert "/api/v1/process-knowledge" in paths
+    assert "get" in paths["/api/v1/process-knowledge"]
+    assert "post" in paths["/api/v1/process-knowledge"]
+    assert "/api/v1/process-knowledge/reviews" in paths
+    assert "/api/v1/process-knowledge/{profile_id}/decisions" in paths
+    sql = (MIGRATIONS_DIR / "010_process_development_intelligence.sql").read_text(encoding="utf-8")
+    for table in ("process_knowledge_profiles", "process_knowledge_stages", "process_knowledge_sources", "process_knowledge_decisions"):
+        assert table in sql
+    assert "prevent_process_knowledge_decision_mutation" in sql
+
+
+def test_process_submission_requires_sources_and_limits_stage_categories():
+    from app.routers.process_knowledge import ProcessSubmission
+    payload = ProcessSubmission(
+        profile_title="Published SPPS process-development overview",
+        process_platform="solid_phase_peptide_synthesis",
+        development_context="Literature overview for research process-development context.",
+        process_overview="Descriptive review of process stages, quality attributes and known development considerations.",
+        limitations="Not a manufacturing instruction or validated process parameter set.",
+        sources=[{"source_name":"Journal","source_identifier":"doi:10.example/peptide",
+                  "source_url":"https://example.org/article","evidence_scope":"Supports the overview."}]
+    )
+    assert payload.stages == []
+    assert payload.process_platform == "solid_phase_peptide_synthesis"

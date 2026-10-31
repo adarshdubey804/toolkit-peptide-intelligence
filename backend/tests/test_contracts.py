@@ -639,3 +639,17 @@ def test_evidence_appraisal_keeps_level_and_bias_orthogonal():
             risk_of_bias="impossible", limitations="Not enough details to appraise.",
             appraisal_rationale="This is a test of schema constraints."
         )
+
+
+def test_peptide_graph_includes_verified_development_relationships():
+    from app.routers import peptides
+    source = __import__("inspect").getsource(peptides.peptide_knowledge_graph)
+    for table in (
+        "formulation_profiles", "formulation_stability_observations",
+        "process_knowledge_profiles", "process_knowledge_stages",
+        "molecular_interaction_assessments", "evidence_appraisals",
+        "analytical_methods",
+    ):
+        assert table in source
+    assert "appraisal_status='accepted'" in source
+    assert "review_status='verified'" in source

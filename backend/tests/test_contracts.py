@@ -320,3 +320,11 @@ def test_dossier_submission_creates_review_queue_record_and_keeps_children_unver
     assert "INSERT INTO curation_reviews" in source
     assert "INSERT INTO claim_sources" in source
     assert "publicly visible until verified" in source
+
+
+def test_curation_queue_includes_source_context_for_reviewer_inspection():
+    from app.routers import curation
+    source = Path(curation.__file__).read_text(encoding="utf-8")
+    assert "record_label" in source
+    assert "source_url" in source
+    assert "LEFT JOIN source_records sr" in source

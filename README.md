@@ -49,6 +49,8 @@ This is an initial authentication foundation, not a complete production identity
 - GET /api/v1/curation/reviews — list the current organization's submitted review queue for reviewers.
 - PATCH /api/v1/curation/reviews/{id}/assignment — assign an open review to an organization curator/reviewer.
 - POST /api/v1/curation/reviews/{id}/decisions — append a verified, rejected, needs-changes or archived decision with rationale.
+
+- GET `/api/v1/enrichment/peptides/{id}` — authenticated, read-only peptide-specific discovery across PubMed, ClinicalTrials.gov, UniProtKB and RCSB PDB. Returns source-linked, unreviewed candidates; no automatic entity linking or scientific record mutation.
 - GET /api/v1/research/workspace?q=... — parallel discovery across PubMed, ClinicalTrials.gov, UniProtKB and RCSB PDB; each source reports its own availability.
 - GET /api/v1/research/assistant/brief?question=... — source-grounded evidence retrieval brief with original-record citations and explicit limitations; retrieval-only.
 - POST /api/v1/research/assistant/synthesize — optional development-only AI synthesis over server-retrieved records; disabled by default and blocked outside development pending authentication and rate limiting.

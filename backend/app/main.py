@@ -13,6 +13,7 @@ from .routers.analytical_methods import router as analytical_method_router
 from .routers.curation import router as curation_router
 from .routers.dossiers import router as dossier_router
 from .routers.enrichment import router as enrichment_router
+from .routers.formulations import router as formulation_router
 from .routers.organizations import router as organization_router
 from .routers.peptides import router as peptide_router
 from .routers.research import router as research_router
@@ -53,6 +54,7 @@ app.include_router(analytical_method_router)
 app.include_router(curation_router)
 app.include_router(dossier_router)
 app.include_router(enrichment_router)
+app.include_router(formulation_router)
 app.include_router(organization_router)
 app.include_router(peptide_router)
 app.include_router(research_router)

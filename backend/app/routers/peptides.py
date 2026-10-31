@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -28,7 +30,7 @@ def search_peptides(
         params["query"] = f"%{q.strip()}%"
     if category:
         filters.append("peptide_category = :category")
-        params["category"] = category
+        params["category"] = category.strip()
     where = " AND ".join(filters)
     rows = db.execute(
         text(f"SELECT {PUBLIC_FIELDS} FROM peptides WHERE {where} ORDER BY preferred_name LIMIT :limit OFFSET :offset"),
@@ -42,7 +44,7 @@ def search_peptides(
 
 
 @router.get("/{peptide_id}")
-def peptide_profile(peptide_id: str, db: Session = Depends(get_db)):
+def peptide_profile(peptide_id: UUID, db: Session = Depends(get_db)):
     """Return a verified profile and its reviewed, source-linked evidence."""
     peptide = db.execute(
         text(f"SELECT {PUBLIC_FIELDS} FROM peptides WHERE id = :id AND review_status = 'verified'"),
@@ -59,13 +61,13 @@ def peptide_profile(peptide_id: str, db: Session = Depends(get_db)):
     chemistry = rows("SELECT chemical_form, molecular_formula, average_molecular_mass, monoisotopic_mass, canonical_smiles, inchi, inchikey, property_origin, method_or_tool FROM chemical_properties WHERE peptide_id=:id AND review_status='verified'")
     structures = rows("SELECT structure_type, file_format, external_identifier, method_or_prediction_tool FROM structures WHERE peptide_id=:id AND review_status='verified'")
     claims = rows("""
-        SELECT c.id, c.claim_text, c.claim_domain, c.evidence_type, c.confidence_label,
+        SELECT DISTINCT c.id, c.claim_text, c.claim_domain, c.evidence_type, c.confidence_label,
                c.limitations, p.doi, p.pmid, p.title AS publication_title, p.url AS publication_url
         FROM evidence_claims c
         LEFT JOIN claim_sources cs ON cs.claim_id=c.id
         LEFT JOIN publications p ON p.id=cs.publication_id
         WHERE c.peptide_id=:id AND c.review_status='verified'
-        ORDER BY c.created_at DESC
+        ORDER BY c.id
     """)
     return {
         "peptide": dict(peptide),

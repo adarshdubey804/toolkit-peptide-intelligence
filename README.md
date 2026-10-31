@@ -19,9 +19,15 @@ Scientific intelligence for peptide research and pharmaceutical development, bui
 3. Set NCBI_EMAIL to a valid contact email if you want to enable PubMed discovery. NCBI_API_KEY is optional.
 4. AI synthesis is opt-in for local development only: set AI_SYNTHESIS_ENABLED=true, AI_API_KEY, and AI_MODEL. Never expose provider keys to the frontend. The synthesis route is deliberately blocked outside development until authenticated access and rate limiting are implemented.
 5. Run docker compose up --build.
-6. Open the frontend at http://localhost:3000, peptide directory at http://localhost:3000/peptides, knowledge graph at http://localhost:3000/knowledge-graph, research workspace at http://localhost:3000/research, research assistant at http://localhost:3000/research-assistant, vendor directory at http://localhost:3000/vendors, analytical method catalogue at http://localhost:3000/analytical-methods, formulation intelligence at http://localhost:3000/formulations, process intelligence at http://localhost:3000/process-knowledge, bioinformatics at http://localhost:3000/bioinformatics, and API docs at http://localhost:8000/docs.
+6. Open the frontend at http://localhost:3000, peptide directory at http://localhost:3000/peptides, knowledge graph at http://localhost:3000/knowledge-graph, research workspace at http://localhost:3000/research, research assistant at http://localhost:3000/research-assistant, vendor directory at http://localhost:3000/vendors, analytical method catalogue at http://localhost:3000/analytical-methods, formulation intelligence at http://localhost:3000/formulations, process intelligence at http://localhost:3000/process-knowledge, bioinformatics at http://localhost:3000/bioinformatics, structure intelligence at http://localhost:3000/structures, and API docs at http://localhost:8000/docs.
 
 Development startup applies all ordered SQL migrations in `database/migrations`.
+
+## Structural biology discovery
+
+- GET `/api/v1/research/alphafold?accession=P01308` retrieves AlphaFold DB prediction metadata, confidence summaries and original PDB/mmCIF/PAE resource links.
+- GET `/api/v1/research/rcsb?q=...` discovers experimental PDB structures.
+- Frontend `/structures` presents experimental and predicted structure records, confidence metadata and links to official external 3D viewers and structure files. External results remain unreviewed; AlphaFold confidence is not binding evidence.
 
 ## Bioinformatics sequence tools
 

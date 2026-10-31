@@ -328,3 +328,22 @@ def test_curation_queue_includes_source_context_for_reviewer_inspection():
     assert "record_label" in source
     assert "source_url" in source
     assert "LEFT JOIN source_records sr" in source
+
+
+def test_peptide_enrichment_route_is_authenticated_and_registered():
+    operation = app.openapi()["paths"]["/api/v1/enrichment/peptides/{peptide_id}"]["get"]
+    assert operation["security"]
+    parameter = next(item for item in operation["parameters"] if item["name"] == "peptide_id")
+    assert parameter["schema"]["format"] == "uuid"
+
+
+def test_enrichment_discovery_is_read_only_and_source_governed():
+    from app.routers.enrichment import ALLOWED_ROLES
+    from pathlib import Path
+
+    source = (Path(__file__).parents[1] / "app" / "routers" / "enrichment.py").read_text(encoding="utf-8")
+    assert ALLOWED_ROLES == {"organization_admin", "curator", "reviewer", "researcher"}
+    assert "curation_status\": \"not_reviewed\"" in source
+    assert "No peptide, sequence, target, pathway, structure or evidence record was created or modified." in source
+    assert "INSERT INTO" not in source
+    assert "UPDATE " not in source

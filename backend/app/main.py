@@ -9,6 +9,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from .config import settings
 from .db import engine
 from .routers.auth import router as auth_router
+from .routers.organizations import router as organization_router
 from .routers.peptides import router as peptide_router
 from .routers.research import router as research_router
 
@@ -43,6 +44,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(auth_router)
+app.include_router(organization_router)
 app.include_router(peptide_router)
 app.include_router(research_router)
 

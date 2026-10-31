@@ -21,7 +21,7 @@ Scientific intelligence for peptide research and pharmaceutical development, bui
 5. Run docker compose up --build.
 6. Open the frontend at http://localhost:3000, peptide directory at http://localhost:3000/peptides, knowledge graph at http://localhost:3000/knowledge-graph, research workspace at http://localhost:3000/research, research assistant at http://localhost:3000/research-assistant, vendor directory at http://localhost:3000/vendors, analytical method catalogue at http://localhost:3000/analytical-methods, formulation intelligence at http://localhost:3000/formulations, process intelligence at http://localhost:3000/process-knowledge, bioinformatics at http://localhost:3000/bioinformatics, structure intelligence at http://localhost:3000/structures, interaction intelligence at http://localhost:3000/interactions, and API docs at http://localhost:8000/docs.
 
-Development startup applies all ordered SQL migrations in `database/migrations`.
+Development startup applies all ordered SQL migrations in `database/migrations`. Migration 016 adds null-safe uniqueness for regulatory version observations (PostgreSQL 15+; the supplied Compose database uses PostgreSQL 16).
 
 ## Evidence intelligence and scientific appraisal
 
@@ -116,3 +116,11 @@ External research results remain unreviewed. PubChem compound identity must be c
 Every claim should retain source provenance, study model, evidence classification, limitations and review history. Distinguish measured, calculated, predicted and unverified values; preserve conflicting evidence. The platform is a research-information product, not a clinical decision system. It does not provide patient-specific diagnosis or treatment, unapproved peptide dosing, material-release decisions or GMP manufacturing execution.
 
 This is an early development scaffold, not production-ready software. Production use requires managed authentication, authorization, security testing, backups, monitoring, licensing review and qualified scientific/regulatory review. Do not store real secrets in the repository.
+
+
+## Regulatory version integrity
+
+- Regulatory version observations are manually submitted snapshots; this is not an automated crawler or alerting service.
+- Migration 016 enforces null-safe uniqueness across guidance, source URL, optional revision and optional SHA-256 content hash, preventing duplicate observations when optional fields are absent.
+- A reviewer decision of `confirmed_change` or `published` accepts the associated version snapshot; `not_a_change` rejects it. Accepted snapshots alone appear in public history.
+- The supplied Compose database is PostgreSQL 16. Deployments must use PostgreSQL 15 or newer for the `NULLS NOT DISTINCT` unique index.

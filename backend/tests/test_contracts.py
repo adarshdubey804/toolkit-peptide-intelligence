@@ -791,3 +791,18 @@ def test_regulatory_scheduler_worker_and_run_history_contracts():
     migration = (MIGRATIONS_DIR / "020_regulatory_poll_scheduler.sql").read_text(encoding="utf-8")
     assert "regulatory_source_poll_runs" in migration
     assert "last_polled_at" in migration
+
+
+def test_ai_synthesis_reports_sentence_level_citation_coverage():
+    from app.services.ai_synthesis import _safe_citations
+    records = _safe_citations([{
+        "citation_id": "pubmed:123",
+        "source": "PubMed",
+        "identifier": "123",
+        "title": "Example study",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/123/",
+        "evidence_summary": "A bounded source summary.",
+    }])
+    assert len(records) == 1
+    assert records[0]["citation_id"] == "pubmed:123"
+    assert "sentence-level citation coverage" in (Path(__file__).parents[1] / "app" / "services" / "ai_synthesis.py").read_text(encoding="utf-8")

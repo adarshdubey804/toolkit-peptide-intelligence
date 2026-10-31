@@ -19,9 +19,15 @@ Scientific intelligence for peptide research and pharmaceutical development, bui
 3. Set NCBI_EMAIL to a valid contact email if you want to enable PubMed discovery. NCBI_API_KEY is optional.
 4. AI synthesis is opt-in for local development only: set AI_SYNTHESIS_ENABLED=true, AI_API_KEY, and AI_MODEL. Never expose provider keys to the frontend. The synthesis route is deliberately blocked outside development until authenticated access and rate limiting are implemented.
 5. Run docker compose up --build.
-6. Open the frontend at http://localhost:3000, peptide directory at http://localhost:3000/peptides, knowledge graph at http://localhost:3000/knowledge-graph, research workspace at http://localhost:3000/research, research assistant at http://localhost:3000/research-assistant, vendor directory at http://localhost:3000/vendors, analytical method catalogue at http://localhost:3000/analytical-methods, formulation intelligence at http://localhost:3000/formulations, process intelligence at http://localhost:3000/process-knowledge, and API docs at http://localhost:8000/docs.
+6. Open the frontend at http://localhost:3000, peptide directory at http://localhost:3000/peptides, knowledge graph at http://localhost:3000/knowledge-graph, research workspace at http://localhost:3000/research, research assistant at http://localhost:3000/research-assistant, vendor directory at http://localhost:3000/vendors, analytical method catalogue at http://localhost:3000/analytical-methods, formulation intelligence at http://localhost:3000/formulations, process intelligence at http://localhost:3000/process-knowledge, bioinformatics at http://localhost:3000/bioinformatics, and API docs at http://localhost:8000/docs.
 
 Development startup applies all ordered SQL migrations in `database/migrations`.
+
+## Bioinformatics sequence tools
+
+- POST `/api/v1/bioinformatics/analyze` calculates standard-residue composition, average/monoisotopic mass estimates, approximate pI, GRAVY, aromaticity and reduced-state 280 nm extinction coefficient.
+- POST `/api/v1/bioinformatics/align` performs bounded Needleman-Wunsch global sequence alignment with configurable simple scoring.
+- Inputs are limited to the 20 standard amino acids. Results are estimates for unmodified linear peptides with free termini; no PTM-aware chemistry, structure prediction, docking or biological activity prediction is claimed.
 
 ## Authentication foundation
 

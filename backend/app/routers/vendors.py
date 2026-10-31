@@ -28,6 +28,7 @@ class VendorSubmission(BaseModel):
 
 
 class VendorServiceSubmission(BaseModel):
+    site_id: UUID
     service_name: str = Field(min_length=2, max_length=200)
     capability_description: str = Field(min_length=10, max_length=3000)
     source_name: str = Field(min_length=2, max_length=120)
@@ -101,7 +102,10 @@ def verified_vendor_directory(
                v.verification_status, v.last_verified_at,
                COALESCE(jsonb_agg(DISTINCT jsonb_build_object(
                    'service_name', vs.service_name,
-                   'capability_description', vs.capability_description
+                   'capability_description', vs.capability_description,
+                   'site_id', service_site.id,
+                   'site_name', service_site.site_name,
+                   'site_address', service_site.address
                )) FILTER (WHERE vs.id IS NOT NULL), '[]'::jsonb) AS services,
                COALESCE(jsonb_agg(DISTINCT jsonb_build_object(
                    'certification_name', vc.certification_name,
@@ -139,6 +143,7 @@ def verified_vendor_directory(
         ), '[]'::jsonb) AS sites
         FROM vendors v
         LEFT JOIN vendor_services vs ON vs.vendor_id=v.id AND vs.review_status='verified'
+        LEFT JOIN vendor_sites service_site ON service_site.id=vs.site_id AND service_site.review_status='verified'
         LEFT JOIN vendor_certifications vc ON vc.vendor_id=v.id AND vc.verification_status='verified'
         LEFT JOIN source_records cert_source ON cert_source.id=vc.verification_source_id
         WHERE v.review_status='verified' AND v.verification_status='verified'
@@ -201,13 +206,20 @@ def submit_vendor_service(
     """), {"id": vendor_id, "org": organization_id}).mappings().first()
     if not vendor:
         raise HTTPException(status_code=404, detail="Verified vendor was not found in this organization.")
+    site = db.execute(text("""
+        SELECT id FROM vendor_sites
+        WHERE id=:site AND vendor_id=:vendor AND organization_id=:org
+          AND review_status='verified'
+    """), {"site": payload.site_id, "vendor": vendor_id, "org": organization_id}).mappings().first()
+    if not site:
+        raise HTTPException(status_code=422, detail="Select an independently verified facility belonging to this vendor.")
     source_id = _source_record(db, payload.source_name, payload.source_identifier, str(payload.source_url))
     service = db.execute(text("""
         INSERT INTO vendor_services
-            (vendor_id, service_name, capability_description, evidence_source_id, review_status, submitted_by)
-        VALUES (:vendor, :name, :description, :source, 'in_review', :submitter)
-        RETURNING id, service_name, capability_description, review_status
-    """), {"vendor": vendor_id, "name": payload.service_name.strip(),
+            (vendor_id, site_id, service_name, capability_description, evidence_source_id, review_status, submitted_by)
+        VALUES (:vendor, :site, :name, :description, :source, 'in_review', :submitter)
+        RETURNING id, vendor_id, site_id, service_name, capability_description, review_status
+    """), {"vendor": vendor_id, "site": payload.site_id, "name": payload.service_name.strip(),
            "description": payload.capability_description.strip(), "source": source_id,
            "submitter": current_user["id"]}).mappings().one()
     db.execute(text("""
@@ -327,11 +339,13 @@ def vendor_service_review_queue(
     if role not in REVIEW_ROLES:
         raise HTTPException(status_code=403, detail="Curator or reviewer permission is required.")
     rows = db.execute(text("""
-        SELECT vs.id, vs.vendor_id, v.legal_name, vs.service_name,
+        SELECT vs.id, vs.vendor_id, v.legal_name, vs.site_id,
+               site.site_name, site.address AS site_address, vs.service_name,
                vs.capability_description, vs.review_status, vs.submitted_by,
                sr.source_name, sr.source_identifier, sr.source_url
         FROM vendor_services vs
         JOIN vendors v ON v.id=vs.vendor_id
+        JOIN vendor_sites site ON site.id=vs.site_id AND site.review_status='verified'
         LEFT JOIN source_records sr ON sr.id=vs.evidence_source_id
         WHERE v.organization_id=:org AND v.review_status='verified'
           AND v.verification_status='verified' AND vs.review_status='in_review'
@@ -352,9 +366,10 @@ def decide_vendor_service(
     if role not in REVIEW_ROLES:
         raise HTTPException(status_code=403, detail="Curator or reviewer permission is required.")
     service = db.execute(text("""
-        SELECT vs.id, vs.vendor_id, vs.submitted_by, vs.evidence_source_id
+        SELECT vs.id, vs.vendor_id, vs.site_id, vs.submitted_by, vs.evidence_source_id
         FROM vendor_services vs
         JOIN vendors v ON v.id=vs.vendor_id
+        JOIN vendor_sites site ON site.id=vs.site_id AND site.review_status='verified'
         WHERE vs.id=:id AND v.organization_id=:org
           AND v.review_status='verified' AND v.verification_status='verified'
           AND vs.review_status='in_review'
@@ -566,8 +581,9 @@ def submit_vendor_service_evidence_link(
     if role not in SUBMIT_ROLES:
         raise HTTPException(status_code=403, detail="Your role cannot submit vendor capability evidence.")
     service = db.execute(text("""
-        SELECT vs.id, vs.vendor_id FROM vendor_services vs
+        SELECT vs.id, vs.vendor_id, vs.site_id FROM vendor_services vs
         JOIN vendors v ON v.id=vs.vendor_id
+        JOIN vendor_sites site ON site.id=vs.site_id AND site.review_status='verified'
         WHERE vs.id=:id AND v.organization_id=:org
           AND v.review_status='verified' AND v.verification_status='verified'
           AND vs.review_status='verified'
@@ -626,12 +642,14 @@ def vendor_service_evidence_link_review_queue(
     rows = db.execute(text("""
         SELECT l.id, l.service_id, l.relationship_type, l.evidence_scope, l.limitations,
                l.submitted_by, v.legal_name, vs.service_name,
+               site.site_name, site.address AS site_address,
                p.id AS peptide_id, p.preferred_name AS peptide_name,
                am.id AS method_id, am.method_name,
                sr.source_name, sr.source_identifier, sr.source_url
         FROM vendor_service_evidence_links l
         JOIN vendor_services vs ON vs.id=l.service_id
         JOIN vendors v ON v.id=vs.vendor_id
+        JOIN vendor_sites site ON site.id=vs.site_id AND site.review_status='verified'
         LEFT JOIN peptides p ON p.id=l.peptide_id
         LEFT JOIN analytical_methods am ON am.id=l.method_id
         JOIN source_records sr ON sr.id=l.source_id
@@ -659,6 +677,7 @@ def decide_vendor_service_evidence_link(
         FROM vendor_service_evidence_links l
         JOIN vendor_services vs ON vs.id=l.service_id
         JOIN vendors v ON v.id=vs.vendor_id
+        JOIN vendor_sites site ON site.id=vs.site_id AND site.review_status='verified'
         WHERE l.id=:id AND l.organization_id=:org AND l.review_status='in_review'
           AND v.review_status='verified' AND v.verification_status='verified'
           AND vs.review_status='verified'
@@ -842,10 +861,12 @@ def verified_vendor_services(
     if not vendor:
         raise HTTPException(status_code=404, detail="Verified vendor was not found.")
     rows = db.execute(text("""
-        SELECT id AS service_id, service_name, capability_description
-        FROM vendor_services
-        WHERE vendor_id=:vendor AND review_status='verified'
-        ORDER BY service_name
+        SELECT vs.id AS service_id, vs.service_name, vs.capability_description,
+               vs.site_id, site.site_name, site.address AS site_address
+        FROM vendor_services vs
+        JOIN vendor_sites site ON site.id=vs.site_id AND site.review_status='verified'
+        WHERE vs.vendor_id=:vendor AND vs.review_status='verified'
+        ORDER BY vs.service_name
     """), {"vendor": vendor_id}).mappings().all()
     return {"items": [dict(row) for row in rows], "count": len(rows)}
 
@@ -863,11 +884,13 @@ def verified_vendor_capabilities(
         raise HTTPException(status_code=404, detail="Verified vendor was not found.")
     rows = db.execute(text("""
         SELECT vs.id AS service_id, vs.service_name, vs.capability_description,
+               vs.site_id, site.site_name, site.address AS site_address,
                l.id AS link_id, l.relationship_type, l.evidence_scope, l.limitations,
                p.id AS peptide_id, p.preferred_name AS peptide_name,
                am.id AS method_id, am.method_name,
                sr.source_name, sr.source_identifier, sr.source_url
         FROM vendor_services vs
+        JOIN vendor_sites site ON site.id=vs.site_id AND site.review_status='verified'
         JOIN vendor_service_evidence_links l ON l.service_id=vs.id AND l.review_status='verified'
         LEFT JOIN peptides p ON p.id=l.peptide_id AND p.review_status='verified'
         LEFT JOIN analytical_methods am ON am.id=l.method_id AND am.review_status='verified'

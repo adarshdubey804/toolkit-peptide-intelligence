@@ -10,6 +10,9 @@ type Capability = {
   service_id: string;
   service_name: string;
   capability_description: string;
+  site_id?: string | null;
+  site_name?: string | null;
+  site_address?: string | null;
   link_id: string;
   relationship_type: string;
   evidence_scope: string;
@@ -62,6 +65,7 @@ export default function VendorCapabilitiesPage() {
       {items.map(item=><article key={item.link_id} className="panel p-5">
         <div className="flex items-start justify-between gap-3"><h2 className="text-lg font-semibold">{item.service_name}</h2><span className="rounded-full border border-emerald-400/40 px-3 py-1 text-xs text-emerald-200">Verified link</span></div>
         <p className="muted mt-2 text-sm">{item.capability_description}</p>
+        <div className="mt-3 rounded-lg border border-slate-700 p-3"><p className="text-xs font-semibold">Verified facility</p><p className="mt-1 text-sm">{item.site_name || "Facility not recorded"}</p><p className="muted mt-1 text-xs">{item.site_address || "Facility address not established"}</p></div>
         <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-300">{item.relationship_type.replaceAll("_"," ")}</p>
         {(item.peptide_name || item.method_name) && <div className="mt-3 space-y-2 text-sm">
           {item.peptide_name && <p><span className="muted">Peptide: </span>{item.peptide_name}</p>}

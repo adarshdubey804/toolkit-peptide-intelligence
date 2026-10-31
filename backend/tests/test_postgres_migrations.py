@@ -46,3 +46,12 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
                 {"table_name": f"public.{table_name}"},
             ).scalar_one()
             assert exists, f"Expected migration-created table {table_name!r}"
+
+        site_column_exists = connection.execute(text("""
+            SELECT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema='public' AND table_name='vendor_services'
+                  AND column_name='site_id' AND is_nullable='YES'
+            )
+        """)).scalar_one()
+        assert site_column_exists, "Legacy vendor services must remain nullable while new submissions require a verified site"

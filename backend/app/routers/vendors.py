@@ -84,7 +84,10 @@ def verified_vendor_directory(
     rows = db.execute(text("""
         SELECT v.id, v.legal_name, v.website_url, v.country_code, v.vendor_type,
                v.verification_status, v.last_verified_at,
-               '[]'::jsonb AS services,
+               COALESCE(jsonb_agg(DISTINCT jsonb_build_object(
+                   'service_name', vs.service_name,
+                   'capability_description', vs.capability_description
+               )) FILTER (WHERE vs.id IS NOT NULL), '[]'::jsonb) AS services,
                COALESCE(jsonb_agg(DISTINCT jsonb_build_object(
                    'certification_name', vc.certification_name,
                    'issuing_body', vc.issuing_body,

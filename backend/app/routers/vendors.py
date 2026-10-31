@@ -84,10 +84,7 @@ def verified_vendor_directory(
     rows = db.execute(text("""
         SELECT v.id, v.legal_name, v.website_url, v.country_code, v.vendor_type,
                v.verification_status, v.last_verified_at,
-               COALESCE(jsonb_agg(DISTINCT jsonb_build_object(
-                   'service_name', vs.service_name,
-                   'capability_description', vs.capability_description
-               )) FILTER (WHERE vs.id IS NOT NULL), '[]'::jsonb) AS services,
+               '[]'::jsonb AS services,
                COALESCE(jsonb_agg(DISTINCT jsonb_build_object(
                    'certification_name', vc.certification_name,
                    'issuing_body', vc.issuing_body,
@@ -96,8 +93,7 @@ def verified_vendor_directory(
                    'verification_status', vc.verification_status
                )) FILTER (WHERE vc.id IS NOT NULL), '[]'::jsonb) AS certifications
         FROM vendors v
-        LEFT JOIN vendor_services vs ON vs.vendor_id=v.id
-        LEFT JOIN vendor_certifications vc ON vc.vendor_id=v.id
+        LEFT JOIN vendor_certifications vc ON vc.vendor_id=v.id AND vc.verification_status='verified'
         WHERE v.review_status='verified' AND v.verification_status='verified'
           AND (:q IS NULL OR v.legal_name ILIKE '%' || :q || '%' OR v.vendor_type ILIKE '%' || :q || '%')
           AND (:vendor_type IS NULL OR v.vendor_type=:vendor_type)
@@ -121,12 +117,12 @@ def submit_vendor(
     source_id = _source_record(db, payload.source_name, payload.source_identifier, str(payload.source_url))
     vendor = db.execute(text("""
         INSERT INTO vendors (legal_name, website_url, country_code, vendor_type,
-                             verification_status, review_status, submitted_by)
-        VALUES (:name, :website, :country, :type, 'unverified', 'in_review', :submitter)
+                             verification_status, review_status, submitted_by, organization_id)
+        VALUES (:name, :website, :country, :type, 'unverified', 'in_review', :submitter, :org)
         RETURNING id, legal_name, review_status, verification_status, created_at
     """), {"name": payload.legal_name.strip(), "website": str(payload.website_url),
            "country": payload.country_code.upper(), "type": payload.vendor_type,
-           "submitter": current_user["id"]}).mappings().one()
+           "submitter": current_user["id"], "org": organization_id}).mappings().one()
     db.execute(text("""
         INSERT INTO vendor_sources (vendor_id, source_record_id, evidence_scope)
         VALUES (:vendor, :source, :scope)
@@ -151,8 +147,8 @@ def submit_vendor_service(
     organization_id, role = _membership(current_user, db)
     if role not in SUBMIT_ROLES:
         raise HTTPException(status_code=403, detail="Your role cannot submit vendor capabilities.")
-    vendor = db.execute(text("SELECT id, submitted_by FROM vendors WHERE id=:id AND review_status='in_review'"),
-                        {"id": vendor_id}).mappings().first()
+    vendor = db.execute(text("SELECT id, submitted_by FROM vendors WHERE id=:id AND organization_id=:org AND review_status='in_review'"),
+                        {"id": vendor_id, "org": organization_id}).mappings().first()
     if not vendor or str(vendor["submitted_by"]) != current_user["id"]:
         raise HTTPException(status_code=404, detail="Your submitted vendor record was not found.")
     source_id = _source_record(db, payload.source_name, payload.source_identifier, str(payload.source_url))
@@ -195,10 +191,7 @@ def vendor_review_queue(
         FROM vendors v
         LEFT JOIN vendor_sources vsrc ON vsrc.vendor_id=v.id
         LEFT JOIN source_records sr ON sr.id=vsrc.source_record_id
-        WHERE v.review_status='in_review'
-          AND EXISTS (SELECT 1 FROM organization_memberships om
-                      WHERE om.organization_id=:org AND om.user_id=v.submitted_by
-                        AND om.membership_status='active')
+        WHERE v.review_status='in_review' AND v.organization_id=:org
         GROUP BY v.id ORDER BY v.created_at ASC LIMIT :limit
     """), {"org": organization_id, "limit": limit}).mappings().all()
     return {"items": [dict(row) for row in rows], "count": len(rows)}
@@ -216,9 +209,7 @@ def decide_vendor(
         raise HTTPException(status_code=403, detail="Curator or reviewer permission is required.")
     vendor = db.execute(text("""
         SELECT v.* FROM vendors v
-        JOIN organization_memberships om ON om.user_id=v.submitted_by
-        WHERE v.id=:id AND v.review_status='in_review'
-          AND om.organization_id=:org AND om.membership_status='active'
+        WHERE v.id=:id AND v.review_status='in_review' AND v.organization_id=:org
         FOR UPDATE OF v
     """), {"id": vendor_id, "org": organization_id}).mappings().first()
     if not vendor:
@@ -277,8 +268,8 @@ def submit_vendor_certification(
     organization_id, role = _membership(current_user, db)
     if role not in SUBMIT_ROLES:
         raise HTTPException(status_code=403, detail="Your role cannot submit certification evidence.")
-    vendor = db.execute(text("SELECT id, submitted_by FROM vendors WHERE id=:id AND review_status='in_review'"),
-                        {"id": vendor_id}).mappings().first()
+    vendor = db.execute(text("SELECT id, submitted_by FROM vendors WHERE id=:id AND organization_id=:org AND review_status='in_review'"),
+                        {"id": vendor_id, "org": organization_id}).mappings().first()
     if not vendor or str(vendor["submitted_by"]) != current_user["id"]:
         raise HTTPException(status_code=404, detail="Your submitted vendor record was not found.")
     source_id = _source_record(db, payload.source_name, payload.source_identifier, str(payload.source_url))
@@ -305,3 +296,90 @@ def submit_vendor_certification(
            "certification": str(certification["id"]), "source": str(source_id)})
     db.commit()
     return dict(certification)
+
+
+class VendorCertificationDecision(BaseModel):
+    decision: Literal["verified", "rejected", "needs_changes"]
+    rationale: str = Field(min_length=20, max_length=4000)
+
+
+@router.get("/certifications/reviews")
+def vendor_certification_review_queue(
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    limit: int = Query(default=50, ge=1, le=100),
+):
+    organization_id, role = _membership(current_user, db)
+    if role not in REVIEW_ROLES:
+        raise HTTPException(status_code=403, detail="Curator or reviewer permission is required.")
+    rows = db.execute(text("""
+        SELECT vc.id, vc.vendor_id, v.legal_name, vc.certification_name,
+               vc.issuing_body, vc.certificate_reference, vc.scope,
+               vc.valid_from, vc.valid_until, vc.verification_status,
+               sr.source_name, sr.source_identifier, sr.source_url,
+               v.submitted_by
+        FROM vendor_certifications vc
+        JOIN vendors v ON v.id=vc.vendor_id
+        LEFT JOIN source_records sr ON sr.id=vc.verification_source_id
+        WHERE v.organization_id=:org AND vc.verification_status='unverified'
+          AND v.review_status='verified' AND v.verification_status='verified'
+        ORDER BY vc.id LIMIT :limit
+    """), {"org": organization_id, "limit": limit}).mappings().all()
+    return {"items": [dict(row) for row in rows], "count": len(rows),
+            "scope": "Certification claims are reviewed independently of vendor identity."}
+
+
+@router.post("/certifications/{certification_id}/decisions", status_code=201)
+def decide_vendor_certification(
+    certification_id: UUID,
+    payload: VendorCertificationDecision,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    organization_id, role = _membership(current_user, db)
+    if role not in REVIEW_ROLES:
+        raise HTTPException(status_code=403, detail="Curator or reviewer permission is required.")
+    certification = db.execute(text("""
+        SELECT vc.id, vc.vendor_id, vc.verification_source_id, vc.verification_status,
+               v.submitted_by
+        FROM vendor_certifications vc
+        JOIN vendors v ON v.id=vc.vendor_id
+        WHERE vc.id=:id AND v.organization_id=:org
+          AND v.review_status='verified' AND v.verification_status='verified'
+        FOR UPDATE OF vc
+    """), {"id": certification_id, "org": organization_id}).mappings().first()
+    if not certification or certification["verification_status"] != "unverified":
+        raise HTTPException(status_code=404, detail="Pending certification review was not found in this organization.")
+    if str(certification["submitted_by"]) == current_user["id"]:
+        raise HTTPException(status_code=409, detail="A vendor submitter cannot review their own certification claim.")
+    source = db.execute(text("""
+        SELECT source_url FROM source_records WHERE id=:id
+    """), {"id": certification["verification_source_id"]}).scalar_one_or_none()
+    if payload.decision == "verified" and not source:
+        raise HTTPException(status_code=409, detail="Certification verification requires a source URL.")
+    db.execute(text("""
+        INSERT INTO vendor_certification_decisions
+            (certification_id, organization_id, reviewer_id, decision, rationale)
+        VALUES (:certification, :org, :reviewer, :decision, :rationale)
+    """), {"certification": certification_id, "org": organization_id,
+           "reviewer": current_user["id"], "decision": payload.decision,
+           "rationale": payload.rationale.strip()})
+    new_status = "verified" if payload.decision == "verified" else (
+        "rejected" if payload.decision == "rejected" else "unverified"
+    )
+    db.execute(text("""
+        UPDATE vendor_certifications
+        SET verification_status=:status,
+            verified_by=:reviewer,
+            verified_at=CASE WHEN :status='verified' THEN now() ELSE NULL END
+        WHERE id=:id
+    """), {"status": new_status, "reviewer": current_user["id"], "id": certification_id})
+    db.execute(text("""
+        INSERT INTO audit_events (actor_user_id, organization_id, action, entity_type, entity_id, event_metadata)
+        VALUES (:actor, :org, 'vendor_certification_review_decided', 'vendor_certification', :id,
+                jsonb_build_object('decision', :decision, 'vendor_id', :vendor))
+    """), {"actor": current_user["id"], "org": organization_id, "id": certification_id,
+           "decision": payload.decision, "vendor": str(certification["vendor_id"])})
+    db.commit()
+    return {"certification_id": str(certification_id), "verification_status": new_status,
+            "decision": payload.decision}

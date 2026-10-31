@@ -70,10 +70,12 @@ def _user_response(row) -> dict:
 def _load_user(db: Session, email: str):
     return db.execute(text("""
         SELECT up.id, up.email, up.password_hash, up.display_name,
-               up.organization_id, up.role, up.is_active, o.name AS organization_name
+               om.organization_id, om.role, up.is_active, o.name AS organization_name
         FROM user_profiles up
-        LEFT JOIN organizations o ON o.id = up.organization_id
+        LEFT JOIN organization_memberships om ON om.user_id = up.id AND om.membership_status = 'active'
+        LEFT JOIN organizations o ON o.id = om.organization_id
         WHERE lower(up.email) = :email
+        ORDER BY om.created_at
         LIMIT 1
     """), {"email": email}).mappings().first()
 

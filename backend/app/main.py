@@ -33,42 +33,49 @@ if not MIGRATIONS_DIR.is_dir():
     MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "database" / "migrations"
 
 
+def apply_development_migrations(connection, migrations_dir: Path = MIGRATIONS_DIR) -> None:
+    """Apply pending development migrations once and reject edits to applied files."""
+    connection.exec_driver_sql("""
+        CREATE TABLE IF NOT EXISTS toolkit_schema_migrations (
+            version TEXT PRIMARY KEY,
+            checksum TEXT NOT NULL,
+            applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+    """)
+    for migration in sorted(migrations_dir.glob("*.sql")):
+        version = migration.name
+        sql = migration.read_text(encoding="utf-8")
+        checksum = sha256(sql.encode("utf-8")).hexdigest()
+        applied = connection.execute(
+            text("SELECT checksum FROM toolkit_schema_migrations WHERE version = :version"),
+            {"version": version},
+        ).scalar_one_or_none()
+        if applied is not None:
+            if applied != checksum:
+                raise RuntimeError(
+                    f"Applied migration {version} was modified. "
+                    "Create a new forward-only migration instead."
+                )
+            continue
+
+        connection.exec_driver_sql(sql)
+        connection.execute(
+            text("""
+                INSERT INTO toolkit_schema_migrations (version, checksum)
+                VALUES (:version, :checksum)
+            """),
+            {"version": version, "checksum": checksum},
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Development convenience only. Production migrations must run as a deployment job.
     if settings.app_env == "development":
         with engine.begin() as conn:
-            conn.exec_driver_sql("""
-                CREATE TABLE IF NOT EXISTS toolkit_schema_migrations (
-                    version TEXT PRIMARY KEY,
-                    checksum TEXT NOT NULL,
-                    applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
-                )
-            """)
-            for migration in sorted(MIGRATIONS_DIR.glob("*.sql")):
-                version = migration.name
-                sql = migration.read_text(encoding="utf-8")
-                checksum = sha256(sql.encode("utf-8")).hexdigest()
-                applied = conn.execute(
-                    text("SELECT checksum FROM toolkit_schema_migrations WHERE version = :version"),
-                    {"version": version},
-                ).scalar_one_or_none()
-                if applied is not None:
-                    if applied != checksum:
-                        raise RuntimeError(
-                            f"Applied migration {version} was modified. "
-                            "Create a new forward-only migration instead."
-                        )
-                    continue
-
-                conn.exec_driver_sql(sql)
-                conn.execute(
-                    text("""
-                        INSERT INTO toolkit_schema_migrations (version, checksum)
-                        VALUES (:version, :checksum)
-                    """),
-                    {"version": version, "checksum": checksum},
-                )
+            # Serialize concurrent development server starts sharing the same database.
+            conn.execute(text("SELECT pg_advisory_xact_lock(731904221067)"))
+            apply_development_migrations(conn)
     yield
 
 

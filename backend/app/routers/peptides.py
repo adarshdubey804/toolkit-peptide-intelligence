@@ -300,3 +300,59 @@ def peptide_knowledge_graph(peptide_id: UUID, db: Session = Depends(get_db)):
         },
         "scope": "Curator-verified relationships only. Missing edges mean no verified relationship is currently recorded.",
     }
+
+
+@router.get("/{peptide_id}/graph/related")
+def related_peptides(
+    peptide_id: UUID,
+    limit: int = Query(default=25, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    """Find verified peptides sharing curated targets or pathways with this peptide."""
+    peptide = db.execute(text("""
+        SELECT id, preferred_name FROM peptides
+        WHERE id=:id AND review_status='verified'
+    """), {"id": peptide_id}).mappings().first()
+    if peptide is None:
+        raise HTTPException(status_code=404, detail="Verified peptide record not found")
+
+    rows = db.execute(text("""
+        WITH seed_targets AS (
+            SELECT target_id FROM peptide_target_evidence
+            WHERE peptide_id=:id AND review_status='verified'
+        ), seed_pathways AS (
+            SELECT pathway_id FROM peptide_pathway_evidence
+            WHERE peptide_id=:id AND review_status='verified'
+        ), shared AS (
+            SELECT p.id, p.preferred_name, p.peptide_category,
+                   'shared_target'::text AS connection_type,
+                   t.id AS shared_entity_id, t.preferred_name AS shared_entity_name,
+                   COUNT(*) OVER (PARTITION BY p.id) AS shared_connection_count
+            FROM peptide_target_evidence e
+            JOIN seed_targets s ON s.target_id=e.target_id
+            JOIN targets t ON t.id=e.target_id
+            JOIN peptides p ON p.id=e.peptide_id AND p.review_status='verified'
+            WHERE e.review_status='verified' AND p.id<>:id
+            UNION ALL
+            SELECT p.id, p.preferred_name, p.peptide_category,
+                   'shared_pathway'::text AS connection_type,
+                   w.id AS shared_entity_id, w.preferred_name AS shared_entity_name,
+                   COUNT(*) OVER (PARTITION BY p.id) AS shared_connection_count
+            FROM peptide_pathway_evidence e
+            JOIN seed_pathways s ON s.pathway_id=e.pathway_id
+            JOIN pathways w ON w.id=e.pathway_id
+            JOIN peptides p ON p.id=e.peptide_id AND p.review_status='verified'
+            WHERE e.review_status='verified' AND p.id<>:id
+        )
+        SELECT id, preferred_name, peptide_category, connection_type,
+               shared_entity_id, shared_entity_name, shared_connection_count
+        FROM shared
+        ORDER BY shared_connection_count DESC, preferred_name, connection_type
+        LIMIT :limit
+    """), {"id": peptide_id, "limit": limit}).mappings().all()
+    return {
+        "peptide_id": str(peptide_id),
+        "items": [dict(row) for row in rows],
+        "count": len(rows),
+        "scope": "Verified peptide records connected through shared curator-verified target or pathway evidence. Shared associations do not establish equivalent mechanism, efficacy or clinical interchangeability.",
+    }

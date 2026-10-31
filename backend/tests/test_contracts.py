@@ -81,7 +81,7 @@ def test_clinical_trials_normalization_preserves_source_and_evidence_state():
 
 def test_provenance_migration_is_present_and_applied_in_development_order():
     migrations = sorted(path.name for path in MIGRATIONS_DIR.glob("*.sql"))
-    assert migrations == ["001_initial_schema.sql", "002_provenance_curation.sql", "003_authentication.sql", "004_organization_workspaces.sql", "005_curation_workflow.sql", "006_enrichment_candidates.sql", "007_vendor_directory.sql"]
+    assert migrations == ["001_initial_schema.sql", "002_provenance_curation.sql", "003_authentication.sql", "004_organization_workspaces.sql", "005_curation_workflow.sql", "006_enrichment_candidates.sql", "007_vendor_directory.sql", "008_analytical_method_intelligence.sql"]
     sql = (MIGRATIONS_DIR / "002_provenance_curation.sql").read_text(encoding="utf-8")
     assert "source_record_versions" in sql
     assert "external_entity_links" in sql
@@ -396,3 +396,35 @@ def test_vendor_source_requires_https_and_credentials_are_rejected():
         _source_host("http://example.org/vendor")
     with pytest.raises(Exception):
         _source_host("https://user:password@example.org/vendor")
+
+
+def test_analytical_method_routes_and_review_migration_are_registered():
+    paths = app.openapi()["paths"]
+    assert "/api/v1/analytical-methods" in paths
+    assert "get" in paths["/api/v1/analytical-methods"]
+    assert "post" in paths["/api/v1/analytical-methods"]
+    assert "/api/v1/analytical-methods/reviews" in paths
+    assert "/api/v1/analytical-methods/{method_id}/decisions" in paths
+    sql = (MIGRATIONS_DIR / "008_analytical_method_intelligence.sql").read_text(encoding="utf-8")
+    assert "analytical_method_sources" in sql
+    assert "analytical_method_decisions" in sql
+    assert "prevent_analytical_method_decision_mutation" in sql
+
+
+def test_method_curation_is_separate_from_validation_status():
+    from app.routers.analytical_methods import MethodSubmission
+    payload = MethodSubmission(
+        method_name="Example peptide identity method",
+        method_category="mass_spectrometry",
+        scientific_principle="Mass-to-charge ratio measurement supports molecular characterization.",
+        intended_purpose="Research identity characterization of peptide samples.",
+        applicable_materials=["synthetic peptide"],
+        method_classification="published",
+        validation_status="not_assessed",
+        limitations="Matrix effects and instrument configuration may affect interpretation.",
+        source_name="Example Journal",
+        source_identifier="doi:10.example/method",
+        source_url="https://example.org/method",
+        evidence_scope="Describes the analytical principle and research application.",
+    )
+    assert payload.validation_status == "not_assessed"

@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field
 from fastapi import APIRouter, HTTPException, Query
 
 from ..config import settings
+from ..integrations.alphafold import AlphaFoldProvider
 from ..integrations.clinicaltrials import ClinicalTrialsProvider
 from ..integrations.pubchem import PubChemProvider
 from ..integrations.pubmed import PubMedProvider
@@ -52,6 +53,16 @@ async def search_rcsb(q: str = Query(min_length=3, max_length=200), limit: int =
         return await RCSBProvider().search(q, limit)
     except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
         raise HTTPException(status_code=502, detail="RCSB PDB could not be reached or returned an invalid response.") from exc
+
+
+
+@router.get("/alphafold")
+async def get_alphafold_prediction(accession: str = Query(min_length=3, max_length=20)):
+    """Retrieve AlphaFold DB prediction metadata by UniProt accession; predictions are not curated."""
+    try:
+        return await AlphaFoldProvider().get_prediction(accession)
+    except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(status_code=502, detail="AlphaFold DB could not be reached or returned an invalid response.") from exc
 
 
 @router.get("/pubchem")

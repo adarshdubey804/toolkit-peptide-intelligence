@@ -82,7 +82,7 @@ def test_clinical_trials_normalization_preserves_source_and_evidence_state():
 
 def test_provenance_migration_is_present_and_applied_in_development_order():
     migrations = sorted(path.name for path in MIGRATIONS_DIR.glob("*.sql"))
-    assert migrations == ["001_initial_schema.sql", "002_provenance_curation.sql", "003_authentication.sql", "004_organization_workspaces.sql", "005_curation_workflow.sql", "006_enrichment_candidates.sql", "007_vendor_directory.sql", "008_analytical_method_intelligence.sql", "009_formulation_stability_intelligence.sql", "010_process_development_intelligence.sql", "011_molecular_interaction_intelligence.sql", "012_agent_sessions.sql", "013_evidence_intelligence.sql", "014_regulatory_guidance_intelligence.sql", "015_regulatory_change_monitoring.sql", "016_regulatory_observation_integrity.sql", "017_regulatory_source_registry.sql", "018_enrichment_ingestion_runs.sql", "019_regulatory_source_observations.sql", "020_regulatory_poll_scheduler.sql"]
+    assert migrations == ["001_initial_schema.sql", "002_provenance_curation.sql", "003_authentication.sql", "004_organization_workspaces.sql", "005_curation_workflow.sql", "006_enrichment_candidates.sql", "007_vendor_directory.sql", "008_analytical_method_intelligence.sql", "009_formulation_stability_intelligence.sql", "010_process_development_intelligence.sql", "011_molecular_interaction_intelligence.sql", "012_agent_sessions.sql", "013_evidence_intelligence.sql", "014_regulatory_guidance_intelligence.sql", "015_regulatory_change_monitoring.sql", "016_regulatory_observation_integrity.sql", "017_regulatory_source_registry.sql", "018_enrichment_ingestion_runs.sql", "019_regulatory_source_observations.sql", "020_regulatory_poll_scheduler.sql", "021_evidence_review_decisions.sql"]
     sql = (MIGRATIONS_DIR / "002_provenance_curation.sql").read_text(encoding="utf-8")
     assert "source_record_versions" in sql
     assert "external_entity_links" in sql
@@ -806,3 +806,16 @@ def test_ai_synthesis_reports_sentence_level_citation_coverage():
     assert len(records) == 1
     assert records[0]["citation_id"] == "pubmed:123"
     assert "sentence-level citation coverage" in (Path(__file__).parents[1] / "app" / "services" / "ai_synthesis.py").read_text(encoding="utf-8")
+
+
+def test_evidence_review_decisions_are_independent_and_append_only():
+    paths = app.openapi()["paths"]
+    assert "/api/v1/evidence-intelligence/appraisals/{appraisal_id}/decision" in paths
+    assert "/api/v1/evidence-intelligence/appraisals/{appraisal_id}/decisions" in paths
+    assert "/api/v1/evidence-intelligence/duplicate-candidates/{candidate_id}/decisions" in paths
+    router = (Path(__file__).parents[1] / "app" / "routers" / "evidence_intelligence.py").read_text(encoding="utf-8")
+    assert "An appraisal must be independently reviewed by a different reviewer." in router
+    migration = (MIGRATIONS_DIR / "021_evidence_review_decisions.sql").read_text(encoding="utf-8")
+    assert "BEFORE UPDATE OR DELETE" in migration
+    assert "evidence_appraisal_decisions" in migration
+    assert "publication_duplicate_decisions" in migration

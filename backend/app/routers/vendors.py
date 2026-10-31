@@ -93,6 +93,7 @@ def verified_vendor_directory(
                    'verification_status', vc.verification_status
                )) FILTER (WHERE vc.id IS NOT NULL), '[]'::jsonb) AS certifications
         FROM vendors v
+        LEFT JOIN vendor_services vs ON vs.vendor_id=v.id AND vs.review_status='verified'
         LEFT JOIN vendor_certifications vc ON vc.vendor_id=v.id AND vc.verification_status='verified'
         WHERE v.review_status='verified' AND v.verification_status='verified'
           AND (:q IS NULL OR v.legal_name ILIKE '%' || :q || '%' OR v.vendor_type ILIKE '%' || :q || '%')
@@ -147,17 +148,22 @@ def submit_vendor_service(
     organization_id, role = _membership(current_user, db)
     if role not in SUBMIT_ROLES:
         raise HTTPException(status_code=403, detail="Your role cannot submit vendor capabilities.")
-    vendor = db.execute(text("SELECT id, submitted_by FROM vendors WHERE id=:id AND organization_id=:org AND review_status='in_review'"),
-                        {"id": vendor_id, "org": organization_id}).mappings().first()
-    if not vendor or str(vendor["submitted_by"]) != current_user["id"]:
-        raise HTTPException(status_code=404, detail="Your submitted vendor record was not found.")
+    vendor = db.execute(text("""
+        SELECT id FROM vendors
+        WHERE id=:id AND organization_id=:org
+          AND review_status='verified' AND verification_status='verified'
+    """), {"id": vendor_id, "org": organization_id}).mappings().first()
+    if not vendor:
+        raise HTTPException(status_code=404, detail="Verified vendor was not found in this organization.")
     source_id = _source_record(db, payload.source_name, payload.source_identifier, str(payload.source_url))
     service = db.execute(text("""
-        INSERT INTO vendor_services (vendor_id, service_name, capability_description, evidence_source_id)
-        VALUES (:vendor, :name, :description, :source)
-        RETURNING id, service_name, capability_description
+        INSERT INTO vendor_services
+            (vendor_id, service_name, capability_description, evidence_source_id, review_status, submitted_by)
+        VALUES (:vendor, :name, :description, :source, 'in_review', :submitter)
+        RETURNING id, service_name, capability_description, review_status
     """), {"vendor": vendor_id, "name": payload.service_name.strip(),
-           "description": payload.capability_description.strip(), "source": source_id}).mappings().one()
+           "description": payload.capability_description.strip(), "source": source_id,
+           "submitter": current_user["id"]}).mappings().one()
     db.execute(text("""
         INSERT INTO vendor_sources (vendor_id, source_record_id, evidence_scope)
         VALUES (:vendor, :source, :scope) ON CONFLICT DO NOTHING
@@ -244,6 +250,83 @@ def decide_vendor(
     """), {"actor": current_user["id"], "org": organization_id, "id": vendor_id, "decision": payload.decision})
     db.commit()
     return {"vendor_id": str(vendor_id), "review_status": new_status, "decision": payload.decision}
+
+
+@router.get("/services/reviews")
+def vendor_service_review_queue(
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    limit: int = Query(default=50, ge=1, le=100),
+):
+    organization_id, role = _membership(current_user, db)
+    if role not in REVIEW_ROLES:
+        raise HTTPException(status_code=403, detail="Curator or reviewer permission is required.")
+    rows = db.execute(text("""
+        SELECT vs.id, vs.vendor_id, v.legal_name, vs.service_name,
+               vs.capability_description, vs.review_status, vs.submitted_by,
+               sr.source_name, sr.source_identifier, sr.source_url
+        FROM vendor_services vs
+        JOIN vendors v ON v.id=vs.vendor_id
+        LEFT JOIN source_records sr ON sr.id=vs.evidence_source_id
+        WHERE v.organization_id=:org AND v.review_status='verified'
+          AND v.verification_status='verified' AND vs.review_status='in_review'
+        ORDER BY vs.id LIMIT :limit
+    """), {"org": organization_id, "limit": limit}).mappings().all()
+    return {"items": [dict(row) for row in rows], "count": len(rows),
+            "scope": "Service capability claims are independently reviewed after vendor identity verification."}
+
+
+@router.post("/services/{service_id}/decisions", status_code=201)
+def decide_vendor_service(
+    service_id: UUID,
+    payload: VendorDecision,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    organization_id, role = _membership(current_user, db)
+    if role not in REVIEW_ROLES:
+        raise HTTPException(status_code=403, detail="Curator or reviewer permission is required.")
+    service = db.execute(text("""
+        SELECT vs.id, vs.vendor_id, vs.submitted_by, vs.evidence_source_id
+        FROM vendor_services vs
+        JOIN vendors v ON v.id=vs.vendor_id
+        WHERE vs.id=:id AND v.organization_id=:org
+          AND v.review_status='verified' AND v.verification_status='verified'
+          AND vs.review_status='in_review'
+        FOR UPDATE OF vs
+    """), {"id": service_id, "org": organization_id}).mappings().first()
+    if not service:
+        raise HTTPException(status_code=404, detail="Pending service review was not found in this organization.")
+    if str(service["submitted_by"]) == current_user["id"]:
+        raise HTTPException(status_code=409, detail="A service submitter cannot review their own capability claim.")
+    source = db.execute(text("""
+        SELECT source_url FROM source_records WHERE id=:id
+    """), {"id": service["evidence_source_id"]}).scalar_one_or_none()
+    if payload.decision == "verified" and not source:
+        raise HTTPException(status_code=409, detail="Service verification requires a source URL.")
+    db.execute(text("""
+        INSERT INTO vendor_service_decisions
+            (service_id, organization_id, reviewer_id, decision, rationale)
+        VALUES (:service, :org, :reviewer, :decision, :rationale)
+    """), {"service": service_id, "org": organization_id, "reviewer": current_user["id"],
+           "decision": payload.decision, "rationale": payload.rationale.strip()})
+    new_status = "verified" if payload.decision == "verified" else (
+        "rejected" if payload.decision == "rejected" else "in_review"
+    )
+    db.execute(text("""
+        UPDATE vendor_services
+        SET review_status=:status, reviewed_by=:reviewer,
+            reviewed_at=CASE WHEN :status='verified' THEN now() ELSE NULL END
+        WHERE id=:id
+    """), {"status": new_status, "reviewer": current_user["id"], "id": service_id})
+    db.execute(text("""
+        INSERT INTO audit_events (actor_user_id, organization_id, action, entity_type, entity_id, event_metadata)
+        VALUES (:actor, :org, 'vendor_service_review_decided', 'vendor_service', :id,
+                jsonb_build_object('decision', :decision, 'vendor_id', :vendor))
+    """), {"actor": current_user["id"], "org": organization_id, "id": service_id,
+           "decision": payload.decision, "vendor": str(service["vendor_id"])})
+    db.commit()
+    return {"service_id": str(service_id), "review_status": new_status, "decision": payload.decision}
 
 
 class VendorCertificationSubmission(BaseModel):

@@ -2,7 +2,7 @@
 import Link from "next/link";
 import {useEffect,useState} from "react";
 const API=process.env.NEXT_PUBLIC_API_BASE_URL||"http://localhost:8000";
-type Peptide={id:string;preferred_name:string;peptide_category?:string};
+type Peptide={id:string;preferred_name:string;peptide_category?:string;development_status?:string;intended_use_class?:string};
 type RecordData={peptide:Peptide;sequences:Record<string,unknown>[];chemical_properties:Record<string,unknown>[];targets:Record<string,unknown>[];pathways:Record<string,unknown>[];evidence_claims:Record<string,unknown>[];linked_publications:Record<string,unknown>[]};
 type Result={items:RecordData[];scope:string};
 export default function ComparePage(){

@@ -1,3 +1,8 @@
+from uuid import UUID
+
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
 from app.main import app
 
 
@@ -27,3 +32,9 @@ def test_pubmed_discovery_is_registered_and_bounded():
     params = {item["name"]: item for item in operation["parameters"]}
     assert params["limit"]["schema"]["maximum"] == 20
     assert params["limit"]["schema"]["minimum"] == 1
+
+
+def test_peptide_profile_requires_uuid_path_parameter():
+    operation = app.openapi()["paths"]["/api/v1/peptides/{peptide_id}"]["get"]
+    parameter = next(item for item in operation["parameters"] if item["name"] == "peptide_id")
+    assert parameter["schema"]["format"] == "uuid"

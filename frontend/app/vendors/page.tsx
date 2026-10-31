@@ -164,7 +164,8 @@ export default function VendorsPage() {
       if(!response.ok) throw new Error(data.detail||"Certification submission failed.");
       setMessage("Certification evidence submitted. It remains unverified until the vendor identity is approved and a separate curator reviews the certificate.");
       setCertificationForm(prev=>({...prev,certification_name:"",issuing_body:"",certificate_reference:"",scope:"",valid_from:"",valid_until:"",source_name:"",source_identifier:"",source_url:""}));
-      await loadReviews();
+      await loadMySubmissions();
+      if (["organization_admin","curator","reviewer"].includes(role)) await loadReviews();
     }catch(e){setError(e instanceof Error?e.message:"Certification submission failed.");}
     finally{setBusy(false);}
   }

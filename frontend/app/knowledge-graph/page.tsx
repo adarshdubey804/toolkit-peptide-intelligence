@@ -77,7 +77,8 @@ export default function KnowledgeGraphPage() {
       }),
     ];
   }, [graph]);
-  const coordinates = useMemo(() => new Map(positioned.map((node) => [node.id, node])), [positioned]);\n  const visibleEdges = useMemo(() => graph?.edges.filter((edge) => evidenceFilter === "all" || edge.evidence_type === evidenceFilter) || [], [graph, evidenceFilter]);
+  const coordinates = useMemo(() => new Map(positioned.map((node) => [node.id, node])), [positioned]);
+  const visibleEdges = useMemo(() => graph?.edges.filter((edge) => evidenceFilter === "all" || edge.evidence_type === evidenceFilter) || [], [graph, evidenceFilter]);
 
   return <main className="container min-h-screen py-10">
     <Link href="/" className="text-sm text-emerald-300 hover:text-emerald-200">← Toolkit home</Link>
@@ -105,7 +106,8 @@ export default function KnowledgeGraphPage() {
         {graph && <div className="flex flex-wrap gap-2 text-xs text-slate-300"><span className="rounded-full border border-slate-700 px-3 py-1">{graph.counts.nodes} nodes</span><span className="rounded-full border border-slate-700 px-3 py-1">{graph.counts.edges} relationships</span><span className="rounded-full border border-slate-700 px-3 py-1">{graph.counts.publications} publications</span></div>}
       </div>
       {loadingGraph && <div className="panel p-8 text-sm muted">Building verified relationship graph…</div>}
-      {graph && <div className="panel overflow-hidden p-3 md:p-5">\n        <label className="mb-3 flex items-center gap-3 text-xs text-slate-300">Evidence filter <select value={evidenceFilter} onChange={(event) => setEvidenceFilter(event.target.value)} className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"><option value="all">All evidence types</option>{Array.from(new Set(graph.edges.map((edge) => edge.evidence_type))).map((type) => <option key={type} value={type}>{type.replaceAll("_", " ")}</option>)}</select></label>
+      {graph && <div className="panel overflow-hidden p-3 md:p-5">
+        <label className="mb-3 flex items-center gap-3 text-xs text-slate-300">Evidence filter <select value={evidenceFilter} onChange={(event) => setEvidenceFilter(event.target.value)} className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"><option value="all">All evidence types</option>{Array.from(new Set(graph.edges.map((edge) => edge.evidence_type))).map((type) => <option key={type} value={type}>{type.replaceAll("_", " ")}</option>)}</select></label>
         {visibleEdges.length === 0 ? <div className="p-10 text-center"><h3 className="font-semibold">No verified relationships recorded yet</h3><p className="muted mt-2 text-sm">This does not mean no biological relationships exist. It means none have passed curation in this platform.</p></div> : <>
           <div className="overflow-x-auto">
             <svg viewBox="0 0 900 580" role="img" aria-label={`Knowledge graph for ${selected.preferred_name}`} className="mx-auto min-w-[720px] w-full">

@@ -86,107 +86,108 @@ def create_peptide_dossier(
     """Create a draft dossier and submit it to the organization's scientific review queue."""
     _member_role(current_user, db)
     try:
-        with db.begin():
-            source_id = db.execute(text("""
-                INSERT INTO source_records
-                    (source_name, source_identifier, source_url, license_notes, raw_metadata, record_status)
-                VALUES (:name, :identifier, :url, :license, '{}'::jsonb, 'active')
-                RETURNING id
-            """), {
-                "name": payload.source_name.strip(),
-                "identifier": payload.source_identifier.strip() if payload.source_identifier else None,
-                "url": str(payload.source_url),
-                "license": payload.source_license_notes,
-            }).scalar_one()
+        source_id = db.execute(text("""
+            INSERT INTO source_records
+                (source_name, source_identifier, source_url, license_notes, raw_metadata, record_status)
+            VALUES (:name, :identifier, :url, :license, '{}'::jsonb, 'active')
+            RETURNING id
+        """), {
+            "name": payload.source_name.strip(),
+            "identifier": payload.source_identifier.strip() if payload.source_identifier else None,
+            "url": str(payload.source_url),
+            "license": payload.source_license_notes,
+        }).scalar_one()
 
-            peptide_id = db.execute(text("""
-                INSERT INTO peptides
-                    (preferred_name, peptide_category, description, development_status,
-                     intended_use_class, review_status, primary_source_id)
-                VALUES (:name, :category, :description, :development_status,
-                        :intended_use, 'in_review', :source_id)
-                RETURNING id
-            """), {
-                "name": payload.preferred_name.strip(), "category": payload.peptide_category,
-                "description": payload.description, "development_status": payload.development_status,
-                "intended_use": payload.intended_use_class, "source_id": source_id,
-            }).scalar_one()
+        peptide_id = db.execute(text("""
+            INSERT INTO peptides
+                (preferred_name, peptide_category, description, development_status,
+                 intended_use_class, review_status, primary_source_id)
+            VALUES (:name, :category, :description, :development_status,
+                    :intended_use, 'in_review', :source_id)
+            RETURNING id
+        """), {
+            "name": payload.preferred_name.strip(), "category": payload.peptide_category,
+            "description": payload.description, "development_status": payload.development_status,
+            "intended_use": payload.intended_use_class, "source_id": source_id,
+        }).scalar_one()
 
-            for alias in payload.aliases:
-                db.execute(text("""
-                    INSERT INTO peptide_aliases (peptide_id, alias, source_id)
-                    VALUES (:peptide_id, :alias, :source_id)
-                    ON CONFLICT (peptide_id, alias) DO NOTHING
-                """), {"peptide_id": peptide_id, "alias": alias, "source_id": source_id})
-
-            for sequence in payload.sequences:
-                db.execute(text("""
-                    INSERT INTO peptide_sequences
-                        (peptide_id, sequence, sequence_type, n_terminus, c_terminus,
-                         modifications, stereochemistry_notes, source_id, review_status)
-                    VALUES (:peptide_id, :sequence, :sequence_type, :n_terminus, :c_terminus,
-                            CAST(:modifications AS jsonb), :stereochemistry, :source_id, 'in_review')
-                """), {
-                    "peptide_id": peptide_id, "sequence": sequence.sequence.strip(),
-                    "sequence_type": sequence.sequence_type, "n_terminus": sequence.n_terminus,
-                    "c_terminus": sequence.c_terminus,
-                    "modifications": __import__("json").dumps(sequence.modifications),
-                    "stereochemistry": sequence.stereochemistry_notes, "source_id": source_id,
-                })
-
-            for chemistry in payload.chemical_properties:
-                db.execute(text("""
-                    INSERT INTO chemical_properties
-                        (peptide_id, chemical_form, molecular_formula, average_molecular_mass,
-                         monoisotopic_mass, canonical_smiles, inchi, inchikey, property_origin,
-                         method_or_tool, source_id, review_status)
-                    VALUES (:peptide_id, :form, :formula, :average_mass, :mono_mass, :smiles,
-                            :inchi, :inchikey, :origin, :method, :source_id, 'in_review')
-                """), {
-                    "peptide_id": peptide_id, "form": chemistry.chemical_form,
-                    "formula": chemistry.molecular_formula, "average_mass": chemistry.average_molecular_mass,
-                    "mono_mass": chemistry.monoisotopic_mass, "smiles": chemistry.canonical_smiles,
-                    "inchi": chemistry.inchi, "inchikey": chemistry.inchikey,
-                    "origin": chemistry.property_origin, "method": chemistry.method_or_tool,
-                    "source_id": source_id,
-                })
-
-            claim_ids = []
-            for claim in payload.claims:
-                claim_id = db.execute(text("""
-                    INSERT INTO evidence_claims
-                        (peptide_id, claim_text, claim_domain, evidence_type, limitations, review_status)
-                    VALUES (:peptide_id, :claim, :domain, CAST(:evidence_type AS evidence_type),
-                            :limitations, 'in_review')
-                    RETURNING id
-                """), {
-                    "peptide_id": peptide_id, "claim": claim.claim_text.strip(),
-                    "domain": claim.claim_domain, "evidence_type": claim.evidence_type,
-                    "limitations": claim.limitations,
-                }).scalar_one()
-                db.execute(text("""
-                    INSERT INTO claim_sources (claim_id, source_record_id, relationship)
-                    VALUES (:claim_id, :source_id, 'supports')
-                """), {"claim_id": claim_id, "source_id": source_id})
-                claim_ids.append(str(claim_id))
-
-            review_id = db.execute(text("""
-                INSERT INTO curation_reviews
-                    (entity_type, entity_id, source_record_id, review_status, priority, submitted_by)
-                VALUES ('peptide', :peptide_id, :source_id, 'in_review', 'normal', :submitter)
-                RETURNING id
-            """), {"peptide_id": peptide_id, "source_id": source_id, "submitter": current_user["id"]}).scalar_one()
-
+        for alias in payload.aliases:
             db.execute(text("""
-                INSERT INTO audit_events (actor_user_id, organization_id, action, entity_type, entity_id, event_metadata)
-                VALUES (:actor, :org, 'peptide_dossier_created', 'peptide', :peptide_id,
-                        jsonb_build_object('source_record_id', :source_id, 'review_id', :review_id,
-                                           'claim_count', :claim_count))
+                INSERT INTO peptide_aliases (peptide_id, alias, source_id)
+                VALUES (:peptide_id, :alias, :source_id)
+                ON CONFLICT (peptide_id, alias) DO NOTHING
+            """), {"peptide_id": peptide_id, "alias": alias, "source_id": source_id})
+
+        for sequence in payload.sequences:
+            db.execute(text("""
+                INSERT INTO peptide_sequences
+                    (peptide_id, sequence, sequence_type, n_terminus, c_terminus,
+                     modifications, stereochemistry_notes, source_id, review_status)
+                VALUES (:peptide_id, :sequence, :sequence_type, :n_terminus, :c_terminus,
+                        CAST(:modifications AS jsonb), :stereochemistry, :source_id, 'in_review')
             """), {
-                "actor": current_user["id"], "org": current_user["organization_id"],
-                "peptide_id": peptide_id, "source_id": source_id, "review_id": review_id,
-                "claim_count": len(claim_ids),
+                "peptide_id": peptide_id, "sequence": sequence.sequence.strip(),
+                "sequence_type": sequence.sequence_type, "n_terminus": sequence.n_terminus,
+                "c_terminus": sequence.c_terminus,
+                "modifications": __import__("json").dumps(sequence.modifications),
+                "stereochemistry": sequence.stereochemistry_notes, "source_id": source_id,
             })
+
+        for chemistry in payload.chemical_properties:
+            db.execute(text("""
+                INSERT INTO chemical_properties
+                    (peptide_id, chemical_form, molecular_formula, average_molecular_mass,
+                     monoisotopic_mass, canonical_smiles, inchi, inchikey, property_origin,
+                     method_or_tool, source_id, review_status)
+                VALUES (:peptide_id, :form, :formula, :average_mass, :mono_mass, :smiles,
+                        :inchi, :inchikey, :origin, :method, :source_id, 'in_review')
+            """), {
+                "peptide_id": peptide_id, "form": chemistry.chemical_form,
+                "formula": chemistry.molecular_formula, "average_mass": chemistry.average_molecular_mass,
+                "mono_mass": chemistry.monoisotopic_mass, "smiles": chemistry.canonical_smiles,
+                "inchi": chemistry.inchi, "inchikey": chemistry.inchikey,
+                "origin": chemistry.property_origin, "method": chemistry.method_or_tool,
+                "source_id": source_id,
+            })
+
+        claim_ids = []
+        for claim in payload.claims:
+            claim_id = db.execute(text("""
+                INSERT INTO evidence_claims
+                    (peptide_id, claim_text, claim_domain, evidence_type, limitations, review_status)
+                VALUES (:peptide_id, :claim, :domain, CAST(:evidence_type AS evidence_type),
+                        :limitations, 'in_review')
+                RETURNING id
+            """), {
+                "peptide_id": peptide_id, "claim": claim.claim_text.strip(),
+                "domain": claim.claim_domain, "evidence_type": claim.evidence_type,
+                "limitations": claim.limitations,
+            }).scalar_one()
+            db.execute(text("""
+                INSERT INTO claim_sources (claim_id, source_record_id, relationship)
+                VALUES (:claim_id, :source_id, 'supports')
+            """), {"claim_id": claim_id, "source_id": source_id})
+            claim_ids.append(str(claim_id))
+
+        review_id = db.execute(text("""
+            INSERT INTO curation_reviews
+                (entity_type, entity_id, source_record_id, review_status, priority, submitted_by)
+            VALUES ('peptide', :peptide_id, :source_id, 'in_review', 'normal', :submitter)
+            RETURNING id
+        """), {"peptide_id": peptide_id, "source_id": source_id, "submitter": current_user["id"]}).scalar_one()
+
+        db.execute(text("""
+            INSERT INTO audit_events (actor_user_id, organization_id, action, entity_type, entity_id, event_metadata)
+            VALUES (:actor, :org, 'peptide_dossier_created', 'peptide', :peptide_id,
+                    jsonb_build_object('source_record_id', :source_id, 'review_id', :review_id,
+                                       'claim_count', :claim_count))
+        """), {
+            "actor": current_user["id"], "org": current_user["organization_id"],
+            "peptide_id": peptide_id, "source_id": source_id, "review_id": review_id,
+            "claim_count": len(claim_ids),
+        })
+
+        db.commit()
         return {
             "peptide_id": str(peptide_id),
             "source_record_id": str(source_id),

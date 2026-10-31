@@ -314,12 +314,12 @@ def decide_vendor_service(
     """), {"service": service_id, "org": organization_id, "reviewer": current_user["id"],
            "decision": payload.decision, "rationale": payload.rationale.strip()})
     new_status = "verified" if payload.decision == "verified" else (
-        "rejected" if payload.decision == "rejected" else "in_review"
+        "rejected" if payload.decision == "rejected" else "draft"
     )
     db.execute(text("""
         UPDATE vendor_services
-        SET review_status=:status, reviewed_by=:reviewer,
-            reviewed_at=CASE WHEN :status='verified' THEN now() ELSE NULL END
+        SET review_status=:status, reviewed_by=:reviewer, reviewed_at=now(),
+            verified_at=CASE WHEN :status='verified' THEN now() ELSE NULL END
         WHERE id=:id
     """), {"status": new_status, "reviewer": current_user["id"], "id": service_id})
     db.execute(text("""

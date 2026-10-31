@@ -139,3 +139,11 @@ This is an early development scaffold, not production-ready software. Production
 - Curators/reviewers can manually poll RSS sources with POST `/api/v1/regulatory/sources/{source_id}/poll`, inspect pending observations at GET `/api/v1/regulatory/sources/observations`, and record accepted/rejected/duplicate decisions at POST `/api/v1/regulatory/sources/observations/{observation_id}/decision`.
 - Polling is limited to registered RSS feeds on a fixed platform allowlist: FDA, EMA, UK government, CDSCO and WHO domains. HTTPS only, redirects disabled, 15-second timeout, 2 MB response cap, XML content-type checks and DTD/entity rejection are enforced.
 - The allowlist is a network safety control, not proof of legal authority or source authenticity. Feed items remain observations and are not automatically promoted to verified regulatory guidance or interpreted as legal changes. Polling is manual; scheduled jobs and notifications remain future work.
+
+
+## Regulatory polling scheduler
+- Migration 020 adds per-source last/next poll timestamps, last status and durable poll-run history.
+- The one-shot worker is `backend/app/services/regulatory_scheduler.py`. Run from the backend directory with `python -m app.services.regulatory_scheduler`; invoke it periodically using an external scheduler. Each invocation processes at most 25 due RSS sources.
+- Row claiming uses PostgreSQL `FOR UPDATE SKIP LOCKED` and advances the next due time before network I/O to reduce duplicate work when scheduler instances overlap. Per-source successes/failures are recorded; failed sources are eligible again at their next configured interval.
+- Authenticated reviewer endpoints expose the schedule at GET `/api/v1/regulatory/sources/due` and run history at GET `/api/v1/regulatory/sources/poll-runs`.
+- No cron/Kubernetes schedule is installed by this repository change. Operators must provision the recurring invocation and monitor failures. Automated polling still creates unreviewed observations only.

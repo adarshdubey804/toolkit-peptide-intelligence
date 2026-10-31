@@ -244,6 +244,36 @@ def submit_vendor_service(
     return dict(service)
 
 
+@router.get("/organization-options")
+def vendor_organization_options(
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    organization_id, role = _membership(current_user, db)
+    if role not in SUBMIT_ROLES:
+        raise HTTPException(status_code=403, detail="Your role cannot access vendor submission options.")
+    rows = db.execute(text("""
+        SELECT v.id, v.legal_name, v.review_status, v.verification_status,
+               COALESCE((
+                   SELECT jsonb_agg(jsonb_build_object(
+                       'id', s.id, 'site_name', s.site_name, 'address', s.address,
+                       'country_code', s.country_code, 'site_scope', s.site_scope
+                   ) ORDER BY s.site_name)
+                   FROM vendor_sites s
+                   WHERE s.vendor_id=v.id AND s.organization_id=:org
+                     AND s.review_status='verified'
+               ), '[]'::jsonb) AS sites
+        FROM vendors v
+        WHERE v.organization_id=:org
+          AND (
+              (v.review_status='verified' AND v.verification_status='verified')
+              OR (v.submitted_by=:user_id AND v.review_status='in_review')
+          )
+        ORDER BY v.legal_name
+    """), {"org": organization_id, "user_id": current_user["id"]}).mappings().all()
+    return {"items": [dict(row) for row in rows], "count": len(rows)}
+
+
 @router.get("/my-submissions")
 def my_vendor_submissions(
     current_user: Annotated[dict, Depends(get_current_user)],
@@ -505,9 +535,10 @@ def submit_vendor_certification(
     db.execute(text("""
         INSERT INTO audit_events (actor_user_id, organization_id, action, entity_type, entity_id, event_metadata)
         VALUES (:actor, :org, 'vendor_certification_submitted', 'vendor', :id,
-                jsonb_build_object('certification_id', :certification, 'source_record_id', :source))
+                jsonb_build_object('certification_id', :certification, 'site_id', :site, 'source_record_id', :source))
     """), {"actor": current_user["id"], "org": organization_id, "id": vendor_id,
-           "certification": str(certification["id"]), "source": str(source_id)})
+           "certification": str(certification["id"]), "site": str(payload.site_id) if payload.site_id else None,
+           "source": str(source_id)})
     db.commit()
     return dict(certification)
 

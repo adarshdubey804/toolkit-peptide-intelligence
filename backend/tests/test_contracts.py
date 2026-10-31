@@ -563,3 +563,22 @@ def test_interaction_submission_schema_keeps_methods_and_evidence_separate():
             source={"source_name":"Example","source_identifier":"1",
                     "source_url":"https://example.org"}
         )
+
+
+def test_research_agent_catalogue_and_run_routes_are_registered():
+    paths = app.openapi()["paths"]
+    assert "/api/v1/agents" in paths
+    assert "get" in paths["/api/v1/agents"]
+    assert "/api/v1/agents/{agent_id}/run" in paths
+    assert "post" in paths["/api/v1/agents/{agent_id}/run"]
+
+
+def test_research_agent_catalogue_has_specialized_scientific_roles():
+    from app.routers.agents import AGENTS
+    identifiers = {agent["id"] for agent in AGENTS}
+    assert {
+        "peptide-research", "sequence", "structure", "target-interaction",
+        "analytical", "formulation", "process-development",
+        "regulatory-quality", "scientific-review"
+    }.issubset(identifiers)
+    assert len(AGENTS) == 9

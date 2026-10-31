@@ -970,6 +970,17 @@ def test_applicability_submission_requires_source_and_explicit_scope():
 
 
 
+def test_vendor_facility_review_routes_are_registered():
+    paths = app.openapi()["paths"]
+    assert "/api/v1/vendors/{vendor_id}/sites" in paths
+    assert "post" in paths["/api/v1/vendors/{vendor_id}/sites"]
+    assert "get" in paths["/api/v1/vendors/{vendor_id}/sites"]
+    assert "/api/v1/vendors/sites/reviews" in paths
+    assert "get" in paths["/api/v1/vendors/sites/reviews"]
+    assert "/api/v1/vendors/sites/{site_id}/decisions" in paths
+    assert "post" in paths["/api/v1/vendors/sites/{site_id}/decisions"]
+
+
 def test_vendor_certification_review_routes_are_registered():
     paths = app.openapi()["paths"]
     assert "/api/v1/vendors/certifications/reviews" in paths

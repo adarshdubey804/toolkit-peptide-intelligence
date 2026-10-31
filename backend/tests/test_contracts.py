@@ -1,7 +1,7 @@
 from app.main import app
 
 
-def test_health_route_is_registered():
+def test_health_and_readiness_routes_are_registered():
     paths = app.openapi()["paths"]
     assert "/health" in paths
     assert "/ready" in paths
@@ -20,3 +20,10 @@ def test_search_pagination_constraints_are_documented():
     assert params["limit"]["schema"]["maximum"] == 100
     assert params["limit"]["schema"]["minimum"] == 1
     assert params["offset"]["schema"]["minimum"] == 0
+
+
+def test_pubmed_discovery_is_registered_and_bounded():
+    operation = app.openapi()["paths"]["/api/v1/research/pubmed"]["get"]
+    params = {item["name"]: item for item in operation["parameters"]}
+    assert params["limit"]["schema"]["maximum"] == 20
+    assert params["limit"]["schema"]["minimum"] == 1

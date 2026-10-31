@@ -176,6 +176,7 @@ async def research_assistant_brief(
                 "overall_status": item.get("overall_status"),
                 "organism": item.get("organism"),
                 "experimental_methods": item.get("experimental_methods"),
+                "evidence_summary": item.get("brief_summary") or item.get("abstract") or item.get("summary") or item.get("description"),
                 "curation_status": "not_reviewed",
             })
 
@@ -225,7 +226,7 @@ async def research_assistant_brief(
 
 class AssistantSynthesisRequest(BaseModel):
     question: str = Field(min_length=8, max_length=500)
-    citations: list[dict] = Field(min_length=1, max_length=20)
+    limit: int = Field(default=5, ge=1, le=10)
 
 
 @router.post("/assistant/synthesize")
@@ -242,9 +243,12 @@ async def synthesize_research_answer(request: AssistantSynthesisRequest):
     from ..services.ai_synthesis import synthesize_with_sources
 
     try:
+        brief = await research_assistant_brief(request.question, request.limit)
+        if not brief["citations"]:
+            raise HTTPException(status_code=422, detail="No source records were retrieved; synthesis was not attempted.")
         result = await synthesize_with_sources(
             question=request.question,
-            citations=request.citations,
+            citations=brief["citations"],
             api_key=settings.ai_api_key,
             api_base_url=settings.ai_api_base_url,
             model=settings.ai_model,

@@ -5,7 +5,7 @@ Scientific intelligence for peptide research and pharmaceutical development, bui
 ## Current foundation
 
 - Next.js frontend with peptide directory, scientific profile views, interactive knowledge graph and multi-source research workspace and retrieval-only research assistant.
-- FastAPI backend with JWT authentication, organization registration, membership-based roles, organization-scoped research projects, scientific review submission/assignment/decision APIs, append-only curation decisions, researcher profiles, verified-record catalogue search, pagination, profile detail, verified peptide knowledge graph and readiness endpoints.
+- FastAPI backend with JWT authentication, organization registration, membership-based roles, organization-scoped research projects, scientific review submission/assignment/decision APIs, append-only curation decisions, researcher profiles, verified-record catalogue search, pagination, profile detail, verified peptide knowledge graph and readiness endpoints, plus organization-scoped structured evidence extraction and reviewer field-decision APIs.
 - PostgreSQL + pgvector schema for peptide identity, sequences, chemical properties, structures, targets, pathways, publications, research studies, evidence claims, analytical methods, vendor records, certifications and regulatory status.
 - Read-only discovery integrations with PubMed abstract retrieval: PubMed, ClinicalTrials.gov API v2, UniProtKB, RCSB PDB and PubChem.
 - Additive provenance and curation schema: source content hashes and versions, cross-database candidate entity links, review queue and append-only editorial decisions.
@@ -172,3 +172,13 @@ This is an early development scaffold, not production-ready software. Production
 - Unsupported or missing scalar fields remain null; missing list fields remain empty. Source citation IDs must match the retrieved source set. Unsupported classifications are rejected.
 - The endpoint is authenticated and organization-scoped but remains development-only while AI synthesis is disabled by default and production authentication/rate-limiting controls are not yet complete.
 - These are machine-generated research leads, not verified claims, measured results or scientific conclusions. Review the original source before accepting any extracted field. The current pilot stores one record per source and does not yet provide a field-by-field reviewer workflow.
+
+
+## Structured scientific evidence extraction and review
+
+- Migration 022 stores source-linked machine-extracted evidence records separately from canonical scientific claims; extraction remains unreviewed by default.
+- Development-only authenticated extraction endpoints: POST `/api/v1/research/assistant/extract` and GET `/api/v1/research/assistant/extractions/{run_id}`.
+- Migration 023 adds append-only field-level reviewer decisions. Curators, reviewers and organization admins can accept, correct or reject individual fields through POST `/api/v1/research/assistant/extractions/{run_id}/records/{record_id}/fields/{field_name}/review`.
+- Field review history is available at GET `/api/v1/research/assistant/extractions/{run_id}/records/{record_id}/history`. Original AI extraction JSON is not overwritten; corrections are separate decision events with reviewer identity and rationale.
+- Frontend reviewer workspace: `/evidence-review`. Reviewers sign in and load a run UUID returned by the extraction endpoint.
+- Field-level editorial decisions do not automatically promote records into the verified peptide catalogue or canonical evidence claims. Source review and canonical curation remain separate.

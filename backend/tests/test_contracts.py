@@ -1,5 +1,7 @@
+from pathlib import Path
+
 from app.integrations.clinicaltrials import normalize_study
-from app.main import app
+from app.main import MIGRATIONS_DIR, app
 
 
 def test_health_and_readiness_routes_are_registered():
@@ -75,3 +77,13 @@ def test_clinical_trials_normalization_preserves_source_and_evidence_state():
     assert result["overall_status"] == "RECRUITING"
     assert result["interventions"] == [{"name": "Peptide X", "type": "DRUG"}]
     assert result["curation_status"] == "not_reviewed"
+
+
+def test_provenance_migration_is_present_and_applied_in_development_order():
+    migrations = sorted(path.name for path in MIGRATIONS_DIR.glob("*.sql"))
+    assert migrations == ["001_initial_schema.sql", "002_provenance_curation.sql"]
+    sql = (MIGRATIONS_DIR / "002_provenance_curation.sql").read_text(encoding="utf-8")
+    assert "source_record_versions" in sql
+    assert "external_entity_links" in sql
+    assert "curation_reviews" in sql
+    assert "curation_decisions" in sql

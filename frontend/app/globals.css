@@ -1,0 +1,3 @@
+@import "tailwindcss";
+:root{--bg:#07111d;--panel:#0e1c2a;--muted:#9db0c1;--fg:#edf5f8;--accent:#16c79a}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font-family:Arial,Helvetica,sans-serif}.container{width:min(1160px,calc(100% - 40px));margin:0 auto}.panel{background:var(--panel);border:1px solid #203244;border-radius:18px}.muted{color:var(--muted)}.accent{color:var(--accent)}

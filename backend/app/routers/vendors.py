@@ -35,6 +35,21 @@ class VendorServiceSubmission(BaseModel):
     source_url: HttpUrl
 
 
+class VendorSiteSubmission(BaseModel):
+    site_name: str = Field(min_length=2, max_length=200)
+    address: str = Field(min_length=5, max_length=1000)
+    country_code: str = Field(min_length=2, max_length=2)
+    site_scope: str = Field(min_length=10, max_length=2000)
+    source_name: str = Field(min_length=2, max_length=120)
+    source_identifier: str = Field(min_length=1, max_length=200)
+    source_url: HttpUrl
+
+
+class VendorSiteDecision(BaseModel):
+    decision: Literal["verified", "rejected", "needs_changes"]
+    rationale: str = Field(min_length=20, max_length=4000)
+
+
 class VendorDecision(BaseModel):
     decision: Literal["verified", "rejected", "needs_changes"]
     rationale: str = Field(min_length=20, max_length=4000)
@@ -659,6 +674,144 @@ def decide_vendor_service_evidence_link(
            "decision": payload.decision, "service": str(link["service_id"])})
     db.commit()
     return {"link_id": str(link_id), "review_status": new_status, "decision": payload.decision}
+
+
+@router.post("/{vendor_id}/sites", status_code=201)
+def submit_vendor_site(
+    vendor_id: UUID,
+    payload: VendorSiteSubmission,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    organization_id, role = _membership(current_user, db)
+    if role not in SUBMIT_ROLES:
+        raise HTTPException(status_code=403, detail="Your role cannot submit vendor facility records.")
+    vendor = db.execute(text("""
+        SELECT id FROM vendors
+        WHERE id=:id AND organization_id=:org
+          AND review_status='verified' AND verification_status='verified'
+    """), {"id": vendor_id, "org": organization_id}).mappings().first()
+    if not vendor:
+        raise HTTPException(status_code=404, detail="Verified vendor was not found in this organization.")
+    source_id = _source_record(db, payload.source_name, payload.source_identifier, str(payload.source_url))
+    site = db.execute(text("""
+        INSERT INTO vendor_sites
+            (vendor_id, site_name, address, country_code, site_scope,
+             organization_id, review_status, submitted_by)
+        VALUES (:vendor, :name, :address, :country, :scope, :org, 'in_review', :submitter)
+        RETURNING id, vendor_id, site_name, address, country_code, site_scope, review_status
+    """), {"vendor": vendor_id, "name": payload.site_name.strip(),
+           "address": payload.address.strip(), "country": payload.country_code.upper(),
+           "scope": payload.site_scope.strip(), "org": organization_id,
+           "submitter": current_user["id"]}).mappings().one()
+    db.execute(text("""
+        INSERT INTO vendor_site_sources (site_id, source_record_id, evidence_scope)
+        VALUES (:site, :source, :scope)
+    """), {"site": site["id"], "source": source_id, "scope": payload.site_scope.strip()})
+    db.execute(text("""
+        INSERT INTO audit_events (actor_user_id, organization_id, action, entity_type, entity_id, event_metadata)
+        VALUES (:actor, :org, 'vendor_site_submitted', 'vendor_site', :id,
+                jsonb_build_object('vendor_id', :vendor, 'source_record_id', :source))
+    """), {"actor": current_user["id"], "org": organization_id, "id": site["id"],
+           "vendor": str(vendor_id), "source": str(source_id)})
+    db.commit()
+    return dict(site)
+
+
+@router.get("/sites/reviews")
+def vendor_site_review_queue(
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    limit: int = Query(default=50, ge=1, le=100),
+):
+    organization_id, role = _membership(current_user, db)
+    if role not in REVIEW_ROLES:
+        raise HTTPException(status_code=403, detail="Curator or reviewer permission is required.")
+    rows = db.execute(text("""
+        SELECT s.id, s.vendor_id, v.legal_name, s.site_name, s.address,
+               s.country_code, s.site_scope, s.submitted_by,
+               sr.source_name, sr.source_identifier, sr.source_url,
+               v.submitted_by AS vendor_submitter
+        FROM vendor_sites s
+        JOIN vendors v ON v.id=s.vendor_id
+        JOIN vendor_site_sources vss ON vss.site_id=s.id
+        JOIN source_records sr ON sr.id=vss.source_record_id
+        WHERE s.organization_id=:org AND s.review_status='in_review'
+          AND v.review_status='verified' AND v.verification_status='verified'
+        ORDER BY s.created_at ASC LIMIT :limit
+    """), {"org": organization_id, "limit": limit}).mappings().all()
+    return {"items": [dict(row) for row in rows], "count": len(rows),
+            "scope": "Facility identity, address and declared scope are reviewed independently of the parent vendor."}
+
+
+@router.post("/sites/{site_id}/decisions", status_code=201)
+def decide_vendor_site(
+    site_id: UUID,
+    payload: VendorSiteDecision,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    organization_id, role = _membership(current_user, db)
+    if role not in REVIEW_ROLES:
+        raise HTTPException(status_code=403, detail="Curator or reviewer permission is required.")
+    site = db.execute(text("""
+        SELECT s.id, s.vendor_id, s.submitted_by
+        FROM vendor_sites s
+        JOIN vendors v ON v.id=s.vendor_id
+        WHERE s.id=:id AND s.organization_id=:org AND s.review_status='in_review'
+          AND v.review_status='verified' AND v.verification_status='verified'
+        FOR UPDATE OF s
+    """), {"id": site_id, "org": organization_id}).mappings().first()
+    if not site:
+        raise HTTPException(status_code=404, detail="Pending facility review was not found in this organization.")
+    if str(site["submitted_by"]) == current_user["id"]:
+        raise HTTPException(status_code=409, detail="A facility submitter cannot review their own facility claim.")
+    db.execute(text("""
+        INSERT INTO vendor_site_decisions
+            (site_id, organization_id, reviewer_id, decision, rationale)
+        VALUES (:site, :org, :reviewer, :decision, :rationale)
+    """), {"site": site_id, "org": organization_id, "reviewer": current_user["id"],
+           "decision": payload.decision, "rationale": payload.rationale.strip()})
+    new_status = "verified" if payload.decision == "verified" else (
+        "rejected" if payload.decision == "rejected" else "draft"
+    )
+    db.execute(text("""
+        UPDATE vendor_sites
+        SET review_status=:status, reviewed_by=:reviewer, reviewed_at=now()
+        WHERE id=:id
+    """), {"status": new_status, "reviewer": current_user["id"], "id": site_id})
+    db.execute(text("""
+        INSERT INTO audit_events (actor_user_id, organization_id, action, entity_type, entity_id, event_metadata)
+        VALUES (:actor, :org, 'vendor_site_review_decided', 'vendor_site', :id,
+                jsonb_build_object('decision', :decision, 'vendor_id', :vendor))
+    """), {"actor": current_user["id"], "org": organization_id, "id": site_id,
+           "decision": payload.decision, "vendor": str(site["vendor_id"])})
+    db.commit()
+    return {"site_id": str(site_id), "review_status": new_status, "decision": payload.decision}
+
+
+@router.get("/{vendor_id}/sites")
+def verified_vendor_sites(
+    vendor_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+):
+    vendor = db.execute(text("""
+        SELECT id, legal_name FROM vendors
+        WHERE id=:id AND review_status='verified' AND verification_status='verified'
+    """), {"id": vendor_id}).mappings().first()
+    if not vendor:
+        raise HTTPException(status_code=404, detail="Verified vendor was not found.")
+    rows = db.execute(text("""
+        SELECT s.id, s.site_name, s.address, s.country_code, s.site_scope,
+               sr.source_name, sr.source_identifier, sr.source_url
+        FROM vendor_sites s
+        JOIN vendor_site_sources vss ON vss.site_id=s.id
+        JOIN source_records sr ON sr.id=vss.source_record_id
+        WHERE s.vendor_id=:vendor AND s.review_status='verified'
+        ORDER BY s.site_name
+    """), {"vendor": vendor_id}).mappings().all()
+    return {"vendor": dict(vendor), "items": [dict(row) for row in rows], "count": len(rows),
+            "scope": "Only independently reviewed facility records are public."}
 
 
 @router.get("/{vendor_id}/services")

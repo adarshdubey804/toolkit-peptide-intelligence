@@ -385,3 +385,87 @@ def get_structured_extraction_run(
     """), {"run": run_id, "org": org}).mappings().all()
     return {"run": dict(run), "records": [dict(row) for row in rows],
             "notice": "Extraction records remain unreviewed and are not promoted to verified evidence claims."}
+
+
+class EvidenceFieldReviewRequest(BaseModel):
+    decision: Literal["accepted", "corrected", "rejected"]
+    rationale: str = Field(min_length=20, max_length=2000)
+    reviewed_value: object | None = None
+
+
+@router.post("/assistant/extractions/{run_id}/records/{record_id}/fields/{field_name}/review", status_code=201)
+def review_extracted_evidence_field(
+    run_id: UUID,
+    record_id: UUID,
+    field_name: str,
+    payload: EvidenceFieldReviewRequest,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """Append a reviewer decision for one extracted field; original AI output is never overwritten."""
+    if current_user.get("role") not in ("organization_admin", "curator", "reviewer"):
+        raise HTTPException(status_code=403, detail="Curator or reviewer permissions are required.")
+    scalar_fields = {"peptide_identity", "sequence", "target", "mechanism", "model_or_population", "extraction_notes"}
+    list_fields = {"modifications", "methods", "endpoints", "findings", "limitations", "conflicts"}
+    allowed_fields = scalar_fields | list_fields | {"study_design", "evidence_level", "sample_size"}
+    if field_name not in allowed_fields:
+        raise HTTPException(status_code=422, detail="Unsupported evidence field.")
+    if payload.decision == "corrected":
+        value = payload.reviewed_value
+        valid = (
+            (field_name in scalar_fields and (value is None or isinstance(value, str)))
+            or (field_name in list_fields and isinstance(value, list) and all(isinstance(item, str) for item in value))
+            or (field_name == "sample_size" and (value is None or (isinstance(value, int) and not isinstance(value, bool) and value >= 0)))
+            or (field_name == "study_design" and value in {"systematic_review", "meta_analysis", "randomized_trial", "observational_human", "animal", "in_vitro", "computational", "case_report", "other", "unknown"})
+            or (field_name == "evidence_level" and value in {"clinical_human", "preclinical_animal", "in_vitro", "computational", "secondary_research", "unknown"})
+        )
+        if not valid:
+            raise HTTPException(status_code=422, detail="Corrected value does not match the field's data type or allowed classification.")
+    elif payload.reviewed_value is not None:
+        raise HTTPException(status_code=422, detail="Only corrected decisions may include a reviewed value.")
+
+    org = current_user.get("organization_id")
+    record = db.execute(text("""
+        SELECT id FROM extracted_evidence_records
+        WHERE id=:record AND run_id=:run AND organization_id=:org
+    """), {"record": record_id, "run": run_id, "org": org}).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="Extraction record not found in this organization.")
+    row = db.execute(text("""
+        INSERT INTO extracted_evidence_field_decisions
+          (organization_id,record_id,field_name,decision,reviewed_value,rationale,reviewer_id)
+        VALUES(:org,:record,:field,:decision,CAST(:value AS jsonb),:rationale,:reviewer)
+        RETURNING id,field_name,decision,reviewed_value,rationale,reviewer_id,created_at
+    """), {
+        "org": org, "record": record_id, "field": field_name, "decision": payload.decision,
+        "value": json.dumps(payload.reviewed_value) if payload.decision == "corrected" else None,
+        "rationale": payload.rationale.strip(), "reviewer": current_user["id"],
+    }).mappings().one()
+    db.commit()
+    return dict(row)
+
+
+@router.get("/assistant/extractions/{run_id}/records/{record_id}/history")
+def get_extracted_evidence_field_history(
+    run_id: UUID,
+    record_id: UUID,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    org = current_user.get("organization_id")
+    record = db.execute(text("""
+        SELECT id,source_url,source_title,extraction,created_at
+        FROM extracted_evidence_records
+        WHERE id=:record AND run_id=:run AND organization_id=:org
+    """), {"record": record_id, "run": run_id, "org": org}).mappings().first()
+    if not record:
+        raise HTTPException(status_code=404, detail="Extraction record not found in this organization.")
+    decisions = db.execute(text("""
+        SELECT d.id,d.field_name,d.decision,d.reviewed_value,d.rationale,
+               d.reviewer_id,d.created_at
+        FROM extracted_evidence_field_decisions d
+        WHERE d.record_id=:record AND d.organization_id=:org
+        ORDER BY d.created_at,d.id
+    """), {"record": record_id, "org": org}).mappings().all()
+    return {"record": dict(record), "decisions": [dict(item) for item in decisions],
+            "notice": "The original machine extraction is immutable. Decisions are append-only and do not independently establish scientific truth."}

@@ -7,12 +7,22 @@ const API = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 type Vendor = { id: string; legal_name: string; website_url: string; country_code: string; vendor_type: string; verification_status: string; services: { service_name: string; capability_description: string }[]; certifications: { certification_name: string; issuing_body?: string; scope?: string; valid_until?: string; verification_status: string }[] };
 type Review = { id: string; legal_name: string; website_url: string; country_code: string; vendor_type: string; review_status: string; sources: { source_name: string; source_identifier: string; source_url: string; evidence_scope: string }[] };
 type ServiceReview = { id: string; vendor_id: string; legal_name: string; service_name: string; capability_description: string; source_name?: string; source_identifier?: string; source_url?: string };
+type ServiceOption = { service_id: string; service_name: string; capability_description: string };
+type PeptideOption = { id: string; preferred_name: string };
+type MethodOption = { id: string; method_name: string };
+type LinkReview = { id: string; service_id: string; legal_name: string; service_name: string; relationship_type: string; evidence_scope: string; limitations: string; peptide_id?: string; peptide_name?: string; method_id?: string; method_name?: string; source_name: string; source_identifier: string; source_url: string };
 
 export default function VendorsPage() {
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [serviceReviews, setServiceReviews] = useState<ServiceReview[]>([]);
   const [serviceRationale, setServiceRationale] = useState<Record<string,string>>({});
+  const [capabilityOptions, setCapabilityOptions] = useState<ServiceOption[]>([]);
+  const [peptideOptions, setPeptideOptions] = useState<PeptideOption[]>([]);
+  const [methodOptions, setMethodOptions] = useState<MethodOption[]>([]);
+  const [linkReviews, setLinkReviews] = useState<LinkReview[]>([]);
+  const [linkRationales, setLinkRationales] = useState<Record<string,string>>({});
+  const [linkForm, setLinkForm] = useState({ service_id:"", relationship_type:"peptide_supply", peptide_id:"", method_id:"", evidence_scope:"", limitations:"", source_name:"", source_identifier:"", source_url:"" });
   const [serviceForm, setServiceForm] = useState({ vendor_id: "", service_name: "", capability_description: "", source_name: "", source_identifier: "", source_url: "" });
   const [q, setQ] = useState("");
   const [email, setEmail] = useState("");
@@ -117,6 +127,77 @@ export default function VendorsPage() {
     } catch (e) { setError(e instanceof Error ? e.message : "Service decision failed."); }
   }
 
+  async function loadLinkOptions(vendorId: string) {
+    if (!token || !vendorId) return;
+    try {
+      const [capRes, pepRes, methodRes] = await Promise.all([
+        fetch(API + "/api/v1/vendors/" + vendorId + "/capabilities", {headers:{Authorization:"Bearer "+token}}),
+        fetch(API + "/api/v1/peptides?limit=100&offset=0"),
+        fetch(API + "/api/v1/analytical-methods")
+      ]);
+      const [capData, pepData, methodData] = await Promise.all([capRes.json(),pepRes.json(),methodRes.json()]);
+      if (!capRes.ok) throw new Error(capData.detail || "Verified vendor services could not be loaded.");
+      if (!pepRes.ok) throw new Error(pepData.detail || "Verified peptide catalogue unavailable.");
+      if (!methodRes.ok) throw new Error(methodData.detail || "Verified method catalogue unavailable.");
+      setCapabilityOptions(capData.items || []);
+      setPeptideOptions(pepData.items || []);
+      setMethodOptions(methodData.items || []);
+      setLinkForm(prev=>({...prev,service_id:""}));
+    } catch(e) { setError(e instanceof Error ? e.message : "Capability link options failed."); }
+  }
+
+  async function submitEvidenceLink(e: FormEvent) {
+    e.preventDefault(); if (!token || !linkForm.service_id) return;
+    setBusy(true); setError(""); setMessage("");
+    try {
+      const payload = {
+        relationship_type: linkForm.relationship_type,
+        peptide_id: linkForm.peptide_id || null,
+        method_id: linkForm.method_id || null,
+        evidence_scope: linkForm.evidence_scope,
+        limitations: linkForm.limitations,
+        source_name: linkForm.source_name,
+        source_identifier: linkForm.source_identifier,
+        source_url: linkForm.source_url
+      };
+      const response = await fetch(API + "/api/v1/vendors/services/" + linkForm.service_id + "/evidence-links", {
+        method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify(payload)
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Capability evidence submission failed.");
+      setMessage("Source-backed vendor capability relationship submitted for independent review.");
+      setLinkForm(prev=>({...prev,peptide_id:"",method_id:"",evidence_scope:"",limitations:"",source_name:"",source_identifier:"",source_url:""}));
+      await loadLinkReviews();
+    } catch(e) { setError(e instanceof Error ? e.message : "Capability evidence submission failed."); }
+    finally { setBusy(false); }
+  }
+
+  async function loadLinkReviews() {
+    if (!token) return;
+    try {
+      const response = await fetch(API + "/api/v1/vendors/service-evidence-links/reviews", {headers:{Authorization:"Bearer "+token}});
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Capability evidence review queue unavailable.");
+      setLinkReviews(data.items || []);
+    } catch(e) { setError(e instanceof Error ? e.message : "Capability review queue failed."); }
+  }
+
+  async function decideEvidenceLink(item: LinkReview, decision: "verified"|"rejected"|"needs_changes") {
+    const why = (linkRationales[item.id] || "").trim();
+    if (why.length < 20) { setError("Capability review rationale must contain at least 20 characters."); return; }
+    try {
+      const response = await fetch(API + "/api/v1/vendors/service-evidence-links/" + item.id + "/decisions", {
+        method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify({decision,rationale:why})
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Capability evidence decision failed.");
+      setMessage("Capability relationship review recorded: " + decision + ".");
+      setLinkRationales(prev=>({...prev,[item.id]:""}));
+      await loadLinkReviews();
+      if (decision === "verified") await loadDirectory();
+    } catch(e) { setError(e instanceof Error ? e.message : "Capability evidence decision failed."); }
+  }
+
   async function decide(vendor: Review, decision: "verified"|"rejected"|"needs_changes") {
     const why = (rationale[vendor.id] || "").trim();
     if (why.length < 20) { setError("Please provide a rationale of at least 20 characters."); return; }
@@ -153,6 +234,25 @@ export default function VendorsPage() {
       <div className="panel p-6">
         <div className="flex items-center justify-between gap-3"><h2 className="text-xl font-semibold">Service capability review queue</h2><button onClick={()=>void loadServiceReviews()} className="text-xs text-emerald-300">Refresh</button></div>
         {serviceReviews.length===0?<p className="muted mt-4 text-sm">Load the queue to inspect source-backed service claims submitted within your organization. Reviewer permissions required.</p>:<div className="mt-4 space-y-4">{serviceReviews.map(s=><article key={s.id} className="rounded-xl border border-slate-700 p-4"><h3 className="font-semibold">{s.service_name}</h3><p className="muted mt-1 text-xs">{s.legal_name}</p><p className="muted mt-2 text-sm">{s.capability_description}</p>{s.source_url&&<a className="mt-2 block break-all text-xs text-emerald-300 underline" href={s.source_url} target="_blank" rel="noreferrer">{s.source_name}: {s.source_identifier} ↗</a>}{["organization_admin","curator","reviewer"].includes(role)&&<><textarea className={field+" mt-3"} rows={2} value={serviceRationale[s.id]||""} onChange={e=>setServiceRationale(prev=>({...prev,[s.id]:e.target.value}))} placeholder="Review rationale (minimum 20 characters)"/><div className="mt-3 flex flex-wrap gap-2">{(["verified","rejected","needs_changes"] as const).map(d=><button key={d} onClick={()=>void decideService(s,d)} className="rounded-full border border-slate-600 px-3 py-2 text-xs">{d.replace("_"," ")}</button>)}</div></>}</article>)}</div>}
+      </div>
+    </section>
+    <section className="mt-8 grid gap-6 lg:grid-cols-2">
+      <div className="panel p-6">
+        <h2 className="text-xl font-semibold">Link a verified service to a peptide or method</h2>
+        <p className="muted mt-2 text-xs">Choose a verified vendor, then load its independently reviewed services and the verified peptide/method catalogues. Each relationship needs its own source and limitations.</p>
+        <label className="mt-4 block"><span className={label}>Verified vendor</span><select className={field} value={serviceForm.vendor_id} onChange={e=>{setServiceForm(prev=>({...prev,vendor_id:e.target.value}));void loadLinkOptions(e.target.value);}}><option value="">Select vendor</option>{vendors.map(v=><option key={v.id} value={v.id}>{v.legal_name}</option>)}</select></label>
+        <form onSubmit={submitEvidenceLink} className="mt-4 space-y-3">
+          <label className="block"><span className={label}>Verified service</span><select required className={field} value={linkForm.service_id} onChange={e=>setLinkForm(prev=>({...prev,service_id:e.target.value}))}><option value="">Select reviewed service</option>{capabilityOptions.map(s=><option key={s.service_id} value={s.service_id}>{s.service_name}</option>)}</select></label>
+          <label className="block"><span className={label}>Relationship type</span><select className={field} value={linkForm.relationship_type} onChange={e=>setLinkForm(prev=>({...prev,relationship_type:e.target.value}))}>{[["peptide_supply","Peptide supply"],["peptide_manufacturing","Peptide manufacturing"],["peptide_specific_testing","Peptide-specific testing"],["method_service","Analytical method service"],["formulation_development","Formulation development"]].map(([value,labelText])=><option key={value} value={value}>{labelText}</option>)}</select></label>
+          <label className="block"><span className={label}>Verified peptide</span><select className={field} value={linkForm.peptide_id} onChange={e=>setLinkForm(prev=>({...prev,peptide_id:e.target.value}))}><option value="">Select peptide (required for supply/manufacturing/testing/formulation)</option>{peptideOptions.map(p=><option key={p.id} value={p.id}>{p.preferred_name}</option>)}</select></label>
+          <label className="block"><span className={label}>Verified analytical method</span><select className={field} value={linkForm.method_id} onChange={e=>setLinkForm(prev=>({...prev,method_id:e.target.value}))}><option value="">Select method (required for method service/testing)</option>{methodOptions.map(m=><option key={m.id} value={m.id}>{m.method_name}</option>)}</select></label>
+          {([["evidence_scope","What exactly does the source establish?"],["limitations","Limitations and exclusions"],["source_name","Evidence source name"],["source_identifier","Source identifier"],["source_url","Original source URL"]] as const).map(([key,title])=><label key={key} className="block"><span className={label}>{title}</span>{key==="evidence_scope"||key==="limitations"?<textarea required minLength={key==="limitations"?10:5} rows={2} className={field} value={linkForm[key]} onChange={e=>setLinkForm(prev=>({...prev,[key]:e.target.value}))}/>:<input required className={field} value={linkForm[key]} onChange={e=>setLinkForm(prev=>({...prev,[key]:e.target.value}))}/>}</label>)}
+          <button disabled={busy || !linkForm.service_id} className="rounded-full bg-emerald-400 px-5 py-3 text-sm font-semibold text-slate-950">Submit relationship for review</button>
+        </form>
+      </div>
+      <div className="panel p-6">
+        <div className="flex items-center justify-between gap-3"><h2 className="text-xl font-semibold">Capability relationship review queue</h2><button onClick={()=>void loadLinkReviews()} className="text-xs text-emerald-300">Refresh</button></div>
+        {linkReviews.length===0?<p className="muted mt-4 text-sm">Load the queue to inspect peptide and method relationships submitted within your organization. Reviewer permissions required.</p>:<div className="mt-4 space-y-4">{linkReviews.map(item=><article key={item.id} className="rounded-xl border border-slate-700 p-4"><h3 className="font-semibold">{item.legal_name} · {item.service_name}</h3><p className="muted mt-1 text-xs">{item.relationship_type.replaceAll("_"," ")}</p>{item.peptide_name&&<p className="mt-2 text-sm">Peptide: {item.peptide_name}</p>}{item.method_name&&<p className="mt-1 text-sm">Method: {item.method_name}</p>}<p className="muted mt-2 text-sm">{item.evidence_scope}</p><p className="muted mt-2 text-xs">Limitations: {item.limitations}</p><a href={item.source_url} target="_blank" rel="noreferrer" className="mt-2 block break-all text-xs text-emerald-300 underline">{item.source_name} · {item.source_identifier} ↗</a>{["organization_admin","curator","reviewer"].includes(role)&&<><textarea className={field+" mt-3"} rows={2} value={linkRationales[item.id]||""} onChange={e=>setLinkRationales(prev=>({...prev,[item.id]:e.target.value}))} placeholder="Review rationale (minimum 20 characters)"/><div className="mt-3 flex flex-wrap gap-2">{(["verified","rejected","needs_changes"] as const).map(d=><button key={d} onClick={()=>void decideEvidenceLink(item,d)} className="rounded-full border border-slate-600 px-3 py-2 text-xs">{d.replace("_"," ")}</button>)}</div></>}</article>)}</div>}
       </div>
     </section></>}
     <div className="panel mt-8 p-5"><h2 className="font-semibold">Verification boundary</h2><p className="muted mt-2 text-sm leading-6">A vendor identity review does not certify a facility, service, quality system or regulatory compliance. Certifications require separate evidence of issuing body, site, scope, validity dates and independent verification. This initial directory records vendor-level source evidence only.</p></div>

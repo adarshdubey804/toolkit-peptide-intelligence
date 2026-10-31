@@ -430,3 +430,63 @@ def compare_peptides(
         "comparison_count": len(results),
         "scope": "Only curator-verified records are included. Missing data means no verified record is currently available, not that the property or relationship is absent. Publication links are not a clinical-trial registry and do not establish efficacy.",
     }
+
+
+@router.get("/{peptide_id}/report")
+def peptide_research_report(peptide_id: UUID, db: Session = Depends(get_db)):
+    """Assemble a source-traceable research dossier from verified catalogue records."""
+    profile = peptide_profile(peptide_id, db)
+    graph = peptide_knowledge_graph(peptide_id, db)
+    appraisals = db.execute(text("""
+        SELECT ea.study_design,ea.evidence_level,ea.population_or_model,ea.sample_size,
+               ea.endpoint,ea.risk_of_bias,ea.replication_status,ea.limitations,
+               ea.appraisal_rationale,ea.appraisal_status
+        FROM evidence_appraisals ea
+        JOIN evidence_claims ec ON ec.id=ea.claim_id
+        WHERE ec.peptide_id=:id AND ec.review_status='verified'
+          AND ea.appraisal_status='accepted'
+        ORDER BY ea.created_at DESC
+    """), {"id": peptide_id}).mappings().all()
+    source_nodes = [node for node in graph["nodes"] if node["type"] == "source"]
+    publication_nodes = [node for node in graph["nodes"] if node["type"] == "publication"]
+    return {
+        "report_type": "peptide_research_dossier",
+        "generated_at": db.execute(text("SELECT now()")).scalar_one().isoformat(),
+        "peptide": profile["peptide"],
+        "sections": {
+            "identity_and_aliases": {"aliases": profile["aliases"], "category": profile["peptide"]["peptide_category"], "description": profile["peptide"]["description"], "development_status": profile["peptide"]["development_status"]},
+            "sequence_and_modifications": profile["sequences"],
+            "chemical_characteristics": profile["chemical_properties"],
+            "structure_records": profile["structures"],
+            "targets_and_pathways": {
+                "targets": [node for node in graph["nodes"] if node["type"] == "target"],
+                "pathways": [node for node in graph["nodes"] if node["type"] == "pathway"],
+                "interaction_assessments": [node for node in graph["nodes"] if node["type"] == "interaction_assessment"],
+            },
+            "evidence_claims": profile["evidence_claims"],
+            "evidence_appraisals": [dict(row) for row in appraisals],
+            "analytical_methods": [node for node in graph["nodes"] if node["type"] == "analytical_method"],
+            "formulation_and_stability": {
+                "formulations": [node for node in graph["nodes"] if node["type"] in ("formulation", "stability_observation")]
+            },
+            "process_development": [node for node in graph["nodes"] if node["type"] in ("process_knowledge", "process_stage")],
+            "publications": publication_nodes,
+            "source_records": source_nodes,
+        },
+        "relationship_graph": graph,
+        "evidence_summary": {
+            "verified_claim_count": len(profile["evidence_claims"]),
+            "accepted_appraisal_count": len(appraisals),
+            "source_record_count": len(source_nodes),
+            "publication_count": len(publication_nodes),
+            "limitations": [
+                "Only curator-verified catalogue records and accepted appraisals are included.",
+                "The report does not independently validate source accuracy or reproduce full publication contents.",
+                "A linked publication is not necessarily a clinical trial report.",
+                "Missing records indicate gaps in this curated database, not absence of external evidence.",
+                "Predicted structures and computational interaction scores are not experimental observations.",
+                "This dossier is a research aid, not clinical advice, manufacturing instructions or a regulatory assessment.",
+            ],
+        },
+        "scope": "Generated from the platform's current verified data at request time. Every report should be reviewed against original sources before citation or decision use.",
+    }

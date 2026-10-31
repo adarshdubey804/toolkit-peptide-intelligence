@@ -67,8 +67,10 @@ export default function VendorsPage() {
       if (!response.ok) throw new Error(data.detail || "Sign in failed.");
       setToken(data.access_token); setRole(data.user.role); setPassword("");
       setMessage("Signed in as " + data.user.role + ".");
-      await loadMySubmissions(data.access_token);
-      await loadOrganizationOptions(data.access_token);
+      if (["organization_admin","curator","researcher"].includes(data.user.role)) {
+        await loadMySubmissions(data.access_token);
+        await loadOrganizationOptions(data.access_token);
+      }
       if (["organization_admin","curator","reviewer"].includes(data.user.role)) { await loadReviewsWithToken(data.access_token); await loadSiteReviews(data.access_token); }
     } catch (e) { setError(e instanceof Error ? e.message : "Sign in failed."); }
     finally { setBusy(false); }
@@ -180,6 +182,7 @@ export default function VendorsPage() {
       setMessage("Facility submitted for independent identity, address and scope review. It will not appear publicly until approved.");
       setSiteForm(prev=>({...prev,site_name:"",address:"",country_code:"",site_scope:"",source_name:"",source_identifier:"",source_url:""}));
       await loadMySubmissions();
+      await loadOrganizationOptions();
       if(["organization_admin","curator","reviewer"].includes(role)) await loadSiteReviews();
     }catch(e){setError(e instanceof Error?e.message:"Facility submission failed.");}
     finally{setBusy(false);}
@@ -205,6 +208,7 @@ export default function VendorsPage() {
       setMessage("Facility review decision recorded: "+decision+".");
       setSiteRationales(prev=>({...prev,[item.id]:""}));
       await loadSiteReviews();
+      if(decision==="verified") await loadOrganizationOptions();
     }catch(e){setError(e instanceof Error?e.message:"Facility decision failed.");}
   }
 

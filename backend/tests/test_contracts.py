@@ -974,3 +974,7 @@ def test_vendor_certification_review_routes_are_registered():
     assert "get" in paths["/api/v1/vendors/certifications/reviews"]
     assert "/api/v1/vendors/certifications/{certification_id}/decisions" in paths
     assert "post" in paths["/api/v1/vendors/certifications/{certification_id}/decisions"]
+    assert "/api/v1/vendors/services/reviews" in paths
+    assert "get" in paths["/api/v1/vendors/services/reviews"]
+    assert "/api/v1/vendors/services/{service_id}/decisions" in paths
+    assert "post" in paths["/api/v1/vendors/services/{service_id}/decisions"]

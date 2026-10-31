@@ -31,6 +31,8 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             "process_knowledge_profiles",
             "regulatory_source_poll_runs",
             "extracted_evidence_field_decisions",
+            "peptide_method_applicability",
+            "peptide_method_applicability_decisions",
         )
         for table_name in required_tables:
             exists = connection.execute(

@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 type Peptide = { id: string; preferred_name: string; peptide_category?: string | null };
 type GraphNode = { id: string; label: string; type: string; review_status: string; metadata?: Record<string, unknown> };
 type GraphEdge = { source: string; target: string; relationship: string; evidence_type: string; source_record_id?: string | null };
+type Related = { id: string; preferred_name: string; peptide_category?: string; connection_type: string; shared_entity_name: string; shared_connection_count: number };
 type Graph = { peptide_id: string; nodes: GraphNode[]; edges: GraphEdge[]; counts: { nodes: number; edges: number; targets: number; pathways: number; publications: number }; scope: string };
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
@@ -24,7 +25,7 @@ export default function KnowledgeGraphPage() {
   const [graph, setGraph] = useState<Graph | null>(null);
   const [loadingList, setLoadingList] = useState(true);
   const [loadingGraph, setLoadingGraph] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState("");\n  const [related, setRelated] = useState<Related[]>([]);\n  const [evidenceFilter, setEvidenceFilter] = useState("all");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -49,6 +50,17 @@ export default function KnowledgeGraphPage() {
     return () => controller.abort();
   }, [selected]);
 
+
+  useEffect(() => {
+    if (!selected) { setRelated([]); return; }
+    const controller = new AbortController();
+    fetch(`${API_BASE}/api/v1/peptides/${encodeURIComponent(selected.id)}/graph/related?limit=50`, { signal: controller.signal })
+      .then((response) => { if (!response.ok) throw new Error("Related peptide lookup failed."); return response.json(); })
+      .then((data) => setRelated(data.items || []))
+      .catch(() => { if (!controller.signal.aborted) setRelated([]); });
+    return () => controller.abort();
+  }, [selected]);
+
   const filtered = useMemo(() => peptides.filter((item) => item.preferred_name.toLowerCase().includes(query.toLowerCase())), [peptides, query]);
   const positioned = useMemo(() => {
     if (!graph) return [];
@@ -63,7 +75,7 @@ export default function KnowledgeGraphPage() {
       }),
     ];
   }, [graph]);
-  const coordinates = useMemo(() => new Map(positioned.map((node) => [node.id, node])), [positioned]);
+  const coordinates = useMemo(() => new Map(positioned.map((node) => [node.id, node])), [positioned]);\n  const visibleEdges = useMemo(() => graph?.edges.filter((edge) => evidenceFilter === "all" || edge.evidence_type === evidenceFilter) || [], [graph, evidenceFilter]);
 
   return <main className="container min-h-screen py-10">
     <Link href="/" className="text-sm text-emerald-300 hover:text-emerald-200">← Toolkit home</Link>
@@ -91,11 +103,11 @@ export default function KnowledgeGraphPage() {
         {graph && <div className="flex flex-wrap gap-2 text-xs text-slate-300"><span className="rounded-full border border-slate-700 px-3 py-1">{graph.counts.nodes} nodes</span><span className="rounded-full border border-slate-700 px-3 py-1">{graph.counts.edges} relationships</span><span className="rounded-full border border-slate-700 px-3 py-1">{graph.counts.publications} publications</span></div>}
       </div>
       {loadingGraph && <div className="panel p-8 text-sm muted">Building verified relationship graph…</div>}
-      {graph && <div className="panel overflow-hidden p-3 md:p-5">
-        {graph.edges.length === 0 ? <div className="p-10 text-center"><h3 className="font-semibold">No verified relationships recorded yet</h3><p className="muted mt-2 text-sm">This does not mean no biological relationships exist. It means none have passed curation in this platform.</p></div> : <>
+      {graph && <div className="panel overflow-hidden p-3 md:p-5">\n        <label className="mb-3 flex items-center gap-3 text-xs text-slate-300">Evidence filter <select value={evidenceFilter} onChange={(event) => setEvidenceFilter(event.target.value)} className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"><option value="all">All evidence types</option>{Array.from(new Set(graph.edges.map((edge) => edge.evidence_type))).map((type) => <option key={type} value={type}>{type.replaceAll("_", " ")}</option>)}</select></label>
+        {visibleEdges.length === 0 ? <div className="p-10 text-center"><h3 className="font-semibold">No verified relationships recorded yet</h3><p className="muted mt-2 text-sm">This does not mean no biological relationships exist. It means none have passed curation in this platform.</p></div> : <>
           <div className="overflow-x-auto">
             <svg viewBox="0 0 900 580" role="img" aria-label={`Knowledge graph for ${selected.preferred_name}`} className="mx-auto min-w-[720px] w-full">
-              {graph.edges.map((edge, index) => {
+              {visibleEdges.map((edge, index) => {
                 const from = coordinates.get(edge.source); const to = coordinates.get(edge.target);
                 if (!from || !to) return null;
                 return <g key={`${edge.source}-${edge.target}-${index}`}><line x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke="#536779" strokeWidth="1.5" opacity=".8" /><title>{edge.relationship} · {edge.evidence_type}</title></g>;

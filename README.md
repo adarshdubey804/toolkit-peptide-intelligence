@@ -124,3 +124,11 @@ This is an early development scaffold, not production-ready software. Production
 - Migration 016 enforces null-safe uniqueness across guidance, source URL, optional revision and optional SHA-256 content hash, preventing duplicate observations when optional fields are absent.
 - A reviewer decision of `confirmed_change` or `published` accepts the associated version snapshot; `not_a_change` rejects it. Accepted snapshots alone appear in public history.
 - The supplied Compose database is PostgreSQL 16. Deployments must use PostgreSQL 15 or newer for the `NULLS NOT DISTINCT` unique index.
+
+
+## Official regulatory source registry
+
+- Migration 017 adds an organization-scoped registry for authority sources, including authority, jurisdiction, source type, HTTPS feed URL, declared official domain and suggested polling interval.
+- Curators and organization admins can register sources; reviewers can inspect the organization registry.
+- Registration validates HTTPS and that the URL host matches the declared domain or a subdomain. It does not prove the domain is genuinely operated by the named authority.
+- This milestone stores source metadata only. It does not fetch feeds, crawl websites, run scheduled polling or send alerts. Retrieval connectors must be added with network/SSRF controls and authority-domain verification before enabling ingestion.

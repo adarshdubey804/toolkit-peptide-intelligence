@@ -81,7 +81,7 @@ def test_clinical_trials_normalization_preserves_source_and_evidence_state():
 
 def test_provenance_migration_is_present_and_applied_in_development_order():
     migrations = sorted(path.name for path in MIGRATIONS_DIR.glob("*.sql"))
-    assert migrations == ["001_initial_schema.sql", "002_provenance_curation.sql", "003_authentication.sql", "004_organization_workspaces.sql", "005_curation_workflow.sql"]
+    assert migrations == ["001_initial_schema.sql", "002_provenance_curation.sql", "003_authentication.sql", "004_organization_workspaces.sql", "005_curation_workflow.sql", "006_enrichment_candidates.sql"]
     sql = (MIGRATIONS_DIR / "002_provenance_curation.sql").read_text(encoding="utf-8")
     assert "source_record_versions" in sql
     assert "external_entity_links" in sql
@@ -347,3 +347,27 @@ def test_enrichment_discovery_is_read_only_and_source_governed():
     assert "No peptide, sequence, target, pathway, structure or evidence record was created or modified." in source
     assert "INSERT INTO" not in source
     assert "UPDATE " not in source
+
+
+def test_enrichment_candidate_review_routes_and_migration_are_registered():
+    paths = app.openapi()["paths"]
+    assert "/api/v1/enrichment/peptides/{peptide_id}/candidates" in paths
+    assert "post" in paths["/api/v1/enrichment/peptides/{peptide_id}/candidates"]
+    assert "/api/v1/enrichment/candidates" in paths
+    assert "get" in paths["/api/v1/enrichment/candidates"]
+    assert "/api/v1/enrichment/candidates/{candidate_id}/decisions" in paths
+    assert "post" in paths["/api/v1/enrichment/candidates/{candidate_id}/decisions"]
+    sql = (MIGRATIONS_DIR / "006_enrichment_candidates.sql").read_text(encoding="utf-8")
+    assert "enrichment_candidates" in sql
+    assert "enrichment_candidate_decisions" in sql
+    assert "prevent_enrichment_decision_mutation" in sql
+
+
+def test_enrichment_candidate_submission_restricts_official_source_domains():
+    from app.routers.enrichment import SOURCE_HOSTS, _validated_source_url
+    assert _validated_source_url("PubMed", "https://pubmed.ncbi.nlm.nih.gov/123/").startswith("https://")
+    with pytest.raises(Exception):
+        _validated_source_url("PubMed", "https://fake-pubmed.example/123")
+    with pytest.raises(Exception):
+        _validated_source_url("PubMed", "http://pubmed.ncbi.nlm.nih.gov/123/")
+    assert len(SOURCE_HOSTS) == 4

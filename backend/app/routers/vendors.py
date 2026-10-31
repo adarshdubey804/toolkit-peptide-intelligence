@@ -332,6 +332,26 @@ def decide_vendor_service(
     return {"service_id": str(service_id), "review_status": new_status, "decision": payload.decision}
 
 
+
+class VendorServiceEvidenceLinkSubmission(BaseModel):
+    relationship_type: Literal[
+        "peptide_supply", "peptide_manufacturing",
+        "peptide_specific_testing", "method_service", "formulation_development"
+    ]
+    peptide_id: UUID | None = None
+    method_id: UUID | None = None
+    evidence_scope: str = Field(min_length=5, max_length=1500)
+    limitations: str = Field(min_length=10, max_length=2000)
+    source_name: str = Field(min_length=2, max_length=120)
+    source_identifier: str = Field(min_length=1, max_length=200)
+    source_url: HttpUrl
+
+
+class VendorServiceEvidenceLinkDecision(BaseModel):
+    decision: Literal["verified", "rejected", "needs_changes"]
+    rationale: str = Field(min_length=20, max_length=4000)
+
+
 class VendorCertificationSubmission(BaseModel):
     certification_name: str = Field(min_length=2, max_length=200)
     issuing_body: str = Field(min_length=2, max_length=200)
@@ -469,3 +489,171 @@ def decide_vendor_certification(
     db.commit()
     return {"certification_id": str(certification_id), "verification_status": new_status,
             "decision": payload.decision}
+
+
+@router.post("/services/{service_id}/evidence-links", status_code=201)
+def submit_vendor_service_evidence_link(
+    service_id: UUID,
+    payload: VendorServiceEvidenceLinkSubmission,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    organization_id, role = _membership(current_user, db)
+    if role not in SUBMIT_ROLES:
+        raise HTTPException(status_code=403, detail="Your role cannot submit vendor capability evidence.")
+    service = db.execute(text("""
+        SELECT vs.id, vs.vendor_id FROM vendor_services vs
+        JOIN vendors v ON v.id=vs.vendor_id
+        WHERE vs.id=:id AND v.organization_id=:org
+          AND v.review_status='verified' AND v.verification_status='verified'
+          AND vs.review_status='verified'
+    """), {"id": service_id, "org": organization_id}).mappings().first()
+    if not service:
+        raise HTTPException(status_code=404, detail="Verified service was not found in this organization.")
+    if payload.relationship_type in {"peptide_supply", "peptide_manufacturing", "peptide_specific_testing", "formulation_development"} and not payload.peptide_id:
+        raise HTTPException(status_code=422, detail="This relationship requires a peptide identity.")
+    if payload.relationship_type in {"method_service", "peptide_specific_testing"} and not payload.method_id:
+        raise HTTPException(status_code=422, detail="This relationship requires an analytical method identity.")
+    if payload.peptide_id:
+        peptide = db.execute(text("""
+            SELECT id FROM peptides WHERE id=:id AND review_status='verified'
+        """), {"id": payload.peptide_id}).scalar_one_or_none()
+        if not peptide:
+            raise HTTPException(status_code=422, detail="Linked peptide must already be curator-verified.")
+    if payload.method_id:
+        method = db.execute(text("""
+            SELECT id FROM analytical_methods WHERE id=:id AND review_status='verified'
+        """), {"id": payload.method_id}).scalar_one_or_none()
+        if not method:
+            raise HTTPException(status_code=422, detail="Linked analytical method must already be curator-verified.")
+    source_id = _source_record(db, payload.source_name, payload.source_identifier, str(payload.source_url))
+    link = db.execute(text("""
+        INSERT INTO vendor_service_evidence_links
+            (organization_id, service_id, peptide_id, method_id, relationship_type,
+             evidence_scope, limitations, source_id, review_status, submitted_by)
+        VALUES (:org, :service, :peptide, :method, :relationship,
+                :scope, :limitations, :source, 'in_review', :submitter)
+        RETURNING id, service_id, peptide_id, method_id, relationship_type, review_status
+    """), {"org": organization_id, "service": service_id, "peptide": payload.peptide_id,
+           "method": payload.method_id, "relationship": payload.relationship_type,
+           "scope": payload.evidence_scope.strip(), "limitations": payload.limitations.strip(),
+           "source": source_id, "submitter": current_user["id"]}).mappings().one()
+    db.execute(text("""
+        INSERT INTO audit_events (actor_user_id, organization_id, action, entity_type, entity_id, event_metadata)
+        VALUES (:actor, :org, 'vendor_service_evidence_link_submitted', 'vendor_service_evidence_link', :id,
+                jsonb_build_object('service_id', :service, 'peptide_id', :peptide, 'method_id', :method,
+                                   'source_record_id', :source))
+    """), {"actor": current_user["id"], "org": organization_id, "id": link["id"],
+           "service": str(service_id), "peptide": str(payload.peptide_id) if payload.peptide_id else None,
+           "method": str(payload.method_id) if payload.method_id else None, "source": str(source_id)})
+    db.commit()
+    return dict(link)
+
+
+@router.get("/service-evidence-links/reviews")
+def vendor_service_evidence_link_review_queue(
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    limit: int = Query(default=50, ge=1, le=100),
+):
+    organization_id, role = _membership(current_user, db)
+    if role not in REVIEW_ROLES:
+        raise HTTPException(status_code=403, detail="Curator or reviewer permission is required.")
+    rows = db.execute(text("""
+        SELECT l.id, l.service_id, l.relationship_type, l.evidence_scope, l.limitations,
+               l.submitted_by, v.legal_name, vs.service_name,
+               p.id AS peptide_id, p.preferred_name AS peptide_name,
+               am.id AS method_id, am.method_name,
+               sr.source_name, sr.source_identifier, sr.source_url
+        FROM vendor_service_evidence_links l
+        JOIN vendor_services vs ON vs.id=l.service_id
+        JOIN vendors v ON v.id=vs.vendor_id
+        LEFT JOIN peptides p ON p.id=l.peptide_id
+        LEFT JOIN analytical_methods am ON am.id=l.method_id
+        JOIN source_records sr ON sr.id=l.source_id
+        WHERE l.organization_id=:org AND l.review_status='in_review'
+          AND v.review_status='verified' AND v.verification_status='verified'
+          AND vs.review_status='verified'
+        ORDER BY l.created_at ASC LIMIT :limit
+    """), {"org": organization_id, "limit": limit}).mappings().all()
+    return {"items": [dict(row) for row in rows], "count": len(rows),
+            "scope": "Only source-backed links to curator-verified peptide and method identities are eligible."}
+
+
+@router.post("/service-evidence-links/{link_id}/decisions", status_code=201)
+def decide_vendor_service_evidence_link(
+    link_id: UUID,
+    payload: VendorServiceEvidenceLinkDecision,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    organization_id, role = _membership(current_user, db)
+    if role not in REVIEW_ROLES:
+        raise HTTPException(status_code=403, detail="Curator or reviewer permission is required.")
+    link = db.execute(text("""
+        SELECT l.id, l.service_id, l.submitted_by, l.review_status
+        FROM vendor_service_evidence_links l
+        JOIN vendor_services vs ON vs.id=l.service_id
+        JOIN vendors v ON v.id=vs.vendor_id
+        WHERE l.id=:id AND l.organization_id=:org AND l.review_status='in_review'
+          AND v.review_status='verified' AND v.verification_status='verified'
+          AND vs.review_status='verified'
+        FOR UPDATE OF l
+    """), {"id": link_id, "org": organization_id}).mappings().first()
+    if not link:
+        raise HTTPException(status_code=404, detail="Pending service evidence link was not found in this organization.")
+    if str(link["submitted_by"]) == current_user["id"]:
+        raise HTTPException(status_code=409, detail="A submitter cannot review their own service evidence link.")
+    db.execute(text("""
+        INSERT INTO vendor_service_evidence_link_decisions
+            (link_id, organization_id, reviewer_id, decision, rationale)
+        VALUES (:link, :org, :reviewer, :decision, :rationale)
+    """), {"link": link_id, "org": organization_id, "reviewer": current_user["id"],
+           "decision": payload.decision, "rationale": payload.rationale.strip()})
+    new_status = "verified" if payload.decision == "verified" else (
+        "rejected" if payload.decision == "rejected" else "draft"
+    )
+    db.execute(text("""
+        UPDATE vendor_service_evidence_links
+        SET review_status=:status, reviewed_by=:reviewer, reviewed_at=now()
+        WHERE id=:id
+    """), {"status": new_status, "reviewer": current_user["id"], "id": link_id})
+    db.execute(text("""
+        INSERT INTO audit_events (actor_user_id, organization_id, action, entity_type, entity_id, event_metadata)
+        VALUES (:actor, :org, 'vendor_service_evidence_link_decided', 'vendor_service_evidence_link', :id,
+                jsonb_build_object('decision', :decision, 'service_id', :service))
+    """), {"actor": current_user["id"], "org": organization_id, "id": link_id,
+           "decision": payload.decision, "service": str(link["service_id"])})
+    db.commit()
+    return {"link_id": str(link_id), "review_status": new_status, "decision": payload.decision}
+
+
+@router.get("/{vendor_id}/capabilities")
+def verified_vendor_capabilities(
+    vendor_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+):
+    vendor = db.execute(text("""
+        SELECT id, legal_name FROM vendors
+        WHERE id=:id AND review_status='verified' AND verification_status='verified'
+    """), {"id": vendor_id}).mappings().first()
+    if not vendor:
+        raise HTTPException(status_code=404, detail="Verified vendor was not found.")
+    rows = db.execute(text("""
+        SELECT vs.id AS service_id, vs.service_name, vs.capability_description,
+               l.id AS link_id, l.relationship_type, l.evidence_scope, l.limitations,
+               p.id AS peptide_id, p.preferred_name AS peptide_name,
+               am.id AS method_id, am.method_name,
+               sr.source_name, sr.source_identifier, sr.source_url
+        FROM vendor_services vs
+        JOIN vendor_service_evidence_links l ON l.service_id=vs.id AND l.review_status='verified'
+        LEFT JOIN peptides p ON p.id=l.peptide_id AND p.review_status='verified'
+        LEFT JOIN analytical_methods am ON am.id=l.method_id AND am.review_status='verified'
+        JOIN source_records sr ON sr.id=l.source_id
+        WHERE vs.vendor_id=:vendor AND vs.review_status='verified'
+          AND (l.peptide_id IS NULL OR p.id IS NOT NULL)
+          AND (l.method_id IS NULL OR am.id IS NOT NULL)
+        ORDER BY vs.service_name, l.relationship_type
+    """), {"vendor": vendor_id}).mappings().all()
+    return {"vendor": dict(vendor), "items": [dict(row) for row in rows], "count": len(rows),
+            "scope": "Source-backed, curator-verified service-to-peptide/method links only."}

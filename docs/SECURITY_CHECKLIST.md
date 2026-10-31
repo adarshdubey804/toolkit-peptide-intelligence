@@ -1,0 +1,14 @@
+# Production security checklist
+- [ ] Managed OIDC/OAuth authentication
+- [ ] Role and organization authorization
+- [ ] Remove unauthenticated write routes
+- [ ] Cloud secret manager
+- [ ] Exact production CORS origins
+- [ ] Rate limiting
+- [ ] TLS and encryption at rest
+- [ ] Private database networking
+- [ ] Tamper-evident audit trail
+- [ ] Backups and restore testing
+- [ ] Dependency/container scanning
+- [ ] Penetration testing
+- [ ] Privacy, licensing and regulatory review

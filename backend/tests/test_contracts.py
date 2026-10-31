@@ -159,3 +159,12 @@ def test_verified_peptide_knowledge_graph_route_is_registered():
     assert "get" in paths[route]
     parameter = next(item for item in paths[route]["get"]["parameters"] if item["name"] == "peptide_id")
     assert parameter["schema"]["format"] == "uuid"
+
+
+def test_unified_research_workspace_route_is_registered_and_bounded():
+    operation = app.openapi()["paths"]["/api/v1/research/workspace"]["get"]
+    params = {item["name"]: item for item in operation["parameters"]}
+    assert params["q"]["schema"]["minLength"] == 3
+    assert params["q"]["schema"]["maxLength"] == 200
+    assert params["limit"]["schema"]["minimum"] == 1
+    assert params["limit"]["schema"]["maximum"] == 10

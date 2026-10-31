@@ -184,6 +184,32 @@ def decide_review(
     if review["assigned_to"] and str(review["assigned_to"]) != current_user["id"] and role != "organization_admin":
         raise HTTPException(status_code=403, detail="This review is assigned to another reviewer.")
 
+    if payload.decision == "verified":
+        if review["entity_type"] == "peptide":
+            source_id = review["source_record_id"] or db.execute(
+                text("SELECT primary_source_id FROM peptides WHERE id = :entity_id"),
+                {"entity_id": review["entity_id"]},
+            ).scalar_one_or_none()
+            supported = bool(source_id) and db.execute(
+                text("SELECT 1 FROM source_records WHERE id = :source_id AND source_url IS NOT NULL"),
+                {"source_id": source_id},
+            ).first()
+        else:
+            supported = db.execute(text("""
+                SELECT 1
+                FROM claim_sources cs
+                LEFT JOIN source_records sr ON sr.id = cs.source_record_id
+                LEFT JOIN publications p ON p.id = cs.publication_id
+                WHERE cs.claim_id = :entity_id
+                  AND (sr.source_url IS NOT NULL OR p.url IS NOT NULL)
+                LIMIT 1
+            """), {"entity_id": review["entity_id"]}).first()
+        if not supported:
+            raise HTTPException(
+                status_code=409,
+                detail="Verification requires at least one linked source with an original record URL.",
+            )
+
     new_status = "draft" if payload.decision == "needs_changes" else payload.decision
     decision = db.execute(text("""
         INSERT INTO curation_decisions

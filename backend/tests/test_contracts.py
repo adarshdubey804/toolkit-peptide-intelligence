@@ -286,3 +286,37 @@ def test_curation_verification_requires_original_source_url():
     source = Path(curation.__file__).read_text(encoding="utf-8")
     assert "Verification requires at least one linked source" in source
     assert "source_url IS NOT NULL" in source
+
+
+def test_peptide_dossier_submission_contract_is_registered():
+    operation = app.openapi()["paths"]["/api/v1/dossiers"]["post"]
+    assert operation["responses"]["201"]
+    schema = operation["requestBody"]["content"]["application/json"]["schema"]
+    assert schema["$ref"].endswith("PeptideDossierCreate")
+
+
+def test_peptide_dossier_input_bounds_and_scientific_enums():
+    from app.routers.dossiers import PeptideDossierCreate, ChemistryInput
+    import pytest
+    base = {
+        "preferred_name": "Example peptide",
+        "source_name": "PubMed",
+        "source_url": "https://pubmed.ncbi.nlm.nih.gov/123456/",
+    }
+    record = PeptideDossierCreate(**base)
+    assert record.intended_use_class == "unspecified"
+    with pytest.raises(Exception):
+        PeptideDossierCreate(**{**base, "intended_use_class": "clinical_prescription"})
+    with pytest.raises(Exception):
+        ChemistryInput(average_molecular_mass=-1)
+    with pytest.raises(Exception):
+        PeptideDossierCreate(**{**base, "source_url": "javascript:alert(1)"})
+
+
+def test_dossier_submission_creates_review_queue_record_and_keeps_children_unverified():
+    from app.routers import dossiers
+    source = Path(dossiers.__file__).read_text(encoding="utf-8")
+    assert "'in_review'" in source
+    assert "INSERT INTO curation_reviews" in source
+    assert "INSERT INTO claim_sources" in source
+    assert "publicly visible until verified" in source

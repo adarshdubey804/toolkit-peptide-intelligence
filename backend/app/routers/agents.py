@@ -20,6 +20,137 @@ AGENTS = [
 ]
 
 
+AGENT_RETRIEVAL_PLANS = {
+    "peptide-research": {
+        "sources": [
+            "pubmed",
+            "clinicaltrials"
+        ],
+        "terms": "peptide literature clinical study trial publication",
+        "review_steps": [
+            "Verify peptide identity, aliases and whether the source concerns the same molecular entity.",
+            "Classify each record as a registered trial, clinical publication or secondary research.",
+            "Extract population or model, intervention, comparator, endpoints, status and reported limitations.",
+            "Check publication and registry records for overlap; a registered study is not proof of efficacy."
+        ]
+    },
+    "sequence": {
+        "sources": [
+            "uniprot",
+            "pubmed"
+        ],
+        "terms": "peptide amino acid sequence residue modification sequence annotation",
+        "review_steps": [
+            "Confirm organism, accession and exact sequence identity before comparing records.",
+            "Distinguish precursor, mature peptide, isoform and engineered sequence.",
+            "Record residue numbering, terminal chemistry and post-translational or synthetic modifications separately.",
+            "Treat sequence-derived properties as computational annotations unless experimentally measured."
+        ]
+    },
+    "structure": {
+        "sources": [
+            "rcsb",
+            "uniprot"
+        ],
+        "terms": "peptide protein three dimensional structure experimental complex PDB",
+        "review_steps": [
+            "Confirm chain identity, construct boundaries, organism and peptide/protein mapping.",
+            "Distinguish experimental structures from computational predictions.",
+            "Record method, resolution where applicable, missing residues, model confidence and ligand context.",
+            "Do not infer binding affinity or biological activity from a structure alone."
+        ]
+    },
+    "target-interaction": {
+        "sources": [
+            "rcsb",
+            "uniprot",
+            "pubmed"
+        ],
+        "terms": "peptide target protein interaction binding experimental complex docking",
+        "review_steps": [
+            "Confirm target accession, species, construct and peptide sequence or modification state.",
+            "Classify evidence as experimental complex, biochemical assay, cellular assay or computational prediction.",
+            "Record assay conditions, interaction readout, controls and uncertainty where reported.",
+            "Keep docking scores and predicted interfaces separate from experimentally measured binding."
+        ]
+    },
+    "analytical": {
+        "sources": [
+            "pubmed"
+        ],
+        "terms": "peptide analytical characterization HPLC LC-MS identity purity impurities method validation endotoxin",
+        "review_steps": [
+            "Identify the analyte, matrix, intended analytical purpose and development stage.",
+            "Separate identity, assay/content, purity, related substances, residuals and microbiological tests.",
+            "Capture instrument/platform, sample preparation, reference standard, critical method parameters and reported validation characteristics.",
+            "Do not treat a paper's method as validated or universally suitable for another peptide or matrix."
+        ]
+    },
+    "formulation": {
+        "sources": [
+            "pubmed"
+        ],
+        "terms": "peptide formulation stability aggregation adsorption oxidation deamidation delivery system",
+        "review_steps": [
+            "Identify peptide form, formulation type, route or research context and container system.",
+            "Extract the studied stress conditions, duration, physical state and analytical readouts.",
+            "Distinguish physical instability from chemical degradation and biological activity loss.",
+            "Do not convert literature observations into an executable formulation or storage recommendation."
+        ]
+    },
+    "process-development": {
+        "sources": [
+            "pubmed"
+        ],
+        "terms": "peptide process development solid phase peptide synthesis recombinant production purification impurities scale up",
+        "review_steps": [
+            "Identify the production platform and whether the source concerns research, pilot or commercial scale.",
+            "Map process stages and reported critical quality attributes at a descriptive level.",
+            "Record impurity classes, analytical controls, yield definitions and scale-up limitations where reported.",
+            "Do not infer a transferable manufacturing recipe or operating setpoints from a publication."
+        ]
+    },
+    "regulatory-quality": {
+        "sources": [
+            "pubmed",
+            "clinicaltrials"
+        ],
+        "terms": "peptide regulatory quality CMC analytical control clinical development guidance",
+        "review_steps": [
+            "Identify jurisdiction, regulator, product category and development stage before interpreting a source.",
+            "Prioritise current official regulator publications and verify their current status outside literature discovery.",
+            "Separate binding requirements, non-binding guidance, pharmacopoeial standards and scientific publications.",
+            "Do not make a compliance, approval or release determination from search results."
+        ]
+    },
+    "scientific-review": {
+        "sources": [
+            "pubmed",
+            "clinicaltrials",
+            "uniprot",
+            "rcsb"
+        ],
+        "terms": "peptide evidence review study design reproducibility limitations clinical preclinical in vitro computational",
+        "review_steps": [
+            "Confirm source identity, study design, evidence class and whether the work is primary or secondary research.",
+            "Extract model or population, sample size, methods, endpoints and prespecified outcomes.",
+            "Assess bias, controls, replication, missing data, conflicts of interest and generalisability.",
+            "Compare independent and conflicting findings; preserve uncertainty rather than forcing a consensus."
+        ]
+    }
+}
+
+
+def build_agent_search_plan(agent_id: str, question: str) -> dict:
+    """Build a bounded, domain-specific retrieval query and human review plan."""
+    plan = AGENT_RETRIEVAL_PLANS[agent_id]
+    clean_question = question.strip()
+    return {
+        "query": f"{clean_question} {plan['terms']}",
+        "sources": list(plan["sources"]),
+        "review_steps": list(plan["review_steps"]),
+    }
+
 class AgentRunRequest(BaseModel):
     question: str = Field(min_length=8, max_length=500)
     limit: int = Field(default=5, ge=1, le=10)
@@ -36,21 +167,18 @@ async def run_agent(agent_id: str, request: AgentRunRequest):
     agent = next((item for item in AGENTS if item["id"] == agent_id), None)
     if agent is None:
         raise HTTPException(status_code=404, detail="Research agent not found.")
-    brief = await research_assistant_brief(request.question, request.limit)
+    plan = build_agent_search_plan(agent_id, request.question)
+    brief = await research_assistant_brief(plan["query"], request.limit, source_scope=plan["sources"])
     return {
         "agent": agent,
         "question": request.question.strip(),
-        "mode": "source_grounded_workflow",
+        "mode": "specialized_source_grounded_workflow",
+        "retrieval_plan": {"sources_requested": plan["sources"], "query_used": plan["query"]},
         "retrieval": brief,
         "agent_output": {
             "task": agent["workflow"],
             "focus_areas": agent["focus"],
-            "recommended_review": [
-                "Confirm that each source refers to the intended peptide, target or material.",
-                "Open the original source and verify the methods, model, endpoints and reported results.",
-                "Record evidence class, provenance, limitations and any conflicting findings.",
-                "Submit only source-backed records to the appropriate Toolkit curator workflow."
-            ],
+            "recommended_review": plan["review_steps"],
             "interpretation": "This agent has not independently verified the scientific claims. Retrieved records remain unreviewed until qualified human curation."
         }
     }
@@ -193,18 +321,15 @@ async def send_agent_message(
     context = _verified_peptide_context(db, payload.message, payload.peptide_id)
     if payload.peptide_id and not context:
         raise HTTPException(status_code=404, detail="Verified peptide record not found.")
-    brief = await research_assistant_brief(payload.message, payload.limit)
+    plan = build_agent_search_plan(agent["id"], payload.message)
+    brief = await research_assistant_brief(plan["query"], payload.limit, source_scope=plan["sources"])
     output = {
         "agent": agent,
         "task": agent["workflow"],
+        "retrieval_plan": {"sources_requested": plan["sources"], "query_used": plan["query"]},
         "retrieval": brief,
         "toolkit_verified_context": context,
-        "review_plan": [
-            "Confirm entity identity and source relevance.",
-            "Check study model, methods, endpoints and limitations in original sources.",
-            "Keep clinical, preclinical, in-vitro and computational evidence distinct.",
-            "Preserve contradictions and submit proposed records for qualified human review."
-        ],
+        "review_plan": plan["review_steps"],
         "interpretation": "Retrieved external records remain unreviewed. Toolkit verified context is included only when an exact verified peptide match is available. No scientific claim is automatically promoted."
     }
     db.execute(text("""

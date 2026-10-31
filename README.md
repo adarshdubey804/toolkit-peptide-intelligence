@@ -154,3 +154,11 @@ This is an early development scaffold, not production-ready software. Production
 - The response reports valid identifiers, unknown identifiers, and sentences with no valid citation, with a warning status when coverage is incomplete.
 - This is a citation-presence check only. It does not establish that a cited paper semantically supports the sentence, that the retrieved record is relevant, or that a scientific conclusion is correct. Human review of original full-text sources remains mandatory.
 - AI synthesis remains disabled by default and is blocked outside development until authenticated access, rate limiting and production security controls are implemented.
+
+
+## Independent evidence review and decision history
+- Migration 021 adds append-only decision records for evidence appraisals and publication duplicate candidates.
+- Appraisals awaiting review can be accepted, rejected or marked superseded by a different organization reviewer; the original appraiser cannot approve their own work.
+- Duplicate-candidate decisions now preserve the rationale and reviewer identity in a dedicated append-only history table rather than relying only on the candidate's current status.
+- Decision history is available through the evidence-intelligence API. Database triggers reject updates and deletes to decision-history rows.
+- These controls improve traceability; they do not independently validate scientific conclusions or guarantee reviewer expertise.

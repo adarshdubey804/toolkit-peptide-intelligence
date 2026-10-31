@@ -81,7 +81,7 @@ def test_clinical_trials_normalization_preserves_source_and_evidence_state():
 
 def test_provenance_migration_is_present_and_applied_in_development_order():
     migrations = sorted(path.name for path in MIGRATIONS_DIR.glob("*.sql"))
-    assert migrations == ["001_initial_schema.sql", "002_provenance_curation.sql", "003_authentication.sql", "004_organization_workspaces.sql", "005_curation_workflow.sql", "006_enrichment_candidates.sql"]
+    assert migrations == ["001_initial_schema.sql", "002_provenance_curation.sql", "003_authentication.sql", "004_organization_workspaces.sql", "005_curation_workflow.sql", "006_enrichment_candidates.sql", "007_vendor_directory.sql"]
     sql = (MIGRATIONS_DIR / "002_provenance_curation.sql").read_text(encoding="utf-8")
     assert "source_record_versions" in sql
     assert "external_entity_links" in sql
@@ -372,3 +372,26 @@ def test_enrichment_candidate_submission_restricts_official_source_domains():
     with pytest.raises(Exception):
         _validated_source_url("PubMed", "http://pubmed.ncbi.nlm.nih.gov/123/")
     assert len(SOURCE_HOSTS) == 4
+
+
+def test_vendor_directory_routes_and_migration_are_registered():
+    paths = app.openapi()["paths"]
+    assert "/api/v1/vendors" in paths
+    assert "get" in paths["/api/v1/vendors"]
+    assert "post" in paths["/api/v1/vendors"]
+    assert "/api/v1/vendors/{vendor_id}/services" in paths
+    assert "/api/v1/vendors/reviews" in paths
+    assert "/api/v1/vendors/{vendor_id}/decisions" in paths
+    sql = (MIGRATIONS_DIR / "007_vendor_directory.sql").read_text(encoding="utf-8")
+    assert "vendor_sources" in sql
+    assert "vendor_review_decisions" in sql
+    assert "prevent_vendor_review_decision_mutation" in sql
+
+
+def test_vendor_source_requires_https_and_credentials_are_rejected():
+    from app.routers.vendors import _source_host
+    assert _source_host("https://example.org/vendor") == "https://example.org/vendor"
+    with pytest.raises(Exception):
+        _source_host("http://example.org/vendor")
+    with pytest.raises(Exception):
+        _source_host("https://user:password@example.org/vendor")

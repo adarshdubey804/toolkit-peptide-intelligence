@@ -82,7 +82,7 @@ def test_clinical_trials_normalization_preserves_source_and_evidence_state():
 
 def test_provenance_migration_is_present_and_applied_in_development_order():
     migrations = sorted(path.name for path in MIGRATIONS_DIR.glob("*.sql"))
-    assert migrations == ["001_initial_schema.sql", "002_provenance_curation.sql", "003_authentication.sql", "004_organization_workspaces.sql", "005_curation_workflow.sql", "006_enrichment_candidates.sql", "007_vendor_directory.sql", "008_analytical_method_intelligence.sql", "009_formulation_stability_intelligence.sql", "010_process_development_intelligence.sql", "011_molecular_interaction_intelligence.sql", "012_agent_sessions.sql", "013_evidence_intelligence.sql", "014_regulatory_guidance_intelligence.sql", "015_regulatory_change_monitoring.sql", "016_regulatory_observation_integrity.sql", "017_regulatory_source_registry.sql", "018_enrichment_ingestion_runs.sql", "019_regulatory_source_observations.sql", "020_regulatory_poll_scheduler.sql", "021_evidence_review_decisions.sql", "022_structured_evidence_extraction.sql", "023_extracted_evidence_field_review.sql", "024_peptide_analytical_method_applicability.sql", "025_vendor_certification_verification.sql", "026_vendor_service_review.sql", "027_vendor_service_evidence_links.sql", "028_vendor_facility_verification.sql"]
+    assert migrations == ["001_initial_schema.sql", "002_provenance_curation.sql", "003_authentication.sql", "004_organization_workspaces.sql", "005_curation_workflow.sql", "006_enrichment_candidates.sql", "007_vendor_directory.sql", "008_analytical_method_intelligence.sql", "009_formulation_stability_intelligence.sql", "010_process_development_intelligence.sql", "011_molecular_interaction_intelligence.sql", "012_agent_sessions.sql", "013_evidence_intelligence.sql", "014_regulatory_guidance_intelligence.sql", "015_regulatory_change_monitoring.sql", "016_regulatory_observation_integrity.sql", "017_regulatory_source_registry.sql", "018_enrichment_ingestion_runs.sql", "019_regulatory_source_observations.sql", "020_regulatory_poll_scheduler.sql", "021_evidence_review_decisions.sql", "022_structured_evidence_extraction.sql", "023_extracted_evidence_field_review.sql", "024_peptide_analytical_method_applicability.sql", "025_vendor_certification_verification.sql", "026_vendor_service_review.sql", "027_vendor_service_evidence_links.sql", "028_vendor_facility_verification.sql", "029_vendor_service_facility_link.sql"]
     sql = (MIGRATIONS_DIR / "002_provenance_curation.sql").read_text(encoding="utf-8")
     assert "source_record_versions" in sql
     assert "external_entity_links" in sql
@@ -1001,3 +1001,18 @@ def test_vendor_certification_review_routes_are_registered():
     assert "get" in paths["/api/v1/vendors/{vendor_id}/services"]
     assert "/api/v1/vendors/{vendor_id}/capabilities" in paths
     assert "get" in paths["/api/v1/vendors/{vendor_id}/capabilities"]
+
+
+
+def test_vendor_service_submission_requires_a_verified_facility_reference():
+    from pydantic import ValidationError
+    from app.routers.vendors import VendorServiceSubmission
+
+    with pytest.raises(ValidationError):
+        VendorServiceSubmission(
+            service_name="LC-MS identity testing",
+            capability_description="Source-described analytical service for peptide identity evaluation.",
+            source_name="Example Laboratory",
+            source_identifier="service-catalogue-001",
+            source_url="https://example.org/services",
+        )

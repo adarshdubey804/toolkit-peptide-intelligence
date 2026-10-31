@@ -102,7 +102,10 @@ def verified_vendor_directory(
                v.verification_status, v.last_verified_at,
                COALESCE(jsonb_agg(DISTINCT jsonb_build_object(
                    'service_name', vs.service_name,
-                   'capability_description', vs.capability_description
+                   'capability_description', vs.capability_description,
+                   'site_id', service_site.id,
+                   'site_name', service_site.site_name,
+                   'site_address', service_site.address
                )) FILTER (WHERE vs.id IS NOT NULL), '[]'::jsonb) AS services,
                COALESCE(jsonb_agg(DISTINCT jsonb_build_object(
                    'certification_name', vc.certification_name,
@@ -857,7 +860,7 @@ def verified_vendor_services(
         SELECT vs.id AS service_id, vs.service_name, vs.capability_description,
                vs.site_id, site.site_name, site.address AS site_address
         FROM vendor_services vs
-        LEFT JOIN vendor_sites site ON site.id=vs.site_id AND site.review_status='verified'
+        JOIN vendor_sites site ON site.id=vs.site_id AND site.review_status='verified'
         WHERE vs.vendor_id=:vendor AND vs.review_status='verified'
         ORDER BY vs.service_name
     """), {"vendor": vendor_id}).mappings().all()

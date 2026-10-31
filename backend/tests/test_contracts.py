@@ -81,7 +81,7 @@ def test_clinical_trials_normalization_preserves_source_and_evidence_state():
 
 def test_provenance_migration_is_present_and_applied_in_development_order():
     migrations = sorted(path.name for path in MIGRATIONS_DIR.glob("*.sql"))
-    assert migrations == ["001_initial_schema.sql", "002_provenance_curation.sql", "003_authentication.sql", "004_organization_workspaces.sql", "005_curation_workflow.sql", "006_enrichment_candidates.sql", "007_vendor_directory.sql", "008_analytical_method_intelligence.sql", "009_formulation_stability_intelligence.sql", "010_process_development_intelligence.sql", "011_molecular_interaction_intelligence.sql"]
+    assert migrations == ["001_initial_schema.sql", "002_provenance_curation.sql", "003_authentication.sql", "004_organization_workspaces.sql", "005_curation_workflow.sql", "006_enrichment_candidates.sql", "007_vendor_directory.sql", "008_analytical_method_intelligence.sql", "009_formulation_stability_intelligence.sql", "010_process_development_intelligence.sql", "011_molecular_interaction_intelligence.sql", "012_agent_sessions.sql"]
     sql = (MIGRATIONS_DIR / "002_provenance_curation.sql").read_text(encoding="utf-8")
     assert "source_record_versions" in sql
     assert "external_entity_links" in sql
@@ -582,3 +582,26 @@ def test_research_agent_catalogue_has_specialized_scientific_roles():
         "regulatory-quality", "scientific-review"
     }.issubset(identifiers)
     assert len(AGENTS) == 9
+
+
+def test_persistent_agent_session_routes_and_migration():
+    paths = app.openapi()["paths"]
+    assert "/api/v1/agents/sessions" in paths
+    assert "get" in paths["/api/v1/agents/sessions"]
+    assert "post" in paths["/api/v1/agents/sessions"]
+    assert "/api/v1/agents/sessions/{session_id}" in paths
+    assert "/api/v1/agents/sessions/{session_id}/messages" in paths
+    assert "/api/v1/agents/sessions/{session_id}/archive" in paths
+    sql = (MIGRATIONS_DIR / "012_agent_sessions.sql").read_text(encoding="utf-8")
+    assert "agent_sessions" in sql
+    assert "agent_session_messages" in sql
+    assert "organization_id" in sql
+
+
+def test_agent_message_request_is_bounded_and_supports_exact_peptide_context():
+    from app.routers.agents import AgentMessageCreate
+    from pydantic import ValidationError
+    payload = AgentMessageCreate(message="Review the evidence for this peptide target.", peptide_id="00000000-0000-0000-0000-000000000001")
+    assert payload.peptide_id is not None
+    with pytest.raises(ValidationError):
+        AgentMessageCreate(message="short")

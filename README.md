@@ -5,7 +5,7 @@ Scientific intelligence for peptide research and pharmaceutical development, bui
 ## Current foundation
 
 - Next.js frontend with peptide directory, scientific profile views, interactive knowledge graph and multi-source research workspace and retrieval-only research assistant.
-- FastAPI backend with verified-record catalogue search, pagination, profile detail, verified peptide knowledge graph and readiness endpoints.
+- FastAPI backend with JWT authentication, organization registration, researcher profiles, verified-record catalogue search, pagination, profile detail, verified peptide knowledge graph and readiness endpoints.
 - PostgreSQL + pgvector schema for peptide identity, sequences, chemical properties, structures, targets, pathways, publications, research studies, evidence claims, analytical methods, vendor records, certifications and regulatory status.
 - Read-only discovery integrations with PubMed abstract retrieval: PubMed, ClinicalTrials.gov API v2, UniProtKB, RCSB PDB and PubChem.
 - Additive provenance and curation schema: source content hashes and versions, cross-database candidate entity links, review queue and append-only editorial decisions.
@@ -21,7 +21,17 @@ Scientific intelligence for peptide research and pharmaceutical development, bui
 5. Run docker compose up --build.
 6. Open the frontend at http://localhost:3000, peptide directory at http://localhost:3000/peptides, knowledge graph at http://localhost:3000/knowledge-graph, research workspace at http://localhost:3000/research, research assistant at http://localhost:3000/research-assistant, and API docs at http://localhost:8000/docs.
 
-Development startup applies all ordered SQL migrations in `database/migrations`. Production deployments must run reviewed, versioned migrations as a separate deployment step.
+Development startup applies all ordered SQL migrations in `database/migrations`.
+
+## Authentication foundation
+
+- POST `/api/v1/auth/register` creates an organization and its first `organization_admin` account.
+- POST `/api/v1/auth/login` issues a short-lived HS256 bearer token.
+- GET `/api/v1/auth/me` returns the current active user and organization membership.
+- Passwords are stored as Argon2id hashes; tokens are validated against the current database account and role.
+- Set `APP_SECRET_KEY` to a unique random value of at least 32 characters. Never reuse the example value.
+
+This is an initial authentication foundation, not a complete production identity system: email verification, password reset, refresh-token rotation/revocation, MFA, invitation workflows, edge-level rate limiting and security review remain required. Existing research/catalogue routes remain public; authentication is not yet enforced on all workspace or curation operations. Production deployments must run reviewed, versioned migrations as a separate deployment step.
 
 ## API routes
 

@@ -522,3 +522,44 @@ def test_structure_discovery_workspace_is_registered():
     assert "/api/v1/research/rcsb" in paths
     assert "/api/v1/research/alphafold" in paths
     assert "get" in paths["/api/v1/research/alphafold"]
+
+
+def test_molecular_interaction_routes_and_migration_contract():
+    paths = app.openapi()["paths"]
+    assert "/api/v1/interactions" in paths
+    assert "get" in paths["/api/v1/interactions"]
+    assert "post" in paths["/api/v1/interactions"]
+    assert "/api/v1/interactions/reviews" in paths
+    assert "/api/v1/interactions/{assessment_id}/decisions" in paths
+    sql = (MIGRATIONS_DIR / "011_molecular_interaction_intelligence.sql").read_text(encoding="utf-8")
+    assert "molecular_interaction_assessments" in sql
+    assert "molecular_interaction_decisions" in sql
+    assert "prevent_molecular_interaction_decision_mutation" in sql
+
+
+def test_interaction_submission_schema_keeps_methods_and_evidence_separate():
+    from app.routers.interactions import InteractionSubmission
+    from pydantic import ValidationError
+    payload = InteractionSubmission(
+        peptide_id="00000000-0000-0000-0000-000000000001",
+        target_id="00000000-0000-0000-0000-000000000002",
+        interaction_method="computational_docking",
+        evidence_type="computational",
+        interface_summary="A computational interface assessment reports candidate residue contacts.",
+        limitations="Docking scores are method-dependent and do not establish experimental affinity.",
+        source={"source_name":"Example repository","source_identifier":"run-123",
+                "source_url":"https://example.org/run-123"}
+    )
+    assert payload.interaction_method == "computational_docking"
+    assert payload.evidence_type == "computational"
+    with pytest.raises(ValidationError):
+        InteractionSubmission(
+            peptide_id="00000000-0000-0000-0000-000000000001",
+            target_id="00000000-0000-0000-0000-000000000002",
+            interaction_method="clinical_affinity",
+            evidence_type="computational",
+            interface_summary="An interface assessment.",
+            limitations="Not validated.",
+            source={"source_name":"Example","source_identifier":"1",
+                    "source_url":"https://example.org"}
+        )

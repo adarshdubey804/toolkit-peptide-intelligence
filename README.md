@@ -27,8 +27,11 @@ Development startup applies all ordered SQL migrations in `database/migrations`.
 - GET /health — process health.
 - GET /ready — database connectivity; returns 503 when unavailable.
 - GET /api/v1/peptides — curator-verified catalogue search.
-- GET /api/v1/peptides/{id} — verified profile; ID must be a UUID.\n- GET /api/v1/peptides/{id}/graph — curator-verified sequence, target, pathway, structure, claim and publication relationships.
-- GET /api/v1/research/workspace?q=... — parallel discovery across PubMed, ClinicalTrials.gov, UniProtKB and RCSB PDB; each source reports its own availability.\n- GET /api/v1/research/assistant/brief?question=... — source-grounded evidence retrieval brief with original-record citations and explicit limitations; not generative AI.\n- GET /api/v1/research/pubmed?q=... — PubMed discovery; requires NCBI_EMAIL.
+- GET /api/v1/peptides/{id} — verified profile; ID must be a UUID.
+- GET /api/v1/peptides/{id}/graph — curator-verified sequence, target, pathway, structure, claim and publication relationships.
+- GET /api/v1/research/workspace?q=... — parallel discovery across PubMed, ClinicalTrials.gov, UniProtKB and RCSB PDB; each source reports its own availability.
+- GET /api/v1/research/assistant/brief?question=... — source-grounded evidence retrieval brief with original-record citations and explicit limitations; not generative AI.
+- GET /api/v1/research/pubmed?q=... — PubMed discovery; requires NCBI_EMAIL.
 - GET /api/v1/research/clinicaltrials?q=... — ClinicalTrials.gov study discovery.
 - GET /api/v1/research/uniprot?q=... — UniProtKB protein discovery.
 - GET /api/v1/research/rcsb?q=... — RCSB PDB structure discovery.

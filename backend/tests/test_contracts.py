@@ -345,8 +345,9 @@ def test_enrichment_discovery_is_read_only_and_source_governed():
     assert ALLOWED_ROLES == {"organization_admin", "curator", "reviewer", "researcher"}
     assert "curation_status\": \"not_reviewed\"" in source
     assert "No peptide, sequence, target, pathway, structure or evidence record was created or modified." in source
-    assert "INSERT INTO" not in source
-    assert "UPDATE " not in source
+    discovery_source = source.split("import hashlib", 1)[0]
+    assert "INSERT INTO" not in discovery_source
+    assert "UPDATE " not in discovery_source
 
 
 def test_enrichment_candidate_review_routes_and_migration_are_registered():

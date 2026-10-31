@@ -55,7 +55,7 @@ This is an initial authentication foundation, not a complete production identity
 - GET `/api/v1/enrichment/candidates` — list the organization's enrichment review queue.
 - POST `/api/v1/enrichment/candidates/{id}/decisions` — append an accepted, rejected, duplicate or needs-review decision with rationale and audit event.
 - Migration 006 adds organization-scoped enrichment candidate storage and append-only decision history. Accepting a candidate does not create a verified scientific claim or peptide relationship.
-- Vendor directory: GET/POST `/api/v1/vendors`, POST `/api/v1/vendors/{id}/services`, GET `/api/v1/vendors/reviews`, POST `/api/v1/vendors/{id}/decisions`. Migration 007 adds vendor source provenance and append-only vendor review decisions. Public directory shows only curator-reviewed, verified vendor identities.
+- Vendor directory: GET/POST `/api/v1/vendors`, POST `/api/v1/vendors/{id}/services`, POST `/api/v1/vendors/{id}/certifications`, GET `/api/v1/vendors/reviews`, POST `/api/v1/vendors/{id}/decisions`. Migration 007 adds vendor source provenance and append-only vendor review decisions. Public directory shows only curator-reviewed, verified vendor identities.
 - GET /api/v1/research/workspace?q=... — parallel discovery across PubMed, ClinicalTrials.gov, UniProtKB and RCSB PDB; each source reports its own availability.
 - GET /api/v1/research/assistant/brief?question=... — source-grounded evidence retrieval brief with original-record citations and explicit limitations; retrieval-only.
 - POST /api/v1/research/assistant/synthesize — optional development-only AI synthesis over server-retrieved records; disabled by default and blocked outside development pending authentication and rate limiting.

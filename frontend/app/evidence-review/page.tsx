@@ -1,3 +1,38 @@
 "use client";
 
-export default function EvidenceReviewPage() { return <main className="container py-10"><h1 className="text-3xl font-semibold">Evidence extraction review</h1><p className="muted mt-3">Source-linked scientific field review workspace.</p></main>; }
+import Link from "next/link";
+import { FormEvent, useState } from "react";
+
+const API = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+const fields = ["study_design","evidence_level","peptide_identity","sequence","modifications","target","mechanism","model_or_population","sample_size","methods","endpoints","findings","limitations","conflicts","extraction_notes"];
+type RecordItem = {id:string;source_title:string;source_url:string;source_name:string;source_identifier:string;extraction:Record<string,unknown>};
+type RunData = {run:{id:string;question:string;status:string};records:RecordItem[];notice:string};
+
+export default function EvidenceReviewPage() {
+ const [email,setEmail]=useState(""); const [password,setPassword]=useState(""); const [token,setToken]=useState("");
+ const [runId,setRunId]=useState(""); const [run,setRun]=useState<RunData|null>(null);
+ const [decision,setDecision]=useState<Record<string,string>>({}); const [value,setValue]=useState<Record<string,string>>({});
+ const [rationale,setRationale]=useState<Record<string,string>>({}); const [error,setError]=useState(""); const [notice,setNotice]=useState(""); const [busy,setBusy]=useState(false);
+ const input="mt-2 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100";
+ async function login(e:FormEvent){e.preventDefault();setBusy(true);setError("");try{const r=await fetch(API+"/api/v1/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,password})});const d=await r.json();if(!r.ok)throw Error(d.detail||"Sign in failed");if(!["organization_admin","curator","reviewer"].includes(d.user.role))throw Error("Curator or reviewer permissions required");setToken(d.access_token);setPassword("");}catch(x){setError(x instanceof Error?x.message:"Sign in failed");}finally{setBusy(false);}}
+ async function load(e?:FormEvent){e?.preventDefault();setBusy(true);setError("");try{const r=await fetch(API+"/api/v1/research/assistant/extractions/"+encodeURIComponent(runId),{headers:{Authorization:"Bearer "+token}});const d=await r.json();if(!r.ok)throw Error(d.detail||"Could not load run");setRun(d);}catch(x){setError(x instanceof Error?x.message:"Could not load run");}finally{setBusy(false);}}
+ async function save(record:RecordItem,field:string){const key=record.id+":"+field;const choice=decision[key]||"accepted";const why=(rationale[key]||"").trim();if(why.length<20){setError("Provide a rationale of at least 20 characters.");return;}let corrected:unknown;if(choice==="corrected"){try{corrected=JSON.parse(value[key]||"");}catch{setError("Corrected value must be valid JSON (text in quotes, lists in brackets, or a number).");return;}}
+  setBusy(true);setError("");setNotice("");try{const r=await fetch(API+`/api/v1/research/assistant/extractions/${runId}/records/${record.id}/fields/${field}/review`,{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify({decision:choice,rationale:why,...(choice==="corrected"?{reviewed_value:corrected}:{})})});const d=await r.json();if(!r.ok)throw Error(d.detail||"Could not save review");setNotice("Decision saved for "+field+". The original extraction is unchanged.");await load();}catch(x){setError(x instanceof Error?x.message:"Save failed");}finally{setBusy(false);}}
+ return <main className="container min-h-screen py-10">
+  <Link href="/" className="text-sm text-emerald-300">← Toolkit home</Link>
+  <header className="mt-8 max-w-3xl"><p className="accent text-xs tracking-[.2em]">SCIENTIFIC QUALITY CONTROL</p><h1 className="mt-3 text-4xl font-semibold">Evidence extraction review</h1><p className="muted mt-3 leading-7">Review each machine-extracted field against its original source. Decisions are append-only; corrections do not overwrite AI output. Editorial acceptance does not independently prove scientific truth.</p></header>
+  {!token?<form onSubmit={login} className="panel mt-8 max-w-xl space-y-4 p-6"><h2 className="text-xl font-semibold">Reviewer sign in</h2><label className="block text-sm">Email<input className={input} type="email" value={email} onChange={e=>setEmail(e.target.value)} required/></label><label className="block text-sm">Password<input className={input} type="password" value={password} onChange={e=>setPassword(e.target.value)} required/></label><button disabled={busy} className="rounded-full bg-emerald-400 px-5 py-3 text-sm font-semibold text-slate-950">Sign in</button></form>:<>
+   <form onSubmit={load} className="panel mt-7 flex flex-wrap items-end gap-3 p-5"><label className="min-w-64 flex-1 text-xs">Extraction run UUID<input className={input} value={runId} onChange={e=>setRunId(e.target.value)} required/></label><button disabled={busy} className="rounded-full bg-emerald-400 px-5 py-3 text-sm font-semibold text-slate-950">Load run</button><button type="button" onClick={()=>{setToken("");setRun(null);}} className="rounded-full border border-slate-600 px-4 py-3 text-sm">Sign out</button></form>
+   {run&&<section className="mt-6"><div className="panel p-5"><p className="accent text-xs">RUN · {run.run.status}</p><h2 className="mt-2 text-lg font-semibold">{run.run.question}</h2><p className="muted mt-2 text-xs">{run.records.length} records</p></div>
+    <div className="mt-4 space-y-5">{run.records.map(record=><article key={record.id} className="panel p-5"><h3 className="text-lg font-semibold">{record.source_title}</h3><p className="muted mt-1 text-xs">{record.source_name} · {record.source_identifier}</p><a href={record.source_url} target="_blank" rel="noreferrer" className="mt-2 inline-block text-xs text-emerald-300 underline">Open original source ↗</a>
+     <div className="mt-5 space-y-4">{fields.map(field=>{const key=record.id+":"+field;return <section key={field} className="rounded-xl border border-slate-700 p-4"><h4 className="text-sm font-semibold">{field.replaceAll("_"," ")}</h4><pre className="mt-2 whitespace-pre-wrap break-words rounded-lg bg-slate-950 p-3 text-xs">{JSON.stringify(record.extraction[field]??null,null,2)}</pre>
+      <label className="mt-3 block text-xs">Decision<select className={input} value={decision[key]||"accepted"} onChange={e=>setDecision(p=>({...p,[key]:e.target.value}))}><option value="accepted">Accept as extracted</option><option value="corrected">Correct field</option><option value="rejected">Reject field</option></select></label>
+      {decision[key]==="corrected"&&<label className="mt-3 block text-xs">Corrected value (JSON)<textarea className={input} rows={2} value={value[key]||""} onChange={e=>setValue(p=>({...p,[key]:e.target.value}))} placeholder='Example: "corrected text" or ["item"]'/></label>}
+      <label className="mt-3 block text-xs">Rationale (minimum 20 characters)<textarea className={input} rows={2} value={rationale[key]||""} onChange={e=>setRationale(p=>({...p,[key]:e.target.value}))} placeholder="Describe source checks and reason for this decision."/></label>
+      <button type="button" disabled={busy} onClick={()=>void save(record,field)} className="mt-3 rounded-full border border-emerald-400/50 px-4 py-2 text-xs text-emerald-200">Save field decision</button></section>})}</div></article>)}</div>
+   </section>}
+  </>}
+  {error&&<p role="alert" className="mt-4 rounded-xl border border-rose-400/30 p-4 text-sm text-rose-200">{error}</p>}{notice&&<p role="status" className="mt-4 rounded-xl border border-emerald-400/30 p-4 text-sm text-emerald-200">{notice}</p>}
+  <p className="muted mt-8 text-xs leading-6">Reviewed fields are not automatically promoted into the verified peptide catalogue. Canonical claim curation remains a separate process.</p>
+ </main>;
+}

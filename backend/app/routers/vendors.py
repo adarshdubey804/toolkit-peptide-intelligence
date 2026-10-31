@@ -345,7 +345,7 @@ def vendor_service_review_queue(
                sr.source_name, sr.source_identifier, sr.source_url
         FROM vendor_services vs
         JOIN vendors v ON v.id=vs.vendor_id
-        LEFT JOIN vendor_sites site ON site.id=vs.site_id AND site.review_status='verified'
+        JOIN vendor_sites site ON site.id=vs.site_id AND site.review_status='verified'
         LEFT JOIN source_records sr ON sr.id=vs.evidence_source_id
         WHERE v.organization_id=:org AND v.review_status='verified'
           AND v.verification_status='verified' AND vs.review_status='in_review'
@@ -366,9 +366,10 @@ def decide_vendor_service(
     if role not in REVIEW_ROLES:
         raise HTTPException(status_code=403, detail="Curator or reviewer permission is required.")
     service = db.execute(text("""
-        SELECT vs.id, vs.vendor_id, vs.submitted_by, vs.evidence_source_id
+        SELECT vs.id, vs.vendor_id, vs.site_id, vs.submitted_by, vs.evidence_source_id
         FROM vendor_services vs
         JOIN vendors v ON v.id=vs.vendor_id
+        JOIN vendor_sites site ON site.id=vs.site_id AND site.review_status='verified'
         WHERE vs.id=:id AND v.organization_id=:org
           AND v.review_status='verified' AND v.verification_status='verified'
           AND vs.review_status='in_review'
@@ -641,12 +642,14 @@ def vendor_service_evidence_link_review_queue(
     rows = db.execute(text("""
         SELECT l.id, l.service_id, l.relationship_type, l.evidence_scope, l.limitations,
                l.submitted_by, v.legal_name, vs.service_name,
+               site.site_name, site.address AS site_address,
                p.id AS peptide_id, p.preferred_name AS peptide_name,
                am.id AS method_id, am.method_name,
                sr.source_name, sr.source_identifier, sr.source_url
         FROM vendor_service_evidence_links l
         JOIN vendor_services vs ON vs.id=l.service_id
         JOIN vendors v ON v.id=vs.vendor_id
+        JOIN vendor_sites site ON site.id=vs.site_id AND site.review_status='verified'
         LEFT JOIN peptides p ON p.id=l.peptide_id
         LEFT JOIN analytical_methods am ON am.id=l.method_id
         JOIN source_records sr ON sr.id=l.source_id
@@ -674,6 +677,7 @@ def decide_vendor_service_evidence_link(
         FROM vendor_service_evidence_links l
         JOIN vendor_services vs ON vs.id=l.service_id
         JOIN vendors v ON v.id=vs.vendor_id
+        JOIN vendor_sites site ON site.id=vs.site_id AND site.review_status='verified'
         WHERE l.id=:id AND l.organization_id=:org AND l.review_status='in_review'
           AND v.review_status='verified' AND v.verification_status='verified'
           AND vs.review_status='verified'

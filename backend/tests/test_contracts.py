@@ -81,7 +81,7 @@ def test_clinical_trials_normalization_preserves_source_and_evidence_state():
 
 def test_provenance_migration_is_present_and_applied_in_development_order():
     migrations = sorted(path.name for path in MIGRATIONS_DIR.glob("*.sql"))
-    assert migrations == ["001_initial_schema.sql", "002_provenance_curation.sql", "003_authentication.sql", "004_organization_workspaces.sql", "005_curation_workflow.sql", "006_enrichment_candidates.sql", "007_vendor_directory.sql", "008_analytical_method_intelligence.sql", "009_formulation_stability_intelligence.sql", "010_process_development_intelligence.sql", "011_molecular_interaction_intelligence.sql", "012_agent_sessions.sql", "013_evidence_intelligence.sql", "014_regulatory_guidance_intelligence.sql", "015_regulatory_change_monitoring.sql", "016_regulatory_observation_integrity.sql", "017_regulatory_source_registry.sql", "018_enrichment_ingestion_runs.sql"]
+    assert migrations == ["001_initial_schema.sql", "002_provenance_curation.sql", "003_authentication.sql", "004_organization_workspaces.sql", "005_curation_workflow.sql", "006_enrichment_candidates.sql", "007_vendor_directory.sql", "008_analytical_method_intelligence.sql", "009_formulation_stability_intelligence.sql", "010_process_development_intelligence.sql", "011_molecular_interaction_intelligence.sql", "012_agent_sessions.sql", "013_evidence_intelligence.sql", "014_regulatory_guidance_intelligence.sql", "015_regulatory_change_monitoring.sql", "016_regulatory_observation_integrity.sql", "017_regulatory_source_registry.sql", "018_enrichment_ingestion_runs.sql", "019_regulatory_source_observations.sql"]
     sql = (MIGRATIONS_DIR / "002_provenance_curation.sql").read_text(encoding="utf-8")
     assert "source_record_versions" in sql
     assert "external_entity_links" in sql
@@ -758,3 +758,19 @@ def test_ingestion_source_request_is_bounded_and_rejects_unknown_sources():
         IngestionRunRequest(sources=["PubMed", "PubMed"])
     with pytest.raises(ValidationError):
         IngestionRunRequest(sources=["PubMed"], limit_per_source=1000)
+
+
+def test_regulatory_rss_polling_is_bounded_and_review_gated():
+    paths = app.openapi()["paths"]
+    assert "/api/v1/regulatory/sources/{source_id}/poll" in paths
+    assert "/api/v1/regulatory/sources/observations" in paths
+    assert "/api/v1/regulatory/sources/observations/{observation_id}/decision" in paths
+    from app.routers.regulatory import _parse_rss_items, APPROVED_REGULATORY_DOMAINS
+    xml = b'<rss><channel><item><title>Safety update</title><link>https://www.fda.gov/news/item</link><guid>item-1</guid></item></channel></rss>'
+    assert _parse_rss_items(xml)[0]["guid"] == "item-1"
+    with pytest.raises(ValueError):
+        _parse_rss_items(b'<!DOCTYPE rss [<!ENTITY x "bad">]><rss/>')
+    assert {"fda.gov", "ema.europa.eu", "gov.uk", "cdsco.gov.in", "who.int"} <= APPROVED_REGULATORY_DOMAINS
+    sql = (MIGRATIONS_DIR / "019_regulatory_source_observations.sql").read_text(encoding="utf-8")
+    assert "UNIQUE(source_id,external_identifier)" in sql
+    assert "pending_review" in sql

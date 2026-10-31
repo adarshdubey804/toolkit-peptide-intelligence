@@ -238,8 +238,22 @@ def formulation_review_queue(
                    'source_name', sr.source_name, 'source_identifier', sr.source_identifier,
                    'source_url', sr.source_url, 'evidence_scope', fs.evidence_scope
                )) FILTER (WHERE sr.id IS NOT NULL), '[]'::jsonb) AS sources,
-               (SELECT count(*) FROM formulation_components fc WHERE fc.formulation_id=fp.id) AS component_count,
-               (SELECT count(*) FROM formulation_stability_observations fo WHERE fo.formulation_id=fp.id) AS observation_count
+               COALESCE((SELECT jsonb_agg(jsonb_build_object(
+                   'component_name', fc.component_name, 'component_role', fc.component_role,
+                   'scientific_rationale', fc.scientific_rationale,
+                   'concentration_context', fc.concentration_context,
+                   'source_url', csr.source_url
+               )) FROM formulation_components fc
+               LEFT JOIN source_records csr ON csr.id=fc.source_id
+               WHERE fc.formulation_id=fp.id), '[]'::jsonb) AS components,
+               COALESCE((SELECT jsonb_agg(jsonb_build_object(
+                   'study_context', fo.study_context, 'condition_description', fo.condition_description,
+                   'duration_description', fo.duration_description, 'observed_change', fo.observed_change,
+                   'measurement_type', fo.measurement_type, 'result_interpretation', fo.result_interpretation,
+                   'limitations', fo.limitations, 'source_url', osr.source_url
+               )) FROM formulation_stability_observations fo
+               LEFT JOIN source_records osr ON osr.id=fo.source_id
+               WHERE fo.formulation_id=fp.id), '[]'::jsonb) AS stability_observations
         FROM formulation_profiles fp
         LEFT JOIN formulation_sources fs ON fs.formulation_id=fp.id
         LEFT JOIN source_records sr ON sr.id=fs.source_record_id

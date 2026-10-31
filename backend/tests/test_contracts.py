@@ -87,3 +87,66 @@ def test_provenance_migration_is_present_and_applied_in_development_order():
     assert "external_entity_links" in sql
     assert "curation_reviews" in sql
     assert "curation_decisions" in sql
+
+
+from datetime import datetime, timezone
+
+import pytest
+
+from app.services.provenance import (
+    build_source_envelope,
+    canonicalize_source_url,
+    stable_content_hash,
+)
+
+
+def test_source_url_canonicalization_removes_fragment_and_default_port():
+    assert canonicalize_source_url("HTTPS://Example.ORG:443/a?b=1#section") == "https://example.org/a?b=1"
+
+
+def test_source_url_rejects_relative_urls_and_embedded_credentials():
+    with pytest.raises(ValueError):
+        canonicalize_source_url("/relative/path")
+    with pytest.raises(ValueError):
+        canonicalize_source_url("https://user:secret@example.org/record")
+
+
+def test_content_hash_is_stable_across_mapping_key_order():
+    assert stable_content_hash({"a": 1, "b": 2}) == stable_content_hash({"b": 2, "a": 1})
+    assert len(stable_content_hash({"a": 1})) == 64
+
+
+def test_source_envelope_preserves_provenance_and_unreviewed_state():
+    timestamp = datetime(2026, 10, 31, 12, 0, tzinfo=timezone.utc)
+    payload = {"accession": "P12345", "sequence_length": 42}
+    envelope = build_source_envelope(
+        source_name="UniProtKB",
+        source_identifier="P12345",
+        source_url="https://www.uniprot.org/uniprotkb/P12345/entry#sequence",
+        payload=payload,
+        retrieved_at=timestamp,
+        source_version="release-2026_04",
+    )
+    assert envelope["source_url"] == "https://www.uniprot.org/uniprotkb/P12345/entry"
+    assert envelope["retrieved_at"] == "2026-10-31T12:00:00+00:00"
+    assert envelope["content_hash"] == stable_content_hash(payload)
+    assert envelope["raw_payload"] == payload
+    assert envelope["curation_status"] == "not_reviewed"
+
+
+def test_source_envelope_requires_timezone_aware_timestamp_and_identifiers():
+    with pytest.raises(ValueError):
+        build_source_envelope(
+            source_name="PubMed",
+            source_identifier="123",
+            source_url="https://pubmed.ncbi.nlm.nih.gov/123/",
+            payload={},
+            retrieved_at=datetime(2026, 10, 31),
+        )
+    with pytest.raises(ValueError):
+        build_source_envelope(
+            source_name=" ",
+            source_identifier="",
+            source_url="https://example.org/record",
+            payload={},
+        )

@@ -1,8 +1,4 @@
-from uuid import UUID
-
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-
+from app.integrations.clinicaltrials import normalize_study
 from app.main import app
 
 
@@ -34,7 +30,34 @@ def test_pubmed_discovery_is_registered_and_bounded():
     assert params["limit"]["schema"]["minimum"] == 1
 
 
+def test_clinical_trials_discovery_is_registered_and_bounded():
+    operation = app.openapi()["paths"]["/api/v1/research/clinicaltrials"]["get"]
+    params = {item["name"]: item for item in operation["parameters"]}
+    assert params["limit"]["schema"]["maximum"] == 20
+    assert params["limit"]["schema"]["minimum"] == 1
+    assert "page_token" in params
+
+
 def test_peptide_profile_requires_uuid_path_parameter():
     operation = app.openapi()["paths"]["/api/v1/peptides/{peptide_id}"]["get"]
     parameter = next(item for item in operation["parameters"] if item["name"] == "peptide_id")
     assert parameter["schema"]["format"] == "uuid"
+
+
+def test_clinical_trials_normalization_preserves_source_and_evidence_state():
+    sample = {
+        "protocolSection": {
+            "identificationModule": {"nctId": "NCT01234567", "briefTitle": "Example study"},
+            "statusModule": {"overallStatus": "RECRUITING", "startDateStruct": {"date": "2025-01"}},
+            "designModule": {"studyType": "INTERVENTIONAL", "phases": ["PHASE2"]},
+            "sponsorCollaboratorsModule": {"leadSponsor": {"name": "Example sponsor"}},
+            "descriptionModule": {"briefSummary": "Example summary"},
+            "conditionsModule": {"conditions": ["Condition A"]},
+            "armsInterventionsModule": {"interventions": [{"name": "Peptide X", "type": "DRUG"}]},
+        }
+    }
+    result = normalize_study(sample)
+    assert result["nct_id"] == "NCT01234567"
+    assert result["overall_status"] == "RECRUITING"
+    assert result["interventions"] == [{"name": "Peptide X", "type": "DRUG"}]
+    assert result["curation_status"] == "not_reviewed"

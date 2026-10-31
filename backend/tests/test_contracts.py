@@ -81,7 +81,7 @@ def test_clinical_trials_normalization_preserves_source_and_evidence_state():
 
 def test_provenance_migration_is_present_and_applied_in_development_order():
     migrations = sorted(path.name for path in MIGRATIONS_DIR.glob("*.sql"))
-    assert migrations == ["001_initial_schema.sql", "002_provenance_curation.sql", "003_authentication.sql", "004_organization_workspaces.sql", "005_curation_workflow.sql", "006_enrichment_candidates.sql", "007_vendor_directory.sql", "008_analytical_method_intelligence.sql"]
+    assert migrations == ["001_initial_schema.sql", "002_provenance_curation.sql", "003_authentication.sql", "004_organization_workspaces.sql", "005_curation_workflow.sql", "006_enrichment_candidates.sql", "007_vendor_directory.sql", "008_analytical_method_intelligence.sql", "009_formulation_stability_intelligence.sql"]
     sql = (MIGRATIONS_DIR / "002_provenance_curation.sql").read_text(encoding="utf-8")
     assert "source_record_versions" in sql
     assert "external_entity_links" in sql
@@ -428,3 +428,37 @@ def test_method_curation_is_separate_from_validation_status():
         evidence_scope="Describes the analytical principle and research application.",
     )
     assert payload.validation_status == "not_assessed"
+
+
+def test_formulation_routes_and_migration_are_registered():
+    paths = app.openapi()["paths"]
+    assert "/api/v1/formulations" in paths
+    assert "get" in paths["/api/v1/formulations"]
+    assert "post" in paths["/api/v1/formulations"]
+    assert "/api/v1/formulations/reviews" in paths
+    assert "/api/v1/formulations/{formulation_id}/decisions" in paths
+    sql = (MIGRATIONS_DIR / "009_formulation_stability_intelligence.sql").read_text(encoding="utf-8")
+    assert "formulation_profiles" in sql
+    assert "formulation_components" in sql
+    assert "formulation_stability_observations" in sql
+    assert "formulation_review_decisions" in sql
+    assert "prevent_formulation_review_decision_mutation" in sql
+
+
+def test_formulation_submission_keeps_evidence_and_validation_boundaries():
+    from app.routers.formulations import FormulationSubmission
+    payload = FormulationSubmission(
+        formulation_name="Published research formulation context",
+        formulation_type="aqueous_solution",
+        intended_research_context="Literature-described formulation research context.",
+        formulation_rationale="A source-linked description of the formulation rationale and relevant scientific evidence.",
+        limitations="Published results may not generalize across peptide sequences or container systems.",
+        sources=[{
+            "source_name": "Example Journal",
+            "source_identifier": "doi:10.example/formulation",
+            "source_url": "https://example.org/formulation",
+            "evidence_scope": "Supports the formulation context described."
+        }],
+    )
+    assert payload.development_stage == "research"
+    assert payload.stability_observations == []

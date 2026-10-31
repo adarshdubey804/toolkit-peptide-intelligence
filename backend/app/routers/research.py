@@ -163,15 +163,22 @@ async def unified_research_search(
 async def research_assistant_brief(
     question: str = Query(min_length=8, max_length=500),
     limit: int = Query(default=5, ge=1, le=10),
+    source_scope: list[str] | None = None,
 ):
     """Build a source-grounded research brief from live records; no generative claims."""
     query = question.strip()
-    providers = {
-        "clinicaltrials": ClinicalTrialsProvider().search(query, limit),
-        "uniprot": UniProtProvider().search(query, limit),
-        "rcsb": RCSBProvider().search(query, limit),
-    }
-    if settings.ncbi_email:
+    supported_sources = {"pubmed", "clinicaltrials", "uniprot", "rcsb"}
+    selected_sources = set(source_scope) if source_scope is not None else supported_sources
+    if not selected_sources or not selected_sources.issubset(supported_sources):
+        raise HTTPException(status_code=422, detail="Unsupported or empty research source scope.")
+    providers = {}
+    if "clinicaltrials" in selected_sources:
+        providers["clinicaltrials"] = ClinicalTrialsProvider().search(query, limit)
+    if "uniprot" in selected_sources:
+        providers["uniprot"] = UniProtProvider().search(query, limit)
+    if "rcsb" in selected_sources:
+        providers["rcsb"] = RCSBProvider().search(query, limit)
+    if "pubmed" in selected_sources and settings.ncbi_email:
         providers["pubmed"] = PubMedProvider(settings.ncbi_email, settings.ncbi_api_key).search(query, limit)
 
     async def retrieve(name: str, operation):
@@ -233,6 +240,8 @@ async def research_assistant_brief(
         "answer": answer,
         "citations": citations,
         "retrieval_summary": {
+            "sources_requested": sorted(selected_sources),
+            "sources_not_configured": ["pubmed"] if "pubmed" in selected_sources and not settings.ncbi_email else [],
             "sources_queried": len(providers),
             "sources_with_records": len(available_sources),
             "records_retrieved": len(citations),

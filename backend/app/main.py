@@ -16,7 +16,6 @@ from .routers.curation import router as curation_router
 from .routers.dossiers import router as dossier_router
 from .routers.enrichment import router as enrichment_router
 from .routers.evidence_intelligence import router as evidence_intelligence_router
-from .routers.evidence_intelligence import router as evidence_intelligence_router
 from .routers.formulations import router as formulation_router
 from .routers.interactions import router as interaction_router
 from .routers.organizations import router as organization_router

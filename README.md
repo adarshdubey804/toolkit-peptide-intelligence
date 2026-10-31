@@ -7,7 +7,9 @@ Scientific intelligence for peptide research and pharmaceutical development, bui
 - Next.js frontend with a peptide directory and scientific profile views.
 - FastAPI backend with verified-record catalogue search, pagination, profile detail and readiness endpoints.
 - PostgreSQL + pgvector schema for peptide identity, sequences, chemical properties, structures, targets, pathways, publications, research studies, evidence claims, analytical methods, vendor records, certifications and regulatory status.
-- Read-only PubMed discovery through NCBI E-utilities. External search results are marked not reviewed and are never silently promoted into curated records.
+- Read-only PubMed discovery through NCBI E-utilities.
+- Read-only ClinicalTrials.gov API v2 discovery with cursor pagination.
+- External search results are marked not reviewed and are never silently promoted into curated records.
 - GitHub Actions workflows for backend API-contract tests and frontend production builds.
 
 ## Local development
@@ -23,10 +25,11 @@ The development API applies the initial schema on startup. Production deployment
 ## API routes
 
 - GET /health — process health.
-- GET /ready — database connectivity.
+- GET /ready — database connectivity; returns 503 when the database is unavailable.
 - GET /api/v1/peptides — curator-verified catalogue search. Supports q, category, limit (1–100) and offset.
-- GET /api/v1/peptides/{id} — verified profile with reviewed sequences, chemistry, structures and evidence claims.
+- GET /api/v1/peptides/{id} — verified profile with reviewed sequences, chemistry, structures and evidence claims. The ID must be a UUID.
 - GET /api/v1/research/pubmed?q=... — live PubMed discovery, limited to 20 records and requiring NCBI_EMAIL.
+- GET /api/v1/research/clinicaltrials?q=... — live ClinicalTrials.gov v2 discovery, limited to 20 records; optional page_token follows the registry cursor.
 
 ## Scientific governance
 

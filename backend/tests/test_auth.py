@@ -8,7 +8,7 @@ def test_unknown_email_still_performs_argon2_password_verification(monkeypatch):
     attempted = []
 
     monkeypatch.setattr(auth.settings, "app_secret_key", "test-secret-" + "x" * 32)
-    monkeypatch.setattr(auth, "_load_user", lambda db, email: None)
+    monkeypatch.setattr(auth, "_load_user", lambda db, email, organization_id=None: None)
 
     class FakePasswordHash:
         def verify(self, password, encoded_hash):

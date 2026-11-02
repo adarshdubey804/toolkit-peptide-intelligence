@@ -1,9 +1,11 @@
+import re
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .auth import get_current_user
@@ -16,6 +18,19 @@ class ProjectCreate(BaseModel):
     name: str = Field(min_length=2, max_length=160)
     description: str | None = Field(default=None, max_length=2000)
     visibility: str = Field(default="organization", pattern="^(organization|private)$")
+
+
+class MemberAdd(BaseModel):
+    email: str = Field(min_length=5, max_length=254)
+    role: str = Field(pattern="^(curator|reviewer|researcher|viewer)$")
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if not re.fullmatch(r"[^\\s@]+@[^\\s@]+\\.[^\\s@]+", normalized):
+            raise ValueError("Enter a valid email address.")
+        return normalized
 
 
 class RoleUpdate(BaseModel):
@@ -68,6 +83,77 @@ def list_members(current_user: Annotated[dict, Depends(get_current_user)], db: A
         ORDER BY om.created_at, up.display_name
     """), {"organization_id": organization_id}).mappings().all()
     return {"organization_id": str(organization_id), "members": [dict(row) for row in rows]}
+
+
+@router.post("/members", status_code=201)
+def add_existing_member(
+    payload: MemberAdd,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """Add an already registered account to the caller's active organization."""
+    _require_admin(current_user)
+    organization_id = _require_org(current_user)
+    target = db.execute(text("""
+        SELECT id, email, display_name, is_active
+        FROM user_profiles
+        WHERE lower(email) = :email
+        FOR UPDATE
+    """), {"email": payload.email}).mappings().first()
+    if not target or not target["is_active"]:
+        raise HTTPException(status_code=404, detail="An active registered account with this email was not found.")
+
+    existing = db.execute(text("""
+        SELECT id, membership_status FROM organization_memberships
+        WHERE organization_id = :organization_id AND user_id = :user_id
+        FOR UPDATE
+    """), {"organization_id": organization_id, "user_id": target["id"]}).mappings().first()
+    if existing and existing["membership_status"] == "active":
+        raise HTTPException(status_code=409, detail="This account is already an active member of the organization.")
+
+    try:
+        if existing:
+            db.execute(text("""
+                UPDATE organization_memberships
+                SET role = :role, membership_status = 'active', updated_at = now()
+                WHERE id = :membership_id
+            """), {"role": payload.role, "membership_id": existing["id"]})
+            action = "organization_member_reactivated"
+        else:
+            db.execute(text("""
+                INSERT INTO organization_memberships (organization_id, user_id, role)
+                VALUES (:organization_id, :user_id, :role)
+            """), {
+                "organization_id": organization_id,
+                "user_id": target["id"],
+                "role": payload.role,
+            })
+            action = "organization_member_added"
+
+        db.execute(text("""
+            INSERT INTO audit_events
+                (actor_user_id, organization_id, action, entity_type, entity_id, event_metadata)
+            VALUES
+                (:actor, :organization_id, :action, 'user_profile', :target,
+                 jsonb_build_object('email', :email, 'role', :role))
+        """), {
+            "actor": current_user["id"], "organization_id": organization_id,
+            "action": action, "target": target["id"], "email": target["email"],
+            "role": payload.role,
+        })
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Membership could not be created; refresh the member list and retry.") from exc
+
+    return {
+        "user_id": str(target["id"]),
+        "email": target["email"],
+        "display_name": target["display_name"],
+        "role": payload.role,
+        "membership_status": "active",
+        "message": "Existing account added to this organization. The member must sign in and select this organization to access its workspace.",
+    }
 
 
 @router.patch("/members/{user_id}/role")

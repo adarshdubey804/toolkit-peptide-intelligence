@@ -57,7 +57,7 @@ def claims(user:Annotated[dict,Depends(get_current_user)],db:Annotated[Session,D
 @router.post("/appraisals",status_code=201)
 def appraise(payload:Appraisal,user:Annotated[dict,Depends(get_current_user)],db:Annotated[Session,Depends(get_db)]):
     org=reviewer(user,db)
-    found=db.execute(text("SELECT ec.id FROM evidence_claims ec WHERE ec.id=:id AND EXISTS (SELECT 1 FROM curation_reviews cr JOIN organization_memberships om ON om.user_id=cr.submitted_by WHERE cr.entity_type='evidence_claim' AND cr.entity_id=ec.id AND om.organization_id=:org AND om.membership_status='active')"),{"id":payload.claim_id,"org":org}).scalar_one_or_none()
+    found=db.execute(text("SELECT ec.id FROM evidence_claims ec WHERE ec.id=:id AND EXISTS (SELECT 1 FROM curation_reviews cr WHERE cr.entity_type='evidence_claim' AND cr.entity_id=ec.id AND cr.organization_id=:org)"),{"id":payload.claim_id,"org":org}).scalar_one_or_none()
     if not found: raise HTTPException(404,"Claim not found in this organization.")
     row=db.execute(text("""
       INSERT INTO evidence_appraisals(organization_id,claim_id,study_design,evidence_level,population_or_model,sample_size,endpoint,risk_of_bias,replication_status,methodological_domains,limitations,appraisal_rationale,reviewer_id)

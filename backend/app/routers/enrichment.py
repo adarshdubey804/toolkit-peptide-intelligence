@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..db import get_db
+from ..rate_limit_dependencies import authenticated_write_rate_limit
 from ..integrations.clinicaltrials import ClinicalTrialsProvider
 from ..integrations.pubmed import PubMedProvider
 from ..integrations.rcsb import RCSBProvider
@@ -195,7 +196,7 @@ def _validated_source_url(source: str, url: str) -> str:
     return url
 
 
-@router.post("/peptides/{peptide_id}/candidates", status_code=201)
+@router.post("/peptides/{peptide_id}/candidates", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("enrichment_write", settings.enrichment_rate_limit_per_window))])
 def submit_enrichment_candidate(
     peptide_id: UUID,
     payload: CandidateSubmission,
@@ -267,7 +268,7 @@ def list_enrichment_candidates(
     return {"items": [dict(row) for row in rows], "count": len(rows)}
 
 
-@router.post("/candidates/{candidate_id}/decisions", status_code=201)
+@router.post("/candidates/{candidate_id}/decisions", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("enrichment_write"))])
 def decide_enrichment_candidate(
     candidate_id: UUID,
     payload: CandidateDecision,
@@ -330,7 +331,7 @@ class IngestionRunRequest(BaseModel):
         return values
 
 
-@router.post("/peptides/{peptide_id}/runs", status_code=201)
+@router.post("/peptides/{peptide_id}/runs", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("enrichment_write"))])
 async def run_persistent_enrichment(
     peptide_id: UUID,
     payload: IngestionRunRequest,

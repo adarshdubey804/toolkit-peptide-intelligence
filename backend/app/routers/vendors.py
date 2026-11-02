@@ -9,6 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..db import get_db
+from ..rate_limit_dependencies import authenticated_write_rate_limit
 from .auth import get_current_user
 
 router = APIRouter(prefix="/api/v1/vendors", tags=["vendor and laboratory directory"])
@@ -251,7 +252,7 @@ def verified_vendor_directory(
     return {"items": [dict(row) for row in rows], "count": len(rows), "scope": "Only curator-reviewed vendor identities with verified status are listed."}
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("vendor_write"))])
 def submit_vendor(
     payload: VendorSubmission,
     current_user: Annotated[dict, Depends(get_current_user)],
@@ -283,7 +284,7 @@ def submit_vendor(
     return dict(vendor)
 
 
-@router.post("/import-candidates", status_code=201)
+@router.post("/import-candidates", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("vendor_write"))])
 def import_vendor_candidates(
     payload: VendorCandidateBatch,
     current_user: Annotated[dict, Depends(get_current_user)],
@@ -389,7 +390,7 @@ def import_vendor_candidates(
     }
 
 
-@router.post("/{vendor_id}/services", status_code=201)
+@router.post("/{vendor_id}/services", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("vendor_write"))])
 def submit_vendor_service(
     vendor_id: UUID,
     payload: VendorServiceSubmission,
@@ -510,7 +511,7 @@ def vendor_review_queue(
     return {"items": [dict(row) for row in rows], "count": len(rows)}
 
 
-@router.post("/{vendor_id}/decisions", status_code=201)
+@router.post("/{vendor_id}/decisions", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("vendor_write"))])
 def decide_vendor(
     vendor_id: UUID,
     payload: VendorDecision,
@@ -585,7 +586,7 @@ def vendor_service_review_queue(
             "scope": "Service capability claims are independently reviewed after vendor identity verification."}
 
 
-@router.post("/services/{service_id}/decisions", status_code=201)
+@router.post("/services/{service_id}/decisions", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("vendor_write"))])
 def decide_vendor_service(
     service_id: UUID,
     payload: VendorDecision,
@@ -672,7 +673,7 @@ class VendorCertificationSubmission(BaseModel):
     source_url: HttpUrl
 
 
-@router.post("/{vendor_id}/certifications", status_code=201)
+@router.post("/{vendor_id}/certifications", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("vendor_write"))])
 def submit_vendor_certification(
     vendor_id: UUID,
     payload: VendorCertificationSubmission,
@@ -769,7 +770,7 @@ def vendor_certification_review_queue(
             "scope": "Certification claims are reviewed independently of vendor identity."}
 
 
-@router.post("/certifications/{certification_id}/decisions", status_code=201)
+@router.post("/certifications/{certification_id}/decisions", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("vendor_write"))])
 def decide_vendor_certification(
     certification_id: UUID,
     payload: VendorCertificationDecision,
@@ -827,7 +828,7 @@ def decide_vendor_certification(
             "decision": payload.decision}
 
 
-@router.post("/services/{service_id}/evidence-links", status_code=201)
+@router.post("/services/{service_id}/evidence-links", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("vendor_write"))])
 def submit_vendor_service_evidence_link(
     service_id: UUID,
     payload: VendorServiceEvidenceLinkSubmission,
@@ -919,7 +920,7 @@ def vendor_service_evidence_link_review_queue(
             "scope": "Only source-backed links to curator-verified peptide and method identities are eligible."}
 
 
-@router.post("/service-evidence-links/{link_id}/decisions", status_code=201)
+@router.post("/service-evidence-links/{link_id}/decisions", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("vendor_write"))])
 def decide_vendor_service_evidence_link(
     link_id: UUID,
     payload: VendorServiceEvidenceLinkDecision,
@@ -968,7 +969,7 @@ def decide_vendor_service_evidence_link(
     return {"link_id": str(link_id), "review_status": new_status, "decision": payload.decision}
 
 
-@router.post("/{vendor_id}/sites", status_code=201)
+@router.post("/{vendor_id}/sites", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("vendor_write"))])
 def submit_vendor_site(
     vendor_id: UUID,
     payload: VendorSiteSubmission,
@@ -1010,7 +1011,7 @@ def submit_vendor_site(
     return dict(site)
 
 
-@router.post("/{vendor_id}/import-site-candidates", status_code=201)
+@router.post("/{vendor_id}/import-site-candidates", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("vendor_write"))])
 def import_vendor_site_candidates(
     vendor_id: UUID,
     payload: VendorSiteCandidateBatch,
@@ -1157,7 +1158,7 @@ def vendor_site_review_queue(
             "scope": "Facility identity, address and declared scope are reviewed independently of the parent vendor."}
 
 
-@router.post("/sites/{site_id}/decisions", status_code=201)
+@router.post("/sites/{site_id}/decisions", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("vendor_write"))])
 def decide_vendor_site(
     site_id: UUID,
     payload: VendorSiteDecision,

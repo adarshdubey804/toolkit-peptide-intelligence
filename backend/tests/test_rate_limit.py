@@ -161,3 +161,23 @@ def test_public_rate_limit_does_not_create_missing_tenant_context():
     assert not any(
         "set_config(" in sql for sql, _ in db.statements
     )
+
+
+def test_authenticated_write_rate_limit_uses_user_identity_and_scope(monkeypatch):
+    from app import rate_limit_dependencies
+
+    calls = []
+    monkeypatch.setattr(
+        rate_limit_dependencies,
+        "enforce_rate_limit",
+        lambda db, **kwargs: calls.append((db, kwargs)),
+    )
+    dependency = rate_limit_dependencies.authenticated_write_rate_limit("vendor_write")
+    db = object()
+    dependency(current_user={"id":"user-123"}, db=db)
+
+    assert len(calls) == 1
+    assert calls[0][0] is db
+    assert calls[0][1]["scope"] == "vendor_write"
+    assert calls[0][1]["identity"] == "user-123"
+    assert calls[0][1]["limit"] >= 1

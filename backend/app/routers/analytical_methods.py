@@ -8,6 +8,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..db import get_db
+from ..rate_limit_dependencies import authenticated_write_rate_limit
 from .auth import get_current_user
 
 router = APIRouter(prefix="/api/v1/analytical-methods", tags=["analytical method intelligence"])
@@ -140,7 +141,7 @@ def list_verified_methods(
             "scope": "Curator-reviewed method records only. Validation status is a separate field and is not implied by curation."}
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("analytical_write"))])
 def submit_method(
     payload: MethodSubmission,
     current_user: Annotated[dict, Depends(get_current_user)],
@@ -212,7 +213,7 @@ def method_review_queue(
     return {"items": [dict(row) for row in rows], "count": len(rows)}
 
 
-@router.post("/{method_id}/decisions", status_code=201)
+@router.post("/{method_id}/decisions", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("analytical_write"))])
 def decide_method(
     method_id: UUID,
     payload: MethodDecision,
@@ -296,7 +297,7 @@ def list_verified_applicability(
     }
 
 
-@router.post("/applicability", status_code=201)
+@router.post("/applicability", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("analytical_write"))])
 def submit_method_applicability(
     payload: ApplicabilitySubmission,
     current_user: Annotated[dict, Depends(get_current_user)],
@@ -375,7 +376,7 @@ def applicability_review_queue(
     return {"items": [dict(row) for row in rows], "count": len(rows)}
 
 
-@router.post("/applicability/{applicability_id}/decisions", status_code=201)
+@router.post("/applicability/{applicability_id}/decisions", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("analytical_write"))])
 def decide_method_applicability(
     applicability_id: UUID,
     payload: ApplicabilityDecision,
@@ -490,7 +491,7 @@ def list_verified_laboratory_capabilities(
     }
 
 
-@router.post("/laboratory-capabilities", status_code=201)
+@router.post("/laboratory-capabilities", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("analytical_write"))])
 def submit_laboratory_capability(
     payload: LaboratoryCapabilitySubmission,
     current_user: Annotated[dict, Depends(get_current_user)],
@@ -593,7 +594,7 @@ def laboratory_capability_review_queue(
     return {"items": [dict(row) for row in rows], "count": len(rows)}
 
 
-@router.post("/laboratory-capabilities/{claim_id}/decisions", status_code=201)
+@router.post("/laboratory-capabilities/{claim_id}/decisions", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("analytical_write"))])
 def decide_laboratory_capability(
     claim_id: UUID,
     payload: LaboratoryCapabilityDecision,
@@ -720,7 +721,7 @@ def analytical_test_catalogue_review_queue(
     }
 
 
-@router.post("/test-catalogue/{test_id}/decisions", status_code=201)
+@router.post("/test-catalogue/{test_id}/decisions", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("analytical_write"))])
 def decide_analytical_test_catalogue_entry(
     test_id: UUID,
     payload: AnalyticalTestCatalogueDecision,
@@ -818,7 +819,7 @@ def list_verified_peptide_test_applicability(
     }
 
 
-@router.post("/test-catalogue/applicability", status_code=201)
+@router.post("/test-catalogue/applicability", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("analytical_write"))])
 def submit_peptide_test_applicability(
     payload: PeptideTestApplicabilitySubmission,
     current_user: Annotated[dict, Depends(get_current_user)],
@@ -906,7 +907,7 @@ def peptide_test_applicability_review_queue(
     }
 
 
-@router.post("/test-catalogue/applicability/{applicability_id}/decisions", status_code=201)
+@router.post("/test-catalogue/applicability/{applicability_id}/decisions", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("analytical_write"))])
 def decide_peptide_test_applicability(
     applicability_id: UUID,
     payload: PeptideTestApplicabilityDecision,

@@ -11,7 +11,7 @@
 - Direct research-agent execution requires authentication. The agent catalogue remains public and read-only.
 - AI synthesis and structured extraction are development-only. Keep AI_SYNTHESIS_ENABLED=false in production.
 - Development migrations are checksum-tracked and run automatically only when APP_ENV=development. Production migrations must be run as a separate, controlled deployment job.
-- Backend PostgreSQL migration tests and frontend build run in CI. The frontend dependency audit is being added as a CI gate.
+- Backend PostgreSQL migration tests and frontend build run in CI. Frontend CI now runs npm audit at moderate severity and blocks a build if any moderate, high or critical advisory is present.
 
 These controls do not amount to a complete production security program.
 

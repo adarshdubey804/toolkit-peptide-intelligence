@@ -1069,3 +1069,33 @@ def test_vendor_candidate_sources_must_match_official_company_domain():
     assert _candidate_source_url("https://example.org", "https://labs.example.org/profile") == "https://labs.example.org/profile"
     with pytest.raises(HTTPException):
         _candidate_source_url("https://example.org", "https://unrelated.example.net/services")
+
+
+
+def test_vendor_facility_candidate_batch_requires_source_backed_records():
+    from pydantic import ValidationError
+    from app.routers.vendors import VendorSiteCandidateBatch
+
+    valid = {
+        "site_name": "Bubendorf",
+        "address": "Hauptstrasse 144, 4416 Bubendorf, Switzerland",
+        "country_code": "CH",
+        "site_scope": "Official site page describes peptide manufacturing, process development and analytical capabilities.",
+        "source_name": "Official facility page",
+        "source_identifier": "official-facility:bachem-bubendorf",
+        "source_url": "https://www.bachem.com/about-bachem/our-locations/bubendorf/",
+    }
+    batch = VendorSiteCandidateBatch(candidates=[valid])
+    assert batch.candidates[0].country_code == "CH"
+    with pytest.raises(ValidationError):
+        VendorSiteCandidateBatch(candidates=[])
+    with pytest.raises(ValidationError):
+        VendorSiteCandidateBatch(candidates=[{**valid, "source_url": "http://www.bachem.com/site"}])
+
+
+
+def test_vendor_facility_candidate_import_route_is_registered():
+    paths = app.openapi()["paths"]
+    path = "/api/v1/vendors/{vendor_id}/import-site-candidates"
+    assert path in paths
+    assert "post" in paths[path]

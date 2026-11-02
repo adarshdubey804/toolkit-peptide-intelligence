@@ -1870,10 +1870,11 @@ def test_extracted_evidence_is_linked_to_immutable_normalized_source_version():
                       'test-model','completed',1,1) RETURNING id
         """), {"org": org, "user": user}).scalar_one()
 
+        source_a_identifier = "PMID-" + str(uuid4())
         source_a = persist_normalized_source_record(
             connection,
             source_name="Test provider",
-            source_identifier="PMID-" + str(uuid4()),
+            source_identifier=source_a_identifier,
             source_url="https://example.org/record",
             title="Normalized provider record",
             payload={"pmid": "123", "title": "Normalized provider record"},
@@ -1881,9 +1882,7 @@ def test_extracted_evidence_is_linked_to_immutable_normalized_source_version():
         duplicate_a = persist_normalized_source_record(
             connection,
             source_name="Test provider",
-            source_identifier=source_a["source_record_id"] and
-                connection.execute(text("SELECT source_identifier FROM source_records WHERE id=:id"),
-                                   {"id": source_a["source_record_id"]}).scalar_one(),
+            source_identifier=source_a_identifier,
             source_url="https://example.org/record",
             title="Normalized provider record",
             payload={"pmid": "123", "title": "Normalized provider record"},
@@ -1909,10 +1908,7 @@ def test_extracted_evidence_is_linked_to_immutable_normalized_source_version():
                 'Normalized provider record','{}'::jsonb,'test-model',:source,:version
             ) RETURNING id,source_record_id,source_record_version_id
         """), {
-            "org": org, "run": run, "identifier": connection.execute(
-                text("SELECT source_identifier FROM source_records WHERE id=:id"),
-                {"id": source_a["source_record_id"]},
-            ).scalar_one(),
+            "org": org, "run": run, "identifier": source_a_identifier,
             "source": source_a["source_record_id"],
             "version": source_a["source_record_version_id"],
         }).mappings().one()

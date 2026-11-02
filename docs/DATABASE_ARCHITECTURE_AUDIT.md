@@ -1,7 +1,7 @@
 # Database Architecture Audit
 
 **Audit date:** 2026-11-02  
-**Scope:** Repository schema and application access patterns on `main`, migrations 001–063, and relevant backend routers.  
+**Scope:** Repository schema and application access patterns on `main`, migrations 001–064, and relevant backend routers.  
 **Important limitation:** This is a repository-level architecture review. It does not establish the live PostgreSQL database's current schema, data quality, query plans, backup state, or deployment configuration. Those require access to the deployed database and environment.
 
 ## Executive assessment
@@ -49,7 +49,7 @@ Legacy records with ambiguous owners remain NULL/restricted and must be resolved
 
 ### P0 — Tenant isolation is partially database-enforced, not yet comprehensive
 
-The RLS rollout in migrations 044–063 covers vendor materials and batch evidence; analytical methods and their review workflow; formulations and process knowledge; molecular interaction assessments; evidence appraisal and curation workflows; user-private agent sessions; regulatory guidance and source-poll artifacts; vendor identity, facilities, certifications, services and service/evidence links; laboratory capability claims; peptide-method and peptide-test applicability assessments; organization-private editorial decisions on the shared analytical test catalogue; tamper-evident audit events scoped to the owning organization and authenticated actor; and extraction/enrichment artifacts. These policies use transaction-local organization context and distinguish owner-private contributions from explicitly public, verified records. The rollout is still partial: remaining tenant-owned tables, route-level authorization paths, privileged operators and background workers require separate review. The cross-tenant source registry remains a documented worker-control-plane exception until a dedicated worker role is introduced.
+The RLS rollout in migrations 044–064 covers vendor materials and batch evidence; analytical methods and their review workflow; formulations and process knowledge; molecular interaction assessments; evidence appraisal and curation workflows; user-private agent sessions; regulatory guidance and source-poll artifacts; vendor identity, facilities, certifications, services and service/evidence links; laboratory capability claims; peptide-method and peptide-test applicability assessments; organization-private editorial decisions on the shared analytical test catalogue; tamper-evident audit events scoped to the owning organization and authenticated actor; and extraction/enrichment artifacts. These policies use transaction-local organization context and distinguish owner-private contributions from explicitly public, verified records. The rollout is still partial: remaining tenant-owned tables, route-level authorization paths, privileged operators and background workers require separate review. Regulatory source registrations now have organization-scoped RLS; a dedicated, column-limited scheduler role is the only cross-organization reader of due-feed metadata. The shared `source_records` scientific provenance registry remains distinct and global.
 
 A missed organization predicate in an uncovered endpoint or worker can therefore expose another tenant's data.
 

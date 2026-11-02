@@ -134,18 +134,18 @@ def submit_method(
     source_id = _source_record(db, payload.source_name, payload.source_identifier, str(payload.source_url))
     method = db.execute(text("""
         INSERT INTO analytical_methods (
-            method_name, method_category, scientific_principle, intended_purpose,
+            organization_id, method_name, method_category, scientific_principle, intended_purpose,
             applicable_materials, method_classification, instrument_platform,
             sample_requirements, method_scope, method_version, reference_standard,
             validation_status, acceptance_criteria_source, limitations, source_id,
             review_status, submitted_by
         ) VALUES (
-            :name, :category, :principle, :purpose, :materials, :classification,
+            :org, :name, :category, :principle, :purpose, :materials, :classification,
             :platform, :sample, :scope, :version, :standard, :validation,
             :criteria, :limitations, :source, 'in_review', :submitter
         ) RETURNING id, method_name, method_category, review_status, validation_status
     """), {
-        "name": payload.method_name.strip(), "category": payload.method_category,
+        "org": organization_id, "name": payload.method_name.strip(), "category": payload.method_category,
         "principle": payload.scientific_principle.strip(), "purpose": payload.intended_purpose.strip(),
         "materials": payload.applicable_materials, "classification": payload.method_classification,
         "platform": payload.instrument_platform, "sample": payload.sample_requirements,
@@ -188,10 +188,7 @@ def method_review_queue(
         FROM analytical_methods am
         LEFT JOIN analytical_method_sources ams ON ams.method_id=am.id
         LEFT JOIN source_records sr ON sr.id=ams.source_record_id
-        WHERE am.review_status='in_review'
-          AND EXISTS (SELECT 1 FROM organization_memberships om
-                      WHERE om.organization_id=:org AND om.user_id=am.submitted_by
-                        AND om.membership_status='active')
+        WHERE am.review_status='in_review' AND am.organization_id=:org
         GROUP BY am.id ORDER BY am.id LIMIT :limit
     """), {"org": organization_id, "limit": limit}).mappings().all()
     return {"items": [dict(row) for row in rows], "count": len(rows)}
@@ -209,9 +206,8 @@ def decide_method(
         raise HTTPException(status_code=403, detail="Curator or reviewer permission is required.")
     method = db.execute(text("""
         SELECT am.* FROM analytical_methods am
-        JOIN organization_memberships om ON om.user_id=am.submitted_by
         WHERE am.id=:id AND am.review_status='in_review'
-          AND om.organization_id=:org AND om.membership_status='active'
+          AND am.organization_id=:org
         FOR UPDATE OF am
     """), {"id": method_id, "org": organization_id}).mappings().first()
     if not method:

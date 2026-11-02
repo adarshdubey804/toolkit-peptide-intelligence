@@ -74,11 +74,11 @@ def submit_review(
             raise HTTPException(status_code=404, detail="Source record not found.")
     review = db.execute(text("""
         INSERT INTO curation_reviews
-            (entity_type, entity_id, source_record_id, review_status, priority, submitted_by)
-        VALUES (:entity_type, :entity_id, :source_id, 'in_review', :priority, :submitted_by)
+            (organization_id, entity_type, entity_id, source_record_id, review_status, priority, submitted_by)
+        VALUES (:organization_id, :entity_type, :entity_id, :source_id, 'in_review', :priority, :submitted_by)
         RETURNING id, entity_type, entity_id, source_record_id, review_status, priority, created_at
     """), {
-        "entity_type": payload.entity_type, "entity_id": payload.entity_id,
+        "organization_id": organization_id, "entity_type": payload.entity_type, "entity_id": payload.entity_id,
         "source_id": payload.source_record_id, "priority": payload.priority,
         "submitted_by": current_user["id"],
     }).mappings().one()
@@ -112,12 +112,7 @@ def list_reviews(
         LEFT JOIN evidence_claims ec ON cr.entity_type = 'evidence_claim' AND ec.id = cr.entity_id
         LEFT JOIN source_records sr ON sr.id = cr.source_record_id
         WHERE (:review_status IS NULL OR cr.review_status = CAST(:review_status AS review_status))
-          AND EXISTS (
-              SELECT 1 FROM organization_memberships om
-              WHERE om.organization_id = :organization_id
-                AND om.user_id = cr.submitted_by
-                AND om.membership_status = 'active'
-          )
+          AND cr.organization_id = :organization_id
         ORDER BY CASE cr.priority WHEN 'high' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END,
                  cr.created_at ASC
         LIMIT :limit
@@ -146,10 +141,7 @@ def assign_review(
     result = db.execute(text("""
         UPDATE curation_reviews cr SET assigned_to = :assignee, updated_at = now()
         WHERE cr.id = :review_id AND cr.review_status IN ('draft','in_review')
-          AND cr.submitted_by IN (
-              SELECT user_id FROM organization_memberships
-              WHERE organization_id = :org AND membership_status = 'active'
-          )
+          AND cr.organization_id = :org
         RETURNING cr.id, cr.assigned_to, cr.review_status
     """), {"assignee": payload.assigned_to, "review_id": review_id, "org": organization_id}).mappings().first()
     if not result:
@@ -175,9 +167,7 @@ def decide_review(
     _require_reviewer_role(role)
     review = db.execute(text("""
         SELECT cr.* FROM curation_reviews cr
-        JOIN organization_memberships om ON om.user_id = cr.submitted_by
-        WHERE cr.id = :review_id AND om.organization_id = :org
-          AND om.membership_status = 'active'
+        WHERE cr.id = :review_id AND cr.organization_id = :org
         FOR UPDATE OF cr
     """), {"review_id": review_id, "org": organization_id}).mappings().first()
     if not review:
@@ -218,19 +208,20 @@ def decide_review(
     new_status = "draft" if payload.decision == "needs_changes" else payload.decision
     decision = db.execute(text("""
         INSERT INTO curation_decisions
-            (review_id, decision, rationale, reviewer_id, previous_status, new_status)
-        VALUES (:review_id, :decision, :rationale, :reviewer, :previous_status, :new_status)
+            (review_id, organization_id, decision, rationale, reviewer_id, previous_status, new_status)
+        VALUES (:review_id, :org, :decision, :rationale, :reviewer, :previous_status, :new_status)
         RETURNING id, review_id, decision, rationale, reviewer_id, decided_at, previous_status, new_status
     """), {"review_id": review_id, "decision": payload.decision, "rationale": payload.rationale.strip(),
-           "reviewer": current_user["id"], "previous_status": review["review_status"], "new_status": new_status}).mappings().one()
+           "reviewer": current_user["id"], "previous_status": review["review_status"], "new_status": new_status,
+           "org": organization_id}).mappings().one()
 
     db.execute(text("""
         UPDATE curation_reviews
         SET review_status = CAST(:new_status AS review_status), decision_reason = :rationale,
             reviewed_by = :reviewer, reviewed_at = now(), updated_at = now()
-        WHERE id = :review_id
+        WHERE id = :review_id AND organization_id = :org
     """), {"new_status": new_status, "rationale": payload.rationale.strip(),
-           "reviewer": current_user["id"], "review_id": review_id})
+           "reviewer": current_user["id"], "review_id": review_id, "org": organization_id})
 
     if review["entity_type"] in ("peptide", "evidence_claim"):
         table = {"peptide": "peptides", "evidence_claim": "evidence_claims"}[review["entity_type"]]

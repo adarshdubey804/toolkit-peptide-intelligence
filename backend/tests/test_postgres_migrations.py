@@ -3160,3 +3160,77 @@ def test_audit_events_are_organization_private_and_actor_bound():
         connection.exec_driver_sql("REVOKE SELECT,INSERT,UPDATE ON audit_chain_heads FROM toolkit_audit_event_rls_test")
         connection.exec_driver_sql("REVOKE USAGE ON SCHEMA public FROM toolkit_audit_event_rls_test")
         connection.exec_driver_sql("DROP ROLE toolkit_audit_event_rls_test")
+
+
+
+
+@pytest.mark.skipif(
+    os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",
+    reason="PostgreSQL rate-limit RLS context integration test is enabled in CI only.",
+)
+def test_rate_limit_commit_preserves_authenticated_context_for_following_rls_write():
+    from sqlalchemy.orm import Session
+    from app.rate_limit import enforce_rate_limit
+
+    with engine.begin() as connection:
+        connection.execute(text("SELECT pg_advisory_xact_lock(731904221067)"))
+        apply_development_migrations(connection)
+        organization_id = connection.execute(text("""
+            INSERT INTO organizations (name,organization_type)
+            VALUES (:name,'research_team') RETURNING id
+        """), {"name":"rate-context-"+str(uuid4())}).scalar_one()
+        user_id = connection.execute(text("""
+            INSERT INTO user_profiles (display_name,role)
+            VALUES ('Rate context integration actor','researcher') RETURNING id
+        """)).scalar_one()
+        role = "toolkit_rate_context_rls_test"
+        exists = connection.execute(text(
+            "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname=:role)"
+        ), {"role":role}).scalar_one()
+        if not exists:
+            connection.exec_driver_sql("CREATE ROLE toolkit_rate_context_rls_test NOLOGIN NOBYPASSRLS")
+        connection.exec_driver_sql("GRANT USAGE ON SCHEMA public TO toolkit_rate_context_rls_test")
+        connection.exec_driver_sql("GRANT SELECT,INSERT ON audit_events TO toolkit_rate_context_rls_test")
+        connection.exec_driver_sql("GRANT SELECT,INSERT,UPDATE ON audit_chain_heads TO toolkit_rate_context_rls_test")
+        connection.exec_driver_sql("""
+            GRANT SELECT,INSERT,UPDATE,DELETE ON api_rate_limit_buckets
+            TO toolkit_rate_context_rls_test
+        """)
+        connection.exec_driver_sql("""
+            GRANT SELECT,UPDATE ON api_rate_limit_maintenance
+            TO toolkit_rate_context_rls_test
+        """)
+
+    try:
+        with Session(engine) as db:
+            db.execute(text("SET ROLE toolkit_rate_context_rls_test"))
+            db.execute(text("""
+                SELECT set_config('app.organization_id',:org,true),
+                       set_config('app.user_id',:user,true)
+            """), {"org":str(organization_id),"user":str(user_id)})
+            enforce_rate_limit(
+                db,
+                scope="rate-context-integration-"+str(uuid4()),
+                identity=str(user_id),
+                limit=10,
+                window_seconds=60,
+            )
+            context = db.execute(text("""
+                SELECT current_setting('app.organization_id',true) AS organization_id,
+                       current_setting('app.user_id',true) AS user_id
+            """)).mappings().one()
+            assert context["organization_id"] == str(organization_id)
+            assert context["user_id"] == str(user_id)
+            event_id = db.execute(text("""
+                INSERT INTO audit_events (
+                    actor_user_id,organization_id,action,entity_type,event_metadata
+                ) VALUES (:user,:org,'rate_context_preserved','integration','{}'::jsonb)
+                RETURNING id
+            """), {"user":user_id,"org":organization_id}).scalar_one()
+            assert event_id is not None
+            db.commit()
+            db.execute(text("RESET ROLE"))
+            db.commit()
+    finally:
+        with engine.begin() as connection:
+            connection.exec_driver_sql("DROP ROLE IF EXISTS toolkit_rate_context_rls_test")

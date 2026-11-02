@@ -82,7 +82,7 @@ def test_clinical_trials_normalization_preserves_source_and_evidence_state():
 
 def test_provenance_migration_is_present_and_applied_in_development_order():
     migrations = sorted(path.name for path in MIGRATIONS_DIR.glob("*.sql"))
-    assert migrations == ["001_initial_schema.sql", "002_provenance_curation.sql", "003_authentication.sql", "004_organization_workspaces.sql", "005_curation_workflow.sql", "006_enrichment_candidates.sql", "007_vendor_directory.sql", "008_analytical_method_intelligence.sql", "009_formulation_stability_intelligence.sql", "010_process_development_intelligence.sql", "011_molecular_interaction_intelligence.sql", "012_agent_sessions.sql", "013_evidence_intelligence.sql", "014_regulatory_guidance_intelligence.sql", "015_regulatory_change_monitoring.sql", "016_regulatory_observation_integrity.sql", "017_regulatory_source_registry.sql", "018_enrichment_ingestion_runs.sql", "019_regulatory_source_observations.sql", "020_regulatory_poll_scheduler.sql", "021_evidence_review_decisions.sql", "022_structured_evidence_extraction.sql", "023_extracted_evidence_field_review.sql", "024_peptide_analytical_method_applicability.sql", "025_vendor_certification_verification.sql", "026_vendor_service_review.sql", "027_vendor_service_evidence_links.sql", "028_vendor_facility_verification.sql", "029_vendor_service_facility_link.sql", "030_vendor_certification_submitter.sql", "031_laboratory_capability_claims.sql", "032_analytical_test_catalogue.sql", "033_analytical_test_catalogue_curation.sql", "034_peptide_test_applicability.sql", "035_analytical_reference_framework_crosswalk.sql", "036_shared_api_rate_limiting.sql", "037_tamper_evident_audit_trail.sql", "038_explicit_record_ownership.sql", "039_canonical_peptide_chemical_forms.sql"]
+    assert migrations == ["001_initial_schema.sql", "002_provenance_curation.sql", "003_authentication.sql", "004_organization_workspaces.sql", "005_curation_workflow.sql", "006_enrichment_candidates.sql", "007_vendor_directory.sql", "008_analytical_method_intelligence.sql", "009_formulation_stability_intelligence.sql", "010_process_development_intelligence.sql", "011_molecular_interaction_intelligence.sql", "012_agent_sessions.sql", "013_evidence_intelligence.sql", "014_regulatory_guidance_intelligence.sql", "015_regulatory_change_monitoring.sql", "016_regulatory_observation_integrity.sql", "017_regulatory_source_registry.sql", "018_enrichment_ingestion_runs.sql", "019_regulatory_source_observations.sql", "020_regulatory_poll_scheduler.sql", "021_evidence_review_decisions.sql", "022_structured_evidence_extraction.sql", "023_extracted_evidence_field_review.sql", "024_peptide_analytical_method_applicability.sql", "025_vendor_certification_verification.sql", "026_vendor_service_review.sql", "027_vendor_service_evidence_links.sql", "028_vendor_facility_verification.sql", "029_vendor_service_facility_link.sql", "030_vendor_certification_submitter.sql", "031_laboratory_capability_claims.sql", "032_analytical_test_catalogue.sql", "033_analytical_test_catalogue_curation.sql", "034_peptide_test_applicability.sql", "035_analytical_reference_framework_crosswalk.sql", "036_shared_api_rate_limiting.sql", "037_tamper_evident_audit_trail.sql", "038_explicit_organization_ownership.sql"]
     sql = (MIGRATIONS_DIR / "002_provenance_curation.sql").read_text(encoding="utf-8")
     assert "source_record_versions" in sql
     assert "external_entity_links" in sql
@@ -1310,34 +1310,3 @@ def test_public_ai_synthesis_endpoint_is_blocked_outside_development(monkeypatch
             AssistantSynthesisRequest(question="Review published peptide evidence")
         ))
     assert error.value.status_code == 503
-
-
-def test_canonical_peptide_identity_schema_preserves_raw_notation_and_versioning():
-    migration = (MIGRATIONS_DIR / "039_canonical_peptide_chemical_forms.sql").read_text(encoding="utf-8")
-    for expected in (
-        "raw_notation TEXT",
-        "normalized_sequence TEXT",
-        "notation_format TEXT",
-        "canonicalization_version TEXT",
-        "identity_fingerprint TEXT",
-        "CREATE TABLE IF NOT EXISTS peptide_chemical_forms",
-        "stereochemistry JSONB",
-        "noncanonical_residues JSONB",
-        "terminal_chemistry JSONB",
-        "post_translational_modifications JSONB",
-        "cyclization JSONB",
-        "conjugation JSONB",
-        "salt_and_counterions JSONB",
-        "supersedes_form_id UUID",
-        "intentionally non-unique",
-    ):
-        assert expected in migration
-    assert "UNIQUE(identity_fingerprint)" not in migration
-
-
-def test_peptide_profile_and_comparison_expose_reviewed_chemical_forms():
-    source = Path(__import__("app.routers.peptides", fromlist=["__file__"]).__file__).read_text(encoding="utf-8")
-    assert "FROM peptide_chemical_forms" in source
-    assert "WHERE peptide_id=:id AND review_status='verified'" in source
-    assert '"chemical_forms"' in source
-    assert "canonicalization_version" in source

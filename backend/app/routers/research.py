@@ -408,10 +408,16 @@ def get_structured_extraction_run(
     if not run:
         raise HTTPException(status_code=404, detail="Evidence extraction run not found.")
     rows = db.execute(text("""
-        SELECT id,source_citation_id,source_name,source_identifier,source_url,source_title,
-               extraction,review_status,created_at
-        FROM extracted_evidence_records
-        WHERE run_id=:run AND organization_id=:org ORDER BY created_at,id
+        SELECT record.id,record.source_citation_id,record.source_name,record.source_identifier,
+               record.source_url,record.source_title,record.extraction,record.review_status,
+               record.created_at,record.source_record_id,record.source_record_version_id,
+               version.content_hash AS source_content_hash,
+               version.payload_kind AS source_payload_kind,
+               version.captured_at AS source_version_captured_at
+        FROM extracted_evidence_records record
+        LEFT JOIN source_record_versions version ON version.id=record.source_record_version_id
+        WHERE record.run_id=:run AND record.organization_id=:org
+        ORDER BY record.created_at,record.id
     """), {"run": run_id, "org": org}).mappings().all()
     return {"run": dict(run), "records": [dict(row) for row in rows],
             "notice": "Extraction records remain unreviewed and are not promoted to verified evidence claims."}

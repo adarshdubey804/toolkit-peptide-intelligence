@@ -1292,3 +1292,21 @@ def test_unprotected_write_routes_are_explicitly_allowlisted():
         # This route is development-only and is blocked outside APP_ENV=development.
         ("POST", "/api/v1/research/assistant/synthesize"),
     }
+
+
+def test_public_ai_synthesis_endpoint_is_blocked_outside_development(monkeypatch):
+    import asyncio
+    import pytest
+    from fastapi import HTTPException
+    from app.config import settings
+    from app.routers.research import AssistantSynthesisRequest, synthesize_research_answer
+
+    monkeypatch.setattr(settings, "ai_synthesis_enabled", True)
+    monkeypatch.setattr(settings, "ai_api_key", "test-provider-key")
+    monkeypatch.setattr(settings, "app_env", "production")
+
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(synthesize_research_answer(
+            AssistantSynthesisRequest(question="Review published peptide evidence")
+        ))
+    assert error.value.status_code == 503

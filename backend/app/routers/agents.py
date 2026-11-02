@@ -191,15 +191,13 @@ async def run_agent(
     }
 
 
-from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends, Query
+from fastapi import Query
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from .auth import get_current_user
 
 
 class AgentSessionCreate(BaseModel):

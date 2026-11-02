@@ -3280,6 +3280,7 @@ def test_regulatory_source_registry_is_tenant_scoped_and_scheduler_is_column_lim
         connection.execute(text("SELECT set_config('app.user_id','',true)"))
 
         user_role = "toolkit_reg_source_user_test"
+        connection.exec_driver_sql(f"DROP ROLE IF EXISTS {user_role}")
         connection.exec_driver_sql(f"CREATE ROLE {user_role} NOLOGIN NOBYPASSRLS")
         connection.exec_driver_sql("GRANT USAGE ON SCHEMA public TO toolkit_reg_source_user_test")
         connection.exec_driver_sql("GRANT SELECT, INSERT, UPDATE ON regulatory_source_registry TO toolkit_reg_source_user_test")

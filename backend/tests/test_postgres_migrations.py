@@ -1185,16 +1185,23 @@ def test_curation_reviews_and_decisions_are_organization_scoped():
 
         review_a = review(org_a, user_a)
         review_b = review(org_b, user_b)
-        connection.execute(text("""
+        decision_a = connection.execute(text("""
             INSERT INTO curation_decisions
             (review_id,owner_organization_id,decision,rationale,reviewer_id,previous_status,new_status)
             VALUES (:review,:org,'verified','Independent curation decision for organization A.',:user,'in_review','verified')
-        """), {"review": review_a, "org": org_a, "user": user_b})
+            RETURNING id
+        """), {"review": review_a, "org": org_a, "user": user_b}).scalar_one()
         connection.execute(text("""
             INSERT INTO curation_decisions
             (review_id,owner_organization_id,decision,rationale,reviewer_id,previous_status,new_status)
             VALUES (:review,:org,'verified','Independent curation decision for organization B.',:user,'in_review','verified')
         """), {"review": review_b, "org": org_b, "user": user_a})
+        with pytest.raises(Exception):
+            with connection.begin_nested():
+                connection.execute(text("UPDATE curation_decisions SET rationale='attempted mutation' WHERE id=:id"), {"id": decision_a})
+        with pytest.raises(Exception):
+            with connection.begin_nested():
+                connection.execute(text("DELETE FROM curation_decisions WHERE id=:id"), {"id": decision_a})
 
         role = "toolkit_curation_rls_test"
         if not connection.execute(text("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname=:r)"), {"r": role}).scalar_one():

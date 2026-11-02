@@ -71,6 +71,10 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             "process_knowledge_decisions",
             "molecular_interaction_assessments",
             "molecular_interaction_decisions",
+            "evidence_appraisals",
+            "evidence_appraisal_decisions",
+            "publication_duplicate_candidates",
+            "publication_duplicate_decisions",
             "claim_source_locators",
             "analytical_methods",
             "analytical_method_sources",
@@ -320,6 +324,27 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             )
         """)).scalar_one()
         assert interaction_policy_count == 5, "Interaction assessment and decision access paths need explicit RLS policies"
+
+        appraisal_rls_tables = (
+            "evidence_appraisals", "evidence_appraisal_decisions",
+            "publication_duplicate_candidates", "publication_duplicate_decisions",
+        )
+        for table_name in appraisal_rls_tables:
+            state = connection.execute(text("""
+                SELECT relrowsecurity, relforcerowsecurity
+                FROM pg_class WHERE oid=to_regclass(:table_name)
+            """), {"table_name": f"public.{table_name}"}).one()
+            assert tuple(state) == (True, True), f"RLS and FORCE RLS must be enabled for {table_name}"
+        appraisal_policy_count = connection.execute(text("""
+            SELECT count(*) FROM pg_policies
+            WHERE schemaname='public' AND policyname IN (
+                'evidence_appraisals_select_scope','evidence_appraisals_insert_scope','evidence_appraisals_update_scope',
+                'evidence_appraisal_decisions_select_scope','evidence_appraisal_decisions_insert_scope',
+                'publication_duplicate_candidates_select_scope','publication_duplicate_candidates_insert_scope','publication_duplicate_candidates_update_scope',
+                'publication_duplicate_decisions_select_scope','publication_duplicate_decisions_insert_scope'
+            )
+        """)).scalar_one()
+        assert appraisal_policy_count == 10, "Evidence appraisal and duplicate-review access paths need explicit RLS policies"
 
 @pytest.mark.skipif(
     os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",

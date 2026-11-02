@@ -99,7 +99,35 @@ def verify_audit_integrity(
         SELECT count(*) AS total_events,
                count(*) FILTER (WHERE invalid) AS invalid_events
         FROM checked_events
-    """), {"organization_id": organization_id}).mappings().one()
+    """), {
+        "organization_id": organization_id,
+        "chain_scope": str(organization_id),
+    }).mappings().one()
+
+    head = db.execute(text("""
+        SELECT last_sequence, last_hash
+        FROM audit_chain_heads
+        WHERE chain_scope = :chain_scope
+    """), {"chain_scope": str(organization_id)}).mappings().first()
+    last_event = db.execute(text("""
+        SELECT chain_sequence, event_hash
+        FROM audit_events
+        WHERE organization_id = :organization_id
+        ORDER BY chain_sequence DESC
+        LIMIT 1
+    """), {"organization_id": organization_id}).mappings().first()
+
+    if last_event is None:
+        zero_hash = "0" * 64
+        head_valid = head is None or (
+            int(head["last_sequence"]) == 0 and head["last_hash"] == zero_hash
+        )
+    else:
+        head_valid = bool(
+            head
+            and int(head["last_sequence"]) == int(last_event["chain_sequence"])
+            and head["last_hash"] == last_event["event_hash"]
+        )
 
     total = int(result["total_events"])
     invalid = int(result["invalid_events"])
@@ -107,7 +135,8 @@ def verify_audit_integrity(
         "organization_id": str(organization_id),
         "total_events": total,
         "invalid_events": invalid,
-        "valid": invalid == 0,
+        "head_valid": head_valid,
+        "valid": invalid == 0 and head_valid,
         "verification_scope": "This organization’s database audit-event chain",
         "limitation": "This detects row edits, deletions, and chain discontinuities; it does not protect against a privileged database operator who can rewrite the chain and its head.",
     }

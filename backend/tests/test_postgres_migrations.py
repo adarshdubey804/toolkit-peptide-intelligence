@@ -27,6 +27,7 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
 
         required_tables = (
             "peptides",
+            "peptide_chemical_forms",
             "analytical_methods",
             "formulation_profiles",
             "process_knowledge_profiles",
@@ -60,6 +61,24 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             ).scalar_one()
             assert exists, f"Expected migration-created table {table_name!r}"
 
+
+        chemical_form_columns = connection.execute(text("""
+            SELECT count(*) FROM information_schema.columns
+            WHERE table_schema='public' AND table_name='peptide_chemical_forms'
+              AND column_name IN ('stereochemistry','noncanonical_residues','terminal_chemistry',
+                                  'cyclization','conjugation','salt_and_counterions',
+                                  'identity_fingerprint','canonicalization_version')
+        """)).scalar_one()
+        assert chemical_form_columns == 8, "Chemical-form identity dimensions and versioning must be present"
+
+        fingerprint_is_unique = connection.execute(text("""
+            SELECT EXISTS (
+                SELECT 1 FROM pg_indexes
+                WHERE schemaname='public' AND tablename='peptide_chemical_forms'
+                  AND indexdef ILIKE '%UNIQUE%' AND indexdef ILIKE '%identity_fingerprint%'
+            )
+        """)).scalar_one()
+        assert not fingerprint_is_unique, "Fingerprints must not imply chemical equivalence before collision validation"
 
 
         organization_owner_columns = connection.execute(text("""

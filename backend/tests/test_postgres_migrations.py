@@ -49,6 +49,7 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             "analytical_reference_frameworks",
             "analytical_test_framework_links",
             "api_rate_limit_buckets",
+            "api_rate_limit_maintenance",
             "audit_chain_heads",
         )
         for table_name in required_tables:
@@ -57,6 +58,23 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
                 {"table_name": f"public.{table_name}"},
             ).scalar_one()
             assert exists, f"Expected migration-created table {table_name!r}"
+
+
+        audit_trigger_exists = connection.execute(text("""
+            SELECT EXISTS (
+                SELECT 1 FROM pg_trigger
+                WHERE tgname = 'trg_audit_events_immutable'
+                  AND NOT tgisinternal
+            )
+        """)).scalar_one()
+        assert audit_trigger_exists, "Audit event UPDATE/DELETE protection trigger must exist"
+
+        audit_chain_columns = connection.execute(text("""
+            SELECT count(*) FROM information_schema.columns
+            WHERE table_schema='public' AND table_name='audit_events'
+              AND column_name IN ('chain_scope','chain_sequence','previous_hash','event_hash')
+        """)).scalar_one()
+        assert audit_chain_columns == 4, "Audit event chain columns must be present"
 
         applicability_table_exists = connection.execute(text("""
             SELECT to_regclass('public.peptide_test_applicability') IS NOT NULL

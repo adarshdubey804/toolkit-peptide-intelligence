@@ -2933,3 +2933,126 @@ def test_peptide_method_and_test_applicability_are_tenant_scoped():
             )
         connection.exec_driver_sql("REVOKE USAGE ON SCHEMA public FROM toolkit_peptide_applicability_rls_test")
         connection.exec_driver_sql("DROP ROLE toolkit_peptide_applicability_rls_test")
+
+
+
+
+@pytest.mark.skipif(
+    os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",
+    reason="PostgreSQL analytical test catalogue decision RLS test is enabled in CI only.",
+)
+def test_analytical_test_catalogue_decisions_are_private_to_the_reviewing_organization():
+    with engine.begin() as connection:
+        connection.execute(text("SELECT pg_advisory_xact_lock(731904221067)"))
+        apply_development_migrations(connection)
+        org_a = connection.execute(text("""
+            INSERT INTO organizations (name,organization_type)
+            VALUES (:name,'research_team') RETURNING id
+        """), {"name":"test-catalogue-decision-a-"+str(uuid4())}).scalar_one()
+        org_b = connection.execute(text("""
+            INSERT INTO organizations (name,organization_type)
+            VALUES (:name,'research_team') RETURNING id
+        """), {"name":"test-catalogue-decision-b-"+str(uuid4())}).scalar_one()
+        user_a = connection.execute(text("""
+            INSERT INTO user_profiles (display_name,role)
+            VALUES ('Test catalogue reviewer A','reviewer') RETURNING id
+        """)).scalar_one()
+        user_b = connection.execute(text("""
+            INSERT INTO user_profiles (display_name,role)
+            VALUES ('Test catalogue reviewer B','reviewer') RETURNING id
+        """)).scalar_one()
+        test_id = connection.execute(text("""
+            INSERT INTO analytical_test_catalogue (
+                catalogue_code,test_name,quality_attribute,test_intent,
+                material_considerations,interpretation_limitations,review_status
+            ) VALUES (
+                :code,'Shared test catalogue RLS fixture','identity',
+                'Assess whether the test is appropriate for a defined analytical quality attribute.',
+                'Consider peptide material and sample matrix.',
+                'This catalogue definition is a reference candidate, not a validated method.',
+                'draft'
+            ) RETURNING id
+        """), {"code":"DEC-"+str(uuid4()).replace("-","")[:12]}).scalar_one()
+        decision_a = connection.execute(text("""
+            INSERT INTO analytical_test_catalogue_decisions (
+                test_id,organization_id,reviewer_id,decision,rationale
+            ) VALUES (:test,:org,:reviewer,'needs_changes',
+                      'Organization A review requests clarification of the reference scope.')
+            RETURNING id
+        """), {"test":test_id,"org":org_a,"reviewer":user_a}).scalar_one()
+        decision_b = connection.execute(text("""
+            INSERT INTO analytical_test_catalogue_decisions (
+                test_id,organization_id,reviewer_id,decision,rationale
+            ) VALUES (:test,:org,:reviewer,'verified',
+                      'Organization B independently reviewed this shared reference candidate.')
+            RETURNING id
+        """), {"test":test_id,"org":org_b,"reviewer":user_b}).scalar_one()
+
+        role = "toolkit_test_catalogue_decision_rls_test"
+        exists = connection.execute(text(
+            "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname=:role)"
+        ), {"role":role}).scalar_one()
+        if not exists:
+            connection.exec_driver_sql("CREATE ROLE toolkit_test_catalogue_decision_rls_test NOLOGIN NOBYPASSRLS")
+        connection.exec_driver_sql("GRANT USAGE ON SCHEMA public TO toolkit_test_catalogue_decision_rls_test")
+        connection.exec_driver_sql("""
+            GRANT SELECT,INSERT ON analytical_test_catalogue_decisions
+            TO toolkit_test_catalogue_decision_rls_test
+        """)
+        connection.exec_driver_sql("""
+            GRANT SELECT ON analytical_test_catalogue
+            TO toolkit_test_catalogue_decision_rls_test
+        """)
+
+        with connection.begin_nested():
+            connection.exec_driver_sql("SET LOCAL ROLE toolkit_test_catalogue_decision_rls_test")
+            connection.execute(text("SELECT set_config('app.organization_id',:org,true)"),
+                               {"org":str(org_a)})
+            assert set(connection.execute(text("""
+                SELECT id FROM analytical_test_catalogue_decisions
+                WHERE id IN (:a,:b)
+            """), {"a":decision_a,"b":decision_b}).scalars().all()) == {decision_a}
+            assert connection.execute(text("""
+                SELECT id FROM analytical_test_catalogue_decisions WHERE id=:id
+            """), {"id":decision_b}).scalar_one_or_none() is None
+            assert connection.execute(text("""
+                SELECT id FROM analytical_test_catalogue WHERE id=:id
+            """), {"id":test_id}).scalar_one() == test_id
+
+            valid_decision = connection.execute(text("""
+                INSERT INTO analytical_test_catalogue_decisions (
+                    test_id,organization_id,reviewer_id,decision,rationale
+                ) VALUES (:test,:org,:reviewer,'needs_changes',
+                          'Organization A records its own editorial review of the shared entry.')
+                RETURNING id
+            """), {"test":test_id,"org":org_a,"reviewer":user_a}).scalar_one()
+            assert valid_decision is not None
+
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO analytical_test_catalogue_decisions (
+                            test_id,organization_id,reviewer_id,decision,rationale
+                        ) VALUES (:test,:org,:reviewer,'verified',
+                                  'Cross-organization editorial decisions must be rejected.')
+                    """), {"test":test_id,"org":org_b,"reviewer":user_a})
+
+            connection.execute(text("SELECT set_config('app.organization_id','',true)"))
+            assert connection.execute(text(
+                "SELECT count(*) FROM analytical_test_catalogue_decisions"
+            )).scalar_one() == 0
+            assert connection.execute(text(
+                "SELECT count(*) FROM analytical_test_catalogue WHERE id=:id"
+            ), {"id":test_id}).scalar_one() == 1
+
+        connection.exec_driver_sql("RESET ROLE")
+        connection.exec_driver_sql("""
+            REVOKE SELECT,INSERT ON analytical_test_catalogue_decisions
+            FROM toolkit_test_catalogue_decision_rls_test
+        """)
+        connection.exec_driver_sql("""
+            REVOKE SELECT ON analytical_test_catalogue
+            FROM toolkit_test_catalogue_decision_rls_test
+        """)
+        connection.exec_driver_sql("REVOKE USAGE ON SCHEMA public FROM toolkit_test_catalogue_decision_rls_test")
+        connection.exec_driver_sql("DROP ROLE toolkit_test_catalogue_decision_rls_test")

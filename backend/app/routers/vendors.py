@@ -113,6 +113,19 @@ def _source_host(url: str):
     return url
 
 
+def _candidate_source_url(website_url: str, source_url: str):
+    website_host = (urlsplit(_source_host(website_url)).hostname or "").lower()
+    source_host = (urlsplit(_source_host(source_url)).hostname or "").lower()
+    website_host = website_host.removeprefix("www.")
+    source_host = source_host.removeprefix("www.")
+    if source_host != website_host and not source_host.endswith("." + website_host):
+        raise HTTPException(
+            status_code=422,
+            detail="Candidate evidence URLs must be hosted on the official company website domain.",
+        )
+    return source_url
+
+
 def _source_record(db: Session, source_name: str, identifier: str, url: str):
     url = _source_host(url)
     row = db.execute(text("""
@@ -255,7 +268,7 @@ def import_vendor_candidates(
     seen_websites = set()
     for candidate in payload.candidates:
         website = _source_host(str(candidate.website_url))
-        source_url = _source_host(str(candidate.source_url))
+        source_url = _candidate_source_url(website, str(candidate.source_url))
         normalized_website = website.lower().rstrip("/")
         if normalized_website in seen_websites:
             skipped.append({"legal_name": candidate.legal_name, "reason": "duplicate_in_batch"})
@@ -303,7 +316,7 @@ def import_vendor_candidates(
                 db,
                 candidate.identity_source.source_name.strip(),
                 candidate.identity_source.source_identifier.strip(),
-                _source_host(str(candidate.identity_source.source_url)),
+                _candidate_source_url(website, str(candidate.identity_source.source_url)),
             )
             db.execute(text("""
                 INSERT INTO vendor_sources (vendor_id, source_record_id, evidence_scope)

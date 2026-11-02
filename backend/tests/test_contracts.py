@@ -5,6 +5,47 @@ from app.integrations.clinicaltrials import normalize_study
 from app.main import MIGRATIONS_DIR, app
 
 
+def test_vendor_material_traceability_routes_are_registered_and_bounded():
+    paths = app.openapi()["paths"]
+    assert "/api/v1/vendor-materials/offerings" in paths
+    assert "get" in paths["/api/v1/vendor-materials/offerings"]
+    assert "post" in paths["/api/v1/vendor-materials/offerings"]
+    assert "/api/v1/vendor-materials/offerings/{offering_id}/batches" in paths
+    assert "post" in paths["/api/v1/vendor-materials/offerings/{offering_id}/batches"]
+    assert "/api/v1/vendor-materials/batches/{batch_id}/test-results" in paths
+    assert "post" in paths["/api/v1/vendor-materials/batches/{batch_id}/test-results"]
+    assert "/api/v1/vendor-materials/reviews/{record_type}/{record_id}/decisions" in paths
+    decision = paths["/api/v1/vendor-materials/reviews/{record_type}/{record_id}/decisions"]["post"]
+    assert decision["requestBody"]["required"] is True
+
+
+def test_batch_result_request_requires_reported_observation():
+    from app.routers.vendor_materials import BatchTestResultSubmission
+    import pytest
+    base = {
+        "test_id": "00000000-0000-0000-0000-000000000001",
+        "method_id": "00000000-0000-0000-0000-000000000002",
+        "source_name": "Vendor report",
+        "source_identifier": "REPORT-1",
+        "source_url": "https://example.org/report/1",
+        "evidence_scope": "Certificate of analysis for a specific supplier lot.",
+    }
+    with pytest.raises(Exception):
+        BatchTestResultSubmission(**base)
+    valid = BatchTestResultSubmission(**base, observed_text="Reported purity: 98.2%")
+    assert valid.observed_text == "Reported purity: 98.2%"
+
+
+def test_vendor_material_review_scope_is_explicit():
+    from app.routers.vendor_materials import MaterialDecision
+    decision = MaterialDecision(
+        decision="verified",
+        rationale="Reviewed against the source report and verified the identity and provenance.",
+        visibility_scope="public",
+    )
+    assert decision.visibility_scope == "public"
+
+
 def test_health_and_readiness_routes_are_registered():
     paths = app.openapi()["paths"]
     assert "/health" in paths
@@ -82,7 +123,7 @@ def test_clinical_trials_normalization_preserves_source_and_evidence_state():
 
 def test_provenance_migration_is_present_and_applied_in_development_order():
     migrations = sorted(path.name for path in MIGRATIONS_DIR.glob("*.sql"))
-    assert migrations == ["001_initial_schema.sql", "002_provenance_curation.sql", "003_authentication.sql", "004_organization_workspaces.sql", "005_curation_workflow.sql", "006_enrichment_candidates.sql", "007_vendor_directory.sql", "008_analytical_method_intelligence.sql", "009_formulation_stability_intelligence.sql", "010_process_development_intelligence.sql", "011_molecular_interaction_intelligence.sql", "012_agent_sessions.sql", "013_evidence_intelligence.sql", "014_regulatory_guidance_intelligence.sql", "015_regulatory_change_monitoring.sql", "016_regulatory_observation_integrity.sql", "017_regulatory_source_registry.sql", "018_enrichment_ingestion_runs.sql", "019_regulatory_source_observations.sql", "020_regulatory_poll_scheduler.sql", "021_evidence_review_decisions.sql", "022_structured_evidence_extraction.sql", "023_extracted_evidence_field_review.sql", "024_peptide_analytical_method_applicability.sql", "025_vendor_certification_verification.sql", "026_vendor_service_review.sql", "027_vendor_service_evidence_links.sql", "028_vendor_facility_verification.sql", "029_vendor_service_facility_link.sql", "030_vendor_certification_submitter.sql", "031_laboratory_capability_claims.sql", "032_analytical_test_catalogue.sql", "033_analytical_test_catalogue_curation.sql", "034_peptide_test_applicability.sql", "035_analytical_reference_framework_crosswalk.sql", "036_shared_api_rate_limiting.sql", "037_tamper_evident_audit_trail.sql", "038_explicit_record_ownership.sql", "039_canonical_peptide_chemical_forms.sql", "040_chemical_form_applicability_links.sql", "041_interaction_and_decision_ownership.sql", "042_vendor_material_batch_traceability.sql"]
+    assert migrations == ["001_initial_schema.sql", "002_provenance_curation.sql", "003_authentication.sql", "004_organization_workspaces.sql", "005_curation_workflow.sql", "006_enrichment_candidates.sql", "007_vendor_directory.sql", "008_analytical_method_intelligence.sql", "009_formulation_stability_intelligence.sql", "010_process_development_intelligence.sql", "011_molecular_interaction_intelligence.sql", "012_agent_sessions.sql", "013_evidence_intelligence.sql", "014_regulatory_guidance_intelligence.sql", "015_regulatory_change_monitoring.sql", "016_regulatory_observation_integrity.sql", "017_regulatory_source_registry.sql", "018_enrichment_ingestion_runs.sql", "019_regulatory_source_observations.sql", "020_regulatory_poll_scheduler.sql", "021_evidence_review_decisions.sql", "022_structured_evidence_extraction.sql", "023_extracted_evidence_field_review.sql", "024_peptide_analytical_method_applicability.sql", "025_vendor_certification_verification.sql", "026_vendor_service_review.sql", "027_vendor_service_evidence_links.sql", "028_vendor_facility_verification.sql", "029_vendor_service_facility_link.sql", "030_vendor_certification_submitter.sql", "031_laboratory_capability_claims.sql", "032_analytical_test_catalogue.sql", "033_analytical_test_catalogue_curation.sql", "034_peptide_test_applicability.sql", "035_analytical_reference_framework_crosswalk.sql", "036_shared_api_rate_limiting.sql", "037_tamper_evident_audit_trail.sql", "038_explicit_record_ownership.sql", "039_canonical_peptide_chemical_forms.sql", "040_chemical_form_applicability_links.sql", "041_interaction_and_decision_ownership.sql", "042_vendor_material_batch_traceability.sql", "043_vendor_material_visibility_review.sql"]
     sql = (MIGRATIONS_DIR / "002_provenance_curation.sql").read_text(encoding="utf-8")
     assert "source_record_versions" in sql
     assert "external_entity_links" in sql

@@ -71,6 +71,27 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
         """)).scalar_one()
         assert chemical_form_columns == 8, "Chemical-form identity dimensions and versioning must be present"
 
+        chemical_form_link_columns = connection.execute(text("""
+            SELECT count(*) FROM information_schema.columns
+            WHERE table_schema='public'
+              AND (table_name, column_name) IN (
+                ('peptide_method_applicability', 'chemical_form_id'),
+                ('peptide_test_applicability', 'chemical_form_id'),
+                ('laboratory_capability_claims', 'chemical_form_id')
+              )
+        """)).scalar_one()
+        assert chemical_form_link_columns == 3, "All applicability and capability records need optional chemical-form links"
+
+        chemical_form_parent_triggers = connection.execute(text("""
+            SELECT count(*) FROM pg_trigger
+            WHERE NOT tgisinternal AND tgname IN (
+                'trg_peptide_method_applicability_form_parent',
+                'trg_peptide_test_applicability_form_parent',
+                'trg_laboratory_capability_form_parent'
+            )
+        """)).scalar_one()
+        assert chemical_form_parent_triggers == 3, "Chemical-form links must enforce parent peptide consistency"
+
         fingerprint_is_unique = connection.execute(text("""
             SELECT EXISTS (
                 SELECT 1 FROM pg_indexes

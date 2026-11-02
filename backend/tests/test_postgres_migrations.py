@@ -61,6 +61,22 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             assert exists, f"Expected migration-created table {table_name!r}"
 
 
+
+        organization_owner_columns = connection.execute(text("""
+            SELECT table_name, column_name
+            FROM information_schema.columns
+            WHERE table_schema='public'
+              AND (table_name, column_name) IN (
+                ('curation_reviews','organization_id'),
+                ('curation_decisions','organization_id'),
+                ('analytical_methods','organization_id'),
+                ('formulation_profiles','organization_id'),
+                ('process_knowledge_profiles','organization_id'),
+                ('molecular_interaction_assessments','organization_id')
+              )
+        """)).fetchall()
+        assert len(organization_owner_columns) == 6, "Every organization-contributed review record must retain its owner organization"
+
         audit_trigger_exists = connection.execute(text("""
             SELECT EXISTS (
                 SELECT 1 FROM pg_trigger

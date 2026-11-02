@@ -4,7 +4,8 @@
 - [ ] Remove unauthenticated write routes
 - [ ] Cloud secret manager
 - [ ] Exact production CORS origins
-- [ ] Rate limiting
+- [x] Shared PostgreSQL rate limiting for login, registration, public research discovery and agent execution
+- [ ] Extend rate limits to remaining sensitive write and enrichment routes; configure trusted proxy client identity
 - [ ] TLS and encryption at rest
 - [ ] Private database networking
 - [ ] Tamper-evident audit trail

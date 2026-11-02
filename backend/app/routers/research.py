@@ -20,19 +20,6 @@ from ..integrations.pubmed import PubMedProvider
 from ..integrations.rcsb import RCSBProvider
 from ..integrations.uniprot import UniProtProvider
 from .auth import get_current_user
-from sqlalchemy import text
-from sqlalchemy.orm import Session
-
-from ..db import get_db
-from .auth import get_current_user
-
-from ..config import settings
-from ..integrations.alphafold import AlphaFoldProvider
-from ..integrations.clinicaltrials import ClinicalTrialsProvider
-from ..integrations.pubchem import PubChemProvider
-from ..integrations.pubmed import PubMedProvider
-from ..integrations.rcsb import RCSBProvider
-from ..integrations.uniprot import UniProtProvider
 
 def limit_public_research_discovery(
     request: Request,

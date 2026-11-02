@@ -53,7 +53,8 @@ def test_rate_limit_uses_database_clock_and_commits_shared_bucket():
     assert "pg_advisory_xact_lock" in db.statements[0][0]
     insert_sql, params = db.statements[2]
     assert "ON CONFLICT (bucket_key) DO UPDATE" in insert_sql
-    assert params["bucket_key"] == "login:192.0.2.10"
+    assert params["bucket_key"].startswith("login:")
+    assert "192.0.2.10" not in params["bucket_key"]
     assert params["window_started_at"] == datetime(2026, 11, 2, 10, 0, 0, tzinfo=timezone.utc)
     assert "api_rate_limit_maintenance" in db.statements[3][0]
 

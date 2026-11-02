@@ -1,9 +1,13 @@
 from datetime import datetime, timedelta, timezone
+from hashlib import sha256
+import hmac
 from math import ceil
 
 from fastapi import HTTPException, Request
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+
+from .config import settings
 
 
 def request_client_identity(request: Request) -> str:
@@ -30,7 +34,8 @@ def enforce_rate_limit(
     if limit < 1 or window_seconds < 1:
         raise ValueError("Rate limit and window must be positive.")
 
-    bucket_key = f"{scope}:{identity}"
+    identity_digest = hmac.new(settings.app_secret_key.encode("utf-8"), identity.encode("utf-8"), sha256).hexdigest()
+    bucket_key = f"{scope}:{identity_digest}"
     db.execute(
         text("SELECT pg_advisory_xact_lock(hashtextextended(:bucket_key, 0))"),
         {"bucket_key": bucket_key},

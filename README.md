@@ -14,6 +14,19 @@ Scientific intelligence for peptide research and pharmaceutical development, bui
 - External results remain unreviewed and are never silently promoted into curated records.
 - GitHub Actions workflows for backend API-contract tests and frontend production builds.
 
+## Organization audit trail
+
+Important workspace actions are recorded in the existing `audit_events` table in the same database transaction as the underlying change. Migration `037_tamper_evident_audit_trail.sql` backfills the existing event history into per-organization SHA-256 chains, serializes concurrent writers, and rejects application-level UPDATE/DELETE operations on audit events.
+
+Organization administrators can inspect events through:
+
+- `GET /api/v1/audit/events` — newest-first, organization-scoped event history with optional action/entity filters and sequence-based pagination.
+- `GET /api/v1/audit/integrity` — verifies each event hash and the sequence/previous-hash links for the active organization.
+
+The API returns event metadata already written by domain services; callers should continue to write only allowlisted, non-secret metadata. Passwords, access tokens, API keys, and raw credentials must never be included in audit metadata. Audit access is restricted to an active organization administrator.
+
+**Security boundary:** the hash chain and database trigger make ordinary application-level edits/deletions detectable and prevent routine mutation. They are not protection against a privileged database operator who can rewrite both event rows and chain heads. Production deployments should periodically anchor chain-head hashes in an independently administered immutable/WORM store and restrict database-owner credentials.
+
 ## API abuse protection
 
 - Migration `036_shared_api_rate_limiting.sql` creates PostgreSQL-backed fixed-window counters shared across backend instances. Login is limited to 10 requests/minute per immediate client IP, registration to 5/minute per immediate client IP, and direct or saved research-agent execution to 10/minute per authenticated user, while public upstream research discovery to 30/minute per immediate client IP. Limits and window length are configurable with `LOGIN_RATE_LIMIT_PER_WINDOW`, `REGISTRATION_RATE_LIMIT_PER_WINDOW`, `AGENT_RATE_LIMIT_PER_WINDOW`, `PUBLIC_RESEARCH_RATE_LIMIT_PER_WINDOW`, and `RATE_LIMIT_WINDOW_SECONDS`. Exceeded requests return HTTP 429 with `Retry-After`. Stale client buckets are opportunistically removed after 30 days. The application deliberately does not trust arbitrary `X-Forwarded-For` headers; production proxy deployments must configure trusted client-address handling at the ASGI edge.

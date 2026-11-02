@@ -83,6 +83,11 @@ def add_duplicate(payload:DuplicatePair,user:Annotated[dict,Depends(get_current_
     a,b=sorted([payload.publication_a,payload.publication_b],key=str)
     row=db.execute(text("INSERT INTO publication_duplicate_candidates(organization_id,publication_a,publication_b,match_basis,match_details) VALUES(:org,:a,:b,:basis,CAST(:details AS jsonb)) ON CONFLICT(organization_id,publication_a,publication_b) DO NOTHING RETURNING id,status,match_basis,created_at"),{"org":org,"a":a,"b":b,"basis":payload.match_basis,"details":json.dumps(payload.match_details)}).mappings().first()
     if not row: raise HTTPException(409,"This publication pair is already queued.")
+    db.execute(text("""
+      INSERT INTO audit_events(actor_user_id,organization_id,action,entity_type,entity_id,event_metadata)
+      VALUES(:actor,:org,'publication_duplicate_candidate_submitted','publication_duplicate_candidate',:id,
+             jsonb_build_object('match_basis',:basis))
+    """), {"actor": user["id"], "org": org, "id": row["id"], "basis": payload.match_basis})
     db.commit()
     return dict(row)
 

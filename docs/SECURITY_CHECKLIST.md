@@ -8,7 +8,7 @@
 - [ ] Extend rate limits to remaining sensitive write and enrichment routes; configure trusted proxy client identity
 - [ ] TLS and encryption at rest
 - [ ] Private database networking
-- [ ] Tamper-evident audit trail
+- [x] Organization-scoped SHA-256 audit chain, append-only event trigger, and admin-only audit read/verification API (external hash anchoring remains pending)
 - [ ] Backups and restore testing
 - [ ] Dependency/container scanning
 - [ ] Penetration testing

@@ -111,3 +111,45 @@ def test_login_request_and_user_lookup_support_an_explicit_organization():
     _load_user(FakeDatabase(), request.email, request.organization_id)
     assert "om.organization_id = :organization_id" in captured["statement"]
     assert captured["parameters"]["organization_id"] == organization_id
+
+
+def test_login_falls_back_when_saved_organization_membership_is_no_longer_active(monkeypatch):
+    from app.routers import auth
+
+    preferred_organization = uuid4()
+    active_organization = uuid4()
+    user_id = uuid4()
+    lookup_organizations = []
+
+    active_user = {
+        "id": user_id,
+        "email": "member@example.org",
+        "display_name": "Member",
+        "organization_id": active_organization,
+        "organization_name": "Current Research Group",
+        "role": "researcher",
+        "is_active": True,
+        "password_hash": "stored-hash",
+    }
+
+    def load_user(db, email, organization_id=None):
+        lookup_organizations.append(organization_id)
+        return None if organization_id == preferred_organization else active_user
+
+    monkeypatch.setattr(auth.settings, "app_secret_key", "test-secret-" + "x" * 32)
+    monkeypatch.setattr(auth, "_load_user", load_user)
+    monkeypatch.setattr(auth.password_hash, "verify", lambda password, stored_hash: True)
+    monkeypatch.setattr(auth, "_create_access_token", lambda uid, oid, role: "fallback-token")
+
+    result = auth.login(
+        auth.LoginRequest(
+            email="member@example.org",
+            password="correct-password",
+            organization_id=preferred_organization,
+        ),
+        db=object(),
+    )
+
+    assert lookup_organizations == [preferred_organization, None]
+    assert result["access_token"] == "fallback-token"
+    assert result["user"]["organization_id"] == str(active_organization)

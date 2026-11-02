@@ -29,3 +29,15 @@ COMMENT ON POLICY curation_reviews_select_scope ON curation_reviews IS
     'Curation queues and assignments are private to the organization that owns the review.';
 COMMENT ON POLICY curation_decisions_select_scope ON curation_decisions IS
     'Decision history inherits the immutable organization owner of its parent review.';
+
+CREATE OR REPLACE FUNCTION prevent_curation_decision_mutation()
+RETURNS trigger AS $curation_decision_immutable$
+BEGIN
+    RAISE EXCEPTION 'Curation decisions are append-only; record a new decision instead';
+END;
+$curation_decision_immutable$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS curation_decisions_append_only ON curation_decisions;
+CREATE TRIGGER curation_decisions_append_only
+    BEFORE UPDATE OR DELETE ON curation_decisions
+    FOR EACH ROW EXECUTE FUNCTION prevent_curation_decision_mutation();

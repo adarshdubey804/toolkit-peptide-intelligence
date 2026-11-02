@@ -138,6 +138,7 @@ def test_login_falls_back_when_saved_organization_membership_is_no_longer_active
 
     monkeypatch.setattr(auth.settings, "app_secret_key", "test-secret-" + "x" * 32)
     monkeypatch.setattr(auth, "_load_user", load_user)
+    monkeypatch.setattr(auth, "enforce_rate_limit", lambda *args, **kwargs: None)
     class FakePasswordHash:
         def verify(self, password, stored_hash):
             return True
@@ -151,6 +152,7 @@ def test_login_falls_back_when_saved_organization_membership_is_no_longer_active
             password="correct-password",
             organization_id=preferred_organization,
         ),
+        request=type("Request", (), {"client": type("Client", (), {"host": "127.0.0.1"})()})(),
         db=object(),
     )
 

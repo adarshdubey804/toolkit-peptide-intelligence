@@ -92,7 +92,7 @@ def list_interactions(
         JOIN peptides p ON p.id=a.peptide_id
         JOIN targets t ON t.id=a.target_id
         JOIN source_records sr ON sr.id=a.source_id
-        WHERE a.review_status='verified' AND p.review_status='verified'
+        WHERE a.review_status='verified' AND a.visibility_scope='public' AND p.review_status='verified'
           AND (:peptide IS NULL OR a.peptide_id=:peptide)
           AND (:target IS NULL OR a.target_id=:target)
           AND (:method IS NULL OR a.interaction_method=:method)
@@ -128,12 +128,12 @@ def submit_interaction(
             interaction_method, evidence_type, analysis_tool, analysis_version,
             interface_summary, interacting_residues, interaction_features,
             score_name, score_value, score_unit, score_interpretation, limitations,
-            source_id, review_status, submitted_by
+            source_id, review_status, submitted_by, owner_organization_id, visibility_scope
         ) VALUES (
             :peptide, :target, :structure_id, :structure_url, :method, CAST(:evidence AS evidence_type),
             :tool, :version, :summary, CAST(:residues AS jsonb), CAST(:features AS jsonb),
             :score_name, :score_value, :score_unit, :score_interpretation, :limitations,
-            :source, 'in_review', :submitter
+            :source, 'in_review', :submitter, :org, 'organization'
         ) RETURNING id, review_status
     """), {
         "peptide": payload.peptide_id, "target": payload.target_id,
@@ -146,6 +146,7 @@ def submit_interaction(
         "score_name": payload.score_name, "score_value": payload.score_value,
         "score_unit": payload.score_unit, "score_interpretation": payload.score_interpretation,
         "limitations": payload.limitations, "source": source_id, "submitter": current_user["id"],
+        "org": organization_id,
     }).mappings().one()
     db.execute(text("""
         INSERT INTO audit_events (actor_user_id, organization_id, action, entity_type, entity_id, event_metadata)
@@ -178,11 +179,7 @@ def interaction_review_queue(
         FROM molecular_interaction_assessments a
         JOIN peptides p ON p.id=a.peptide_id JOIN targets t ON t.id=a.target_id
         JOIN source_records sr ON sr.id=a.source_id
-        WHERE a.review_status='in_review' AND EXISTS (
-            SELECT 1 FROM organization_memberships om
-            WHERE om.user_id=a.submitted_by AND om.organization_id=:org
-              AND om.membership_status='active'
-        )
+        WHERE a.review_status='in_review' AND a.owner_organization_id=:org
         ORDER BY a.created_at LIMIT :limit
     """), {"org": organization_id, "limit": limit}).mappings().all()
     return {"items": [dict(row) for row in rows], "count": len(rows)}
@@ -200,9 +197,8 @@ def decide_interaction(
         raise HTTPException(status_code=403, detail="Curator or reviewer permission is required.")
     row = db.execute(text("""
         SELECT a.* FROM molecular_interaction_assessments a
-        JOIN organization_memberships om ON om.user_id=a.submitted_by
         WHERE a.id=:id AND a.review_status='in_review'
-          AND om.organization_id=:org AND om.membership_status='active'
+          AND a.owner_organization_id=:org
         FOR UPDATE OF a
     """), {"id": assessment_id, "org": organization_id}).mappings().first()
     if not row:
@@ -217,8 +213,9 @@ def decide_interaction(
     status = "verified" if payload.decision == "verified" else ("rejected" if payload.decision == "rejected" else "draft")
     db.execute(text("""
         UPDATE molecular_interaction_assessments
-        SET review_status=:status, reviewed_by=:reviewer, reviewed_at=now() WHERE id=:id
-    """), {"status": status, "reviewer": current_user["id"], "id": assessment_id})
+        SET review_status=:status, reviewed_by=:reviewer, reviewed_at=now()
+        WHERE id=:id AND owner_organization_id=:org
+    """), {"status": status, "reviewer": current_user["id"], "id": assessment_id, "org": organization_id})
     db.execute(text("""
         INSERT INTO audit_events (actor_user_id, organization_id, action, entity_type, entity_id, event_metadata)
         VALUES (:actor, :org, 'molecular_interaction_review_decided', 'molecular_interaction_assessment', :id,

@@ -2620,3 +2620,316 @@ def test_laboratory_capability_claims_are_owner_scoped_and_public_only_when_veri
             )
         connection.exec_driver_sql("REVOKE USAGE ON SCHEMA public FROM toolkit_lab_capability_rls_test")
         connection.exec_driver_sql("DROP ROLE toolkit_lab_capability_rls_test")
+
+
+
+
+@pytest.mark.skipif(
+    os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",
+    reason="PostgreSQL peptide applicability RLS test is enabled in CI only.",
+)
+def test_peptide_method_and_test_applicability_are_tenant_scoped():
+    with engine.begin() as connection:
+        connection.execute(text("SELECT pg_advisory_xact_lock(731904221067)"))
+        apply_development_migrations(connection)
+        org_a = connection.execute(text("""
+            INSERT INTO organizations (name,organization_type)
+            VALUES (:name,'research_team') RETURNING id
+        """), {"name":"applicability-rls-a-"+str(uuid4())}).scalar_one()
+        org_b = connection.execute(text("""
+            INSERT INTO organizations (name,organization_type)
+            VALUES (:name,'research_team') RETURNING id
+        """), {"name":"applicability-rls-b-"+str(uuid4())}).scalar_one()
+        user_a = connection.execute(text("""
+            INSERT INTO user_profiles (display_name,role)
+            VALUES ('Applicability owner A','researcher') RETURNING id
+        """)).scalar_one()
+        user_b = connection.execute(text("""
+            INSERT INTO user_profiles (display_name,role)
+            VALUES ('Applicability owner B','researcher') RETURNING id
+        """)).scalar_one()
+        peptide = connection.execute(text("""
+            INSERT INTO peptides (preferred_name,review_status)
+            VALUES ('Verified applicability fixture peptide','verified') RETURNING id
+        """)).scalar_one()
+        form = connection.execute(text("""
+            INSERT INTO peptide_chemical_forms (peptide_id,form_name,review_status)
+            VALUES (:peptide,'Verified applicability fixture form','verified') RETURNING id
+        """), {"peptide":peptide}).scalar_one()
+        method = connection.execute(text("""
+            INSERT INTO analytical_methods (
+                method_name,method_category,review_status,visibility_scope
+            ) VALUES ('Public applicability fixture method','identity','verified','public')
+            RETURNING id
+        """)).scalar_one()
+        test_id = connection.execute(text("""
+            INSERT INTO analytical_test_catalogue (
+                catalogue_code,test_name,quality_attribute,test_intent,
+                material_considerations,interpretation_limitations,review_status
+            ) VALUES (
+                :code,'Verified applicability fixture test','identity',
+                'Assess whether the intended peptide identity is supported by suitable evidence.',
+                'Consider peptide sequence and chemical form.',
+                'A single result does not establish complete identity or method validation.',
+                'verified'
+            ) RETURNING id
+        """), {"code":"APP-"+str(uuid4()).replace("-","")[:12]}).scalar_one()
+
+        def source(label):
+            return connection.execute(text("""
+                INSERT INTO source_records (
+                    source_name,source_identifier,source_url,retrieved_at
+                ) VALUES (:name,:identifier,'https://example.org/applicability',now())
+                RETURNING id
+            """), {"name":"Applicability "+label,"identifier":str(uuid4())}).scalar_one()
+
+        def method_assessment(org, owner, scope, status, purpose):
+            return connection.execute(text("""
+                INSERT INTO peptide_method_applicability (
+                    organization_id,peptide_id,chemical_form_id,method_id,test_purpose,
+                    applicability_rationale,evidence_scope,limitations,source_id,
+                    review_status,submitted_by,visibility_scope
+                ) VALUES (
+                    :org,:peptide,:form,:method,:purpose,
+                    'The method has a source-backed rationale for this exact peptide form.',
+                    'Published method reference and peptide-specific evidence.',
+                    'This assessment does not validate the method or establish universal suitability.',
+                    :source,:status,:owner,:scope
+                ) RETURNING id
+            """), {
+                "org":org,"peptide":peptide,"form":form,"method":method,
+                "purpose":purpose,"source":source(purpose),"status":status,
+                "owner":owner,"scope":scope,
+            }).scalar_one()
+
+        def test_assessment(org, owner, scope, status, applicability_status):
+            return connection.execute(text("""
+                INSERT INTO peptide_test_applicability (
+                    organization_id,peptide_id,chemical_form_id,test_id,applicability_status,
+                    rationale,evidence_scope,limitations,source_id,review_status,
+                    submitted_by,visibility_scope
+                ) VALUES (
+                    :org,:peptide,:form,:test,:applicability,
+                    'This assessment is limited to the stated peptide form and sample context.',
+                    'Source-backed peptide-specific test applicability evidence.',
+                    'This is not a universal test panel or validated procedure.',
+                    :source,:status,:owner,:scope
+                ) RETURNING id
+            """), {
+                "org":org,"peptide":peptide,"form":form,"test":test_id,
+                "applicability":applicability_status,"source":source(applicability_status+scope),
+                "status":status,"owner":owner,"scope":scope,
+            }).scalar_one()
+
+        method_a = method_assessment(org_a,user_a,"organization","in_review","Method A private")
+        method_b = method_assessment(org_b,user_b,"organization","in_review","Method B private")
+        method_public = method_assessment(org_a,user_a,"public","verified","Method public")
+        test_a = test_assessment(org_a,user_a,"organization","in_review","conditional")
+        test_b = test_assessment(org_b,user_b,"organization","in_review","undetermined")
+        test_public = test_assessment(org_a,user_a,"public","verified","applicable")
+        cross_method_source = source("cross-method")
+        cross_test_source = source("cross-test")
+        valid_method_source = source("valid-method")
+        valid_test_source = source("valid-test")
+
+        method_decision_a = connection.execute(text("""
+            INSERT INTO peptide_method_applicability_decisions (
+                applicability_id,organization_id,reviewer_id,decision,rationale
+            ) VALUES (:id,:org,:reviewer,'verified',
+                      'Independent review checked the peptide-specific method evidence.')
+            RETURNING id
+        """), {"id":method_a,"org":org_a,"reviewer":user_b}).scalar_one()
+        method_decision_b = connection.execute(text("""
+            INSERT INTO peptide_method_applicability_decisions (
+                applicability_id,organization_id,reviewer_id,decision,rationale
+            ) VALUES (:id,:org,:reviewer,'verified',
+                      'Independent review checked the peptide-specific method evidence.')
+            RETURNING id
+        """), {"id":method_b,"org":org_b,"reviewer":user_a}).scalar_one()
+        test_decision_a = connection.execute(text("""
+            INSERT INTO peptide_test_applicability_decisions (
+                applicability_id,organization_id,reviewer_id,decision,rationale
+            ) VALUES (:id,:org,:reviewer,'verified',
+                      'Independent review checked the peptide-specific test evidence.')
+            RETURNING id
+        """), {"id":test_a,"org":org_a,"reviewer":user_b}).scalar_one()
+        test_decision_b = connection.execute(text("""
+            INSERT INTO peptide_test_applicability_decisions (
+                applicability_id,organization_id,reviewer_id,decision,rationale
+            ) VALUES (:id,:org,:reviewer,'verified',
+                      'Independent review checked the peptide-specific test evidence.')
+            RETURNING id
+        """), {"id":test_b,"org":org_b,"reviewer":user_a}).scalar_one()
+
+        role = "toolkit_peptide_applicability_rls_test"
+        exists = connection.execute(text(
+            "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname=:role)"
+        ), {"role":role}).scalar_one()
+        if not exists:
+            connection.exec_driver_sql("CREATE ROLE toolkit_peptide_applicability_rls_test NOLOGIN NOBYPASSRLS")
+        connection.exec_driver_sql("GRANT USAGE ON SCHEMA public TO toolkit_peptide_applicability_rls_test")
+        for table in ("peptides","peptide_chemical_forms","analytical_methods","analytical_test_catalogue"):
+            connection.exec_driver_sql(
+                f"GRANT SELECT ON {table} TO toolkit_peptide_applicability_rls_test"
+            )
+        for table in ("peptide_method_applicability","peptide_test_applicability"):
+            connection.exec_driver_sql(
+                f"GRANT SELECT,INSERT,UPDATE ON {table} TO toolkit_peptide_applicability_rls_test"
+            )
+        for table in ("peptide_method_applicability_decisions","peptide_test_applicability_decisions"):
+            connection.exec_driver_sql(
+                f"GRANT SELECT,INSERT ON {table} TO toolkit_peptide_applicability_rls_test"
+            )
+
+        with connection.begin_nested():
+            connection.exec_driver_sql("SET LOCAL ROLE toolkit_peptide_applicability_rls_test")
+            connection.execute(text("SELECT set_config('app.organization_id',:org,true)"),
+                               {"org":str(org_a)})
+            assert set(connection.execute(text("""
+                SELECT id FROM peptide_method_applicability
+                WHERE id IN (:a,:b,:public)
+            """), {"a":method_a,"b":method_b,"public":method_public}).scalars().all()) == {
+                method_a,method_public
+            }
+            assert set(connection.execute(text("""
+                SELECT id FROM peptide_test_applicability
+                WHERE id IN (:a,:b,:public)
+            """), {"a":test_a,"b":test_b,"public":test_public}).scalars().all()) == {
+                test_a,test_public
+            }
+            assert set(connection.execute(text("""
+                SELECT id FROM peptide_method_applicability_decisions
+                WHERE id IN (:a,:b)
+            """), {"a":method_decision_a,"b":method_decision_b}).scalars().all()) == {
+                method_decision_a
+            }
+            assert set(connection.execute(text("""
+                SELECT id FROM peptide_test_applicability_decisions
+                WHERE id IN (:a,:b)
+            """), {"a":test_decision_a,"b":test_decision_b}).scalars().all()) == {
+                test_decision_a
+            }
+
+            valid_method_insert = connection.execute(text("""
+                INSERT INTO peptide_method_applicability (
+                    organization_id,peptide_id,chemical_form_id,method_id,test_purpose,
+                    applicability_rationale,evidence_scope,limitations,source_id,
+                    review_status,submitted_by
+                ) VALUES (
+                    :org,:peptide,:form,:method,'Valid owner-scoped method assessment',
+                    'The method has a source-backed rationale for this exact peptide form.',
+                    'Source-backed method applicability evidence.',
+                    'This is not a method validation or universal suitability statement.',
+                    :source,'in_review',:owner
+                ) RETURNING id
+            """), {
+                "org":org_a,"peptide":peptide,"form":form,"method":method,
+                "source":valid_method_source,"owner":user_a,
+            }).scalar_one()
+            assert valid_method_insert is not None
+
+            valid_test_insert = connection.execute(text("""
+                INSERT INTO peptide_test_applicability (
+                    organization_id,peptide_id,chemical_form_id,test_id,applicability_status,
+                    rationale,evidence_scope,limitations,source_id,review_status,submitted_by
+                ) VALUES (
+                    :org,:peptide,:form,:test,'applicable',
+                    'This owner-scoped assessment is limited to the stated peptide form.',
+                    'Source-backed test applicability evidence.',
+                    'This is not a universal test panel or validated procedure.',
+                    :source,'in_review',:owner
+                ) RETURNING id
+            """), {
+                "org":org_a,"peptide":peptide,"form":form,"test":test_id,
+                "source":valid_test_source,"owner":user_a,
+            }).scalar_one()
+            assert valid_test_insert is not None
+
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO peptide_method_applicability (
+                            organization_id,peptide_id,method_id,test_purpose,
+                            applicability_rationale,evidence_scope,limitations,source_id,submitted_by
+                        ) VALUES (
+                            :org,:peptide,:method,'Cross-tenant method assessment',
+                            'Cross-tenant method assessment rationale is sufficiently descriptive.',
+                            'Cross-tenant source evidence is not permitted.',
+                            'Cross-tenant writes must be rejected by organization scope.',
+                            :source,:owner
+                        )
+                    """), {
+                        "org":org_b,"peptide":peptide,"method":method,
+                        "source":cross_method_source,"owner":user_a,
+                    })
+
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO peptide_test_applicability (
+                            organization_id,peptide_id,test_id,applicability_status,
+                            rationale,evidence_scope,limitations,source_id,submitted_by
+                        ) VALUES (
+                            :org,:peptide,:test,'applicable',
+                            'Cross-tenant test assessment rationale is sufficiently descriptive.',
+                            'Cross-tenant source evidence is not permitted.',
+                            'Cross-tenant writes must be rejected by organization scope.',
+                            :source,:owner
+                        )
+                    """), {
+                        "org":org_b,"peptide":peptide,"test":test_id,
+                        "source":cross_test_source,"owner":user_a,
+                    })
+
+            # A curator can advance an organization-owned assessment, but verification
+            # alone does not make an organization-scoped assessment public.
+            connection.execute(text("""
+                UPDATE peptide_method_applicability SET review_status='verified'
+                WHERE id=:id
+            """), {"id":method_a})
+            connection.execute(text("""
+                UPDATE peptide_test_applicability SET review_status='verified'
+                WHERE id=:id
+            """), {"id":test_a})
+
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO peptide_method_applicability_decisions (
+                            applicability_id,organization_id,reviewer_id,decision,rationale
+                        ) VALUES (:id,:org,:reviewer,'verified',
+                                  'Cross-tenant method decision must not be accepted.')
+                    """), {"id":method_b,"org":org_a,"reviewer":user_a})
+
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO peptide_test_applicability_decisions (
+                            applicability_id,organization_id,reviewer_id,decision,rationale
+                        ) VALUES (:id,:org,:reviewer,'verified',
+                                  'Cross-tenant test decision must not be accepted.')
+                    """), {"id":test_b,"org":org_a,"reviewer":user_a})
+
+            connection.execute(text("SELECT set_config('app.organization_id','',true)"))
+            assert set(connection.execute(text(
+                "SELECT id FROM peptide_method_applicability"
+            )).scalars().all()) == {method_public}
+            assert set(connection.execute(text(
+                "SELECT id FROM peptide_test_applicability"
+            )).scalars().all()) == {test_public}
+
+        connection.exec_driver_sql("RESET ROLE")
+        for table in ("peptide_method_applicability","peptide_test_applicability"):
+            connection.exec_driver_sql(
+                f"REVOKE SELECT,INSERT,UPDATE ON {table} FROM toolkit_peptide_applicability_rls_test"
+            )
+        for table in ("peptide_method_applicability_decisions","peptide_test_applicability_decisions"):
+            connection.exec_driver_sql(
+                f"REVOKE SELECT,INSERT ON {table} FROM toolkit_peptide_applicability_rls_test"
+            )
+        for table in ("peptides","peptide_chemical_forms","analytical_methods","analytical_test_catalogue"):
+            connection.exec_driver_sql(
+                f"REVOKE SELECT ON {table} FROM toolkit_peptide_applicability_rls_test"
+            )
+        connection.exec_driver_sql("REVOKE USAGE ON SCHEMA public FROM toolkit_peptide_applicability_rls_test")
+        connection.exec_driver_sql("DROP ROLE toolkit_peptide_applicability_rls_test")

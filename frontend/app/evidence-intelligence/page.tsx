@@ -1,4 +1,6 @@
 "use client";
+
+import { getPreferredOrganizationId, setPreferredOrganizationId } from "@/lib/auth";
 import Link from "next/link";
 import {FormEvent,useState} from "react";
 const API=process.env.NEXT_PUBLIC_API_BASE_URL||"http://localhost:8000";
@@ -7,7 +9,7 @@ export default function EvidenceIntelligencePage(){
  const [email,setEmail]=useState(""),[password,setPassword]=useState(""),[token,setToken]=useState(""),[claims,setClaims]=useState<Claim[]>([]),[selected,setSelected]=useState<Claim|null>(null),[error,setError]=useState(""),[notice,setNotice]=useState(""),[busy,setBusy]=useState(false);
  const [form,setForm]=useState({study_design:"unknown",evidence_level:"unknown",population_or_model:"",sample_size:"",endpoint:"",risk_of_bias:"not_assessed",replication_status:"unknown",limitations:"",appraisal_rationale:""});
  async function req(path:string,init:RequestInit={}){const r=await fetch(API+path,{...init,headers:{"Content-Type":"application/json",Authorization:"Bearer "+token,...(init.headers||{})}});const d=await r.json();if(!r.ok)throw new Error(d.detail||"Request failed");return d;}
- async function login(e:FormEvent){e.preventDefault();setBusy(true);try{const r=await fetch(API+"/api/v1/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,password})});const d=await r.json();if(!r.ok)throw new Error(d.detail||"Sign in failed");setToken(d.access_token);setPassword("");setNotice("Signed in. Reviewer permissions are required.");}catch(e){setError(e instanceof Error?e.message:"Sign in failed.");}finally{setBusy(false);}}
+ async function login(e:FormEvent){e.preventDefault();setBusy(true);try{const r=await fetch(API+"/api/v1/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,password,organization_id:getPreferredOrganizationId()})});const d=await r.json();if(!r.ok)throw new Error(d.detail||"Sign in failed");setPreferredOrganizationId(d.user.organization_id);setToken(d.access_token);setPassword("");setNotice("Signed in. Reviewer permissions are required.");}catch(e){setError(e instanceof Error?e.message:"Sign in failed.");}finally{setBusy(false);}}
  async function load(){try{const d=await req("/api/v1/evidence-intelligence/claims");setClaims(d.items||[]);setError("");}catch(e){setError(e instanceof Error?e.message:"Could not load claims.");}}
  async function submit(e:FormEvent){e.preventDefault();if(!selected)return;setBusy(true);try{await req("/api/v1/evidence-intelligence/appraisals",{method:"POST",body:JSON.stringify({...form,claim_id:selected.id,sample_size:form.sample_size===""?null:Number(form.sample_size),methodological_domains:{study_design:form.study_design,risk_of_bias:form.risk_of_bias,replication:form.replication_status}})});setNotice("Structured appraisal saved. Evidence level and methodological risk remain separate.");setSelected(null);await load();}catch(e){setError(e instanceof Error?e.message:"Could not save appraisal.");}finally{setBusy(false);}}
  const input="w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm text-slate-100";

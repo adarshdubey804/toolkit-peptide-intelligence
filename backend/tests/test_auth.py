@@ -8,13 +8,14 @@ def test_unknown_email_still_performs_argon2_password_verification(monkeypatch):
     attempted = []
 
     monkeypatch.setattr(auth.settings, "app_secret_key", "test-secret-" + "x" * 32)
-    monkeypatch.setattr(auth, "_load_user", lambda db, email: None)
+    monkeypatch.setattr(auth, "_load_user", lambda db, email, organization_id=None: None)
 
-    def verify(password, encoded_hash):
-        attempted.append((password, encoded_hash))
-        return False
+    class FakePasswordHash:
+        def verify(self, password, encoded_hash):
+            attempted.append((password, encoded_hash))
+            return False
 
-    monkeypatch.setattr(auth.password_hash, "verify", verify)
+    monkeypatch.setattr(auth, "password_hash", FakePasswordHash())
 
     with pytest.raises(HTTPException) as error:
         auth.login(

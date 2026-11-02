@@ -1,5 +1,7 @@
 "use client";
 
+import { getPreferredOrganizationId, setPreferredOrganizationId } from "@/lib/auth";
+
 import { FormEvent, useState } from "react";
 import Link from "next/link";
 
@@ -37,11 +39,11 @@ export default function SubmitPeptidePage() {
     try {
       const response = await fetch(`${API_BASE}/api/v1/auth/login`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, organization_id: getPreferredOrganizationId() }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Login failed.");
-      setToken(data.access_token);
+      setPreferredOrganizationId(data.user.organization_id);setToken(data.access_token);
       setMessage(`Signed in as ${data.user.display_name} · ${data.user.role}`);
       setPassword("");
     } catch (err) { setError(err instanceof Error ? err.message : "Unable to sign in."); }

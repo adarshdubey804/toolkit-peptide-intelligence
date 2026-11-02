@@ -1,5 +1,7 @@
 "use client";
 
+import { getPreferredOrganizationId, setPreferredOrganizationId } from "@/lib/auth";
+
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 const API=process.env.NEXT_PUBLIC_API_BASE_URL||"http://localhost:8000";
@@ -13,7 +15,7 @@ export default function AgentWorkspace(){
  const [busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState("");
  useEffect(()=>{fetch(API+"/api/v1/agents").then(r=>r.json()).then(d=>setAgents(d.agents||[])).catch(()=>setError("Could not load agent catalogue."));},[]);
  async function request(path:string,init:RequestInit={}){const r=await fetch(API+path,{...init,headers:{"Content-Type":"application/json",Authorization:"Bearer "+token,...(init.headers||{})}});const d=await r.json();if(!r.ok)throw new Error(d.detail||"Request failed");return d;}
- async function login(e:FormEvent){e.preventDefault();setBusy(true);setError("");try{const r=await fetch(API+"/api/v1/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,password})});const d=await r.json();if(!r.ok)throw new Error(d.detail||"Sign in failed");setToken(d.access_token);setPassword("");setNotice("Signed in. Your research sessions are organization- and user-scoped.");}catch(e){setError(e instanceof Error?e.message:"Sign in failed.");}finally{setBusy(false);}}
+ async function login(e:FormEvent){e.preventDefault();setBusy(true);setError("");try{const r=await fetch(API+"/api/v1/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,password,organization_id:getPreferredOrganizationId()})});const d=await r.json();if(!r.ok)throw new Error(d.detail||"Sign in failed");setPreferredOrganizationId(d.user.organization_id);setToken(d.access_token);setPassword("");setNotice("Signed in. Your research sessions are organization- and user-scoped.");}catch(e){setError(e instanceof Error?e.message:"Sign in failed.");}finally{setBusy(false);}}
  async function loadSessions(){try{const d=await request("/api/v1/agents/sessions");setSessions(d.items||[]);}catch(e){setError(e instanceof Error?e.message:"Could not load sessions.");}}
  async function openSession(s:Session){setActive(s);try{const d=await request("/api/v1/agents/sessions/"+s.id);setMessages(d.messages||[]);}catch(e){setError(e instanceof Error?e.message:"Could not load conversation.");}}
  async function createSession(e:FormEvent){e.preventDefault();setBusy(true);setError("");try{const d=await request("/api/v1/agents/sessions",{method:"POST",body:JSON.stringify({agent_id:agentId,title})});await loadSessions();await openSession({...d,message_count:0});setNotice("Research session created.");}catch(e){setError(e instanceof Error?e.message:"Could not create session.");}finally{setBusy(false);}}

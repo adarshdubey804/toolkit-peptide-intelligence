@@ -1,5 +1,7 @@
 "use client";
 
+import { getPreferredOrganizationId, setPreferredOrganizationId } from "@/lib/auth";
+
 import Link from "next/link";
 import { FormEvent, useState } from "react";
 
@@ -14,7 +16,7 @@ export default function EvidenceReviewPage() {
  const [decision,setDecision]=useState<Record<string,string>>({}); const [value,setValue]=useState<Record<string,string>>({});
  const [rationale,setRationale]=useState<Record<string,string>>({}); const [history,setHistory]=useState<Record<string,any[]>>({}); const [error,setError]=useState(""); const [notice,setNotice]=useState(""); const [busy,setBusy]=useState(false);
  const input="mt-2 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100";
- async function login(e:FormEvent){e.preventDefault();setBusy(true);setError("");try{const r=await fetch(API+"/api/v1/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,password})});const d=await r.json();if(!r.ok)throw Error(d.detail||"Sign in failed");if(!["organization_admin","curator","reviewer"].includes(d.user.role))throw Error("Curator or reviewer permissions required");setToken(d.access_token);setPassword("");}catch(x){setError(x instanceof Error?x.message:"Sign in failed");}finally{setBusy(false);}}
+ async function login(e:FormEvent){e.preventDefault();setBusy(true);setError("");try{const r=await fetch(API+"/api/v1/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,password,organization_id:getPreferredOrganizationId()})});const d=await r.json();if(!r.ok)throw Error(d.detail||"Sign in failed");if(!["organization_admin","curator","reviewer"].includes(d.user.role))throw Error("Curator or reviewer permissions required");setPreferredOrganizationId(d.user.organization_id);setToken(d.access_token);setPassword("");}catch(x){setError(x instanceof Error?x.message:"Sign in failed");}finally{setBusy(false);}}
  async function load(e?:FormEvent){e?.preventDefault();setBusy(true);setError("");try{const r=await fetch(API+"/api/v1/research/assistant/extractions/"+encodeURIComponent(runId),{headers:{Authorization:"Bearer "+token}});const d=await r.json();if(!r.ok)throw Error(d.detail||"Could not load run");setRun(d);}catch(x){setError(x instanceof Error?x.message:"Could not load run");}finally{setBusy(false);}}
  async function loadHistory(record:RecordItem){try{const r=await fetch(API+`/api/v1/research/assistant/extractions/${runId}/records/${record.id}/history`,{headers:{Authorization:"Bearer "+token}});const d=await r.json();if(!r.ok)throw Error(d.detail||"History unavailable");setHistory(p=>({...p,[record.id]:d.decisions||[]}));}catch(x){setError(x instanceof Error?x.message:"Could not load history");}}
  async function save(record:RecordItem,field:string){const key=record.id+":"+field;const choice=decision[key]||"accepted";const why=(rationale[key]||"").trim();if(why.length<20){setError("Provide a rationale of at least 20 characters.");return;}let corrected:unknown;if(choice==="corrected"){try{corrected=JSON.parse(value[key]||"");}catch{setError("Corrected value must be valid JSON (text in quotes, lists in brackets, or a number).");return;}}

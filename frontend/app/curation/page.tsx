@@ -1,4 +1,6 @@
 "use client";
+
+import { getPreferredOrganizationId, setPreferredOrganizationId } from "@/lib/auth";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 
@@ -17,10 +19,10 @@ export default function CurationDashboardPage() {
  }catch(err){setErrors(err instanceof Error?err.message:"Queue request failed.");}finally{setLoading(false);}},[token,status]);
  useEffect(()=>{if(token)void loadQueue();},[token,loadQueue]);
  async function signIn(event:FormEvent){event.preventDefault();setLoading(true);setErrors("");try{
-  const response=await fetch(API_BASE+"/api/v1/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,password})});
+  const response=await fetch(API_BASE+"/api/v1/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,password,organization_id:getPreferredOrganizationId()})});
   const data=await response.json();if(!response.ok)throw new Error(data.detail||"Sign in failed.");
   if(!["organization_admin","curator","reviewer"].includes(data.user.role))throw new Error("Your account does not have curator or reviewer permissions.");
-  setToken(data.access_token);setUser(data.user);setPassword("");
+  setPreferredOrganizationId(data.user.organization_id);setToken(data.access_token);setUser(data.user);setPassword("");
  }catch(err){setErrors(err instanceof Error?err.message:"Unable to sign in.");}finally{setLoading(false);}}
  async function assignToMe(review:Review){setBusyId(review.id);setErrors("");try{
   const response=await fetch(API_BASE+"/api/v1/curation/reviews/"+review.id+"/assignment",{method:"PATCH",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify({assigned_to:user?.id})});

@@ -1,5 +1,7 @@
 "use client";
 
+import { getPreferredOrganizationId, setPreferredOrganizationId } from "@/lib/auth";
+
 import { FormEvent, useState } from "react";
 import Link from "next/link";
 
@@ -41,9 +43,9 @@ export default function AnalyticalMethodsPage() {
   async function signIn(e:FormEvent) {
     e.preventDefault();setBusy(true);setError("");
     try {
-      const response=await fetch(API+"/api/v1/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,password})});
+      const response=await fetch(API+"/api/v1/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,password,organization_id:getPreferredOrganizationId()})});
       const data=await response.json();if(!response.ok)throw new Error(data.detail||"Sign in failed.");
-      setToken(data.access_token);setRole(data.user.role);setPassword("");setMessage("Signed in as "+data.user.role+".");
+      setPreferredOrganizationId(data.user.organization_id);setToken(data.access_token);setRole(data.user.role);setPassword("");setMessage("Signed in as "+data.user.role+".");
     }catch(e){setError(e instanceof Error?e.message:"Sign in failed.");}finally{setBusy(false);}
   }
 

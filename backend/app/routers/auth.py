@@ -42,6 +42,7 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: str = Field(min_length=5, max_length=254)
     password: str = Field(min_length=1, max_length=128)
+    organization_id: UUID | None = None
 
 
 def _create_access_token(user_id: str, organization_id: str | None, role: str) -> str:
@@ -70,7 +71,7 @@ def _user_response(row) -> dict:
     }
 
 
-def _load_user(db: Session, email: str):
+def _load_user(db: Session, email: str, organization_id: UUID | None = None):
     return db.execute(text("""
         SELECT up.id, up.email, up.password_hash, up.display_name,
                om.organization_id, om.role, up.is_active, o.name AS organization_name
@@ -78,9 +79,10 @@ def _load_user(db: Session, email: str):
         LEFT JOIN organization_memberships om ON om.user_id = up.id AND om.membership_status = 'active'
         LEFT JOIN organizations o ON o.id = om.organization_id
         WHERE lower(up.email) = :email
+          AND (:organization_id IS NULL OR om.organization_id = :organization_id)
         ORDER BY om.created_at
         LIMIT 1
-    """), {"email": email}).mappings().first()
+    """), {"email": email, "organization_id": organization_id}).mappings().first()
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
@@ -123,7 +125,11 @@ def register(payload: RegisterRequest, db: Annotated[Session, Depends(get_db)]):
 def login(payload: LoginRequest, db: Annotated[Session, Depends(get_db)]):
     if len(settings.app_secret_key) < 32:
         raise HTTPException(status_code=503, detail="Authentication is not configured with a sufficiently long application secret.")
-    user = _load_user(db, payload.email.strip().lower())
+    user = _load_user(db, payload.email.strip().lower(), payload.organization_id)
+    # A stale or revoked browser preference must not lock a legitimate user out;
+    # fall back only to one of the account's own active memberships.
+    if not user and payload.organization_id:
+        user = _load_user(db, payload.email.strip().lower())
     # Always perform one Argon2 verification, including for unknown email
     # addresses and accounts without a password hash, to reduce timing-based
     # account enumeration.
@@ -133,6 +139,8 @@ def login(payload: LoginRequest, db: Annotated[Session, Depends(get_db)]):
         raise HTTPException(status_code=401, detail="Email or password is incorrect.", headers={"WWW-Authenticate": "Bearer"})
     if not user["is_active"]:
         raise HTTPException(status_code=403, detail="This account is inactive.")
+    if not user["organization_id"]:
+        raise HTTPException(status_code=403, detail="This account has no active organization membership.")
     token = _create_access_token(str(user["id"]), str(user["organization_id"]) if user["organization_id"] else None, user["role"])
     return {"access_token": token, "token_type": "bearer", "expires_in": TOKEN_TTL_MINUTES * 60, "user": _user_response(user)}
 
@@ -169,6 +177,89 @@ def get_current_user(token: Annotated[str | None, Depends(oauth2_scheme)], db: A
     if not user or not user["is_active"]:
         raise unauthorized
     return _user_response(user)
+
+
+
+class SwitchOrganizationRequest(BaseModel):
+    organization_id: UUID
+
+
+@router.get("/organizations")
+def list_user_organizations(
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    rows = db.execute(text("""
+        SELECT o.id AS organization_id, o.name AS organization_name,
+               om.role, om.created_at AS membership_created_at
+        FROM organization_memberships om
+        JOIN organizations o ON o.id = om.organization_id
+        JOIN user_profiles up ON up.id = om.user_id
+        WHERE om.user_id = :user_id
+          AND om.membership_status = 'active'
+          AND up.is_active = TRUE
+        ORDER BY om.created_at, o.name
+    """), {"user_id": current_user["id"]}).mappings().all()
+    return {
+        "items": [
+            {
+                "organization_id": str(row["organization_id"]),
+                "organization_name": row["organization_name"],
+                "role": row["role"],
+                "membership_created_at": row["membership_created_at"],
+                "is_current": str(row["organization_id"]) == current_user["organization_id"],
+            }
+            for row in rows
+        ],
+        "count": len(rows),
+    }
+
+
+@router.post("/switch-organization")
+def switch_organization(
+    payload: SwitchOrganizationRequest,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    membership = db.execute(text("""
+        SELECT up.id, up.email, up.display_name, up.is_active,
+               om.organization_id, om.role, o.name AS organization_name
+        FROM organization_memberships om
+        JOIN user_profiles up ON up.id = om.user_id
+        JOIN organizations o ON o.id = om.organization_id
+        WHERE om.user_id = :user_id
+          AND om.organization_id = :organization_id
+          AND om.membership_status = 'active'
+          AND up.is_active = TRUE
+    """), {
+        "user_id": current_user["id"],
+        "organization_id": payload.organization_id,
+    }).mappings().first()
+    if not membership:
+        raise HTTPException(status_code=404, detail="Active organization membership not found.")
+
+    user = dict(membership)
+    db.execute(text("""
+        INSERT INTO audit_events
+            (actor_user_id, organization_id, action, entity_type, entity_id, event_metadata)
+        VALUES
+            (:actor, :organization_id, 'organization_context_switched', 'organization',
+             :organization_id, jsonb_build_object('previous_organization_id', :previous_organization_id))
+    """), {
+        "actor": current_user["id"],
+        "organization_id": payload.organization_id,
+        "previous_organization_id": current_user["organization_id"],
+    })
+    db.commit()
+    token = _create_access_token(
+        str(user["id"]), str(user["organization_id"]), user["role"]
+    )
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "expires_in": TOKEN_TTL_MINUTES * 60,
+        "user": _user_response(user),
+    }
 
 
 @router.get("/me")

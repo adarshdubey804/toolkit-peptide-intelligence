@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..db import get_db
+from ..rate_limit_dependencies import authenticated_write_rate_limit, public_request_rate_limit
 from ..services.source_persistence import persist_normalized_source_record
 from ..rate_limit import enforce_rate_limit, request_client_identity
 from ..integrations.alphafold import AlphaFoldProvider
@@ -274,7 +275,7 @@ class AssistantSynthesisRequest(BaseModel):
     limit: int = Field(default=5, ge=1, le=10)
 
 
-@router.post("/assistant/synthesize")
+@router.post("/assistant/synthesize", dependencies=[Depends(public_request_rate_limit("ai_synthesis", 5))])
 async def synthesize_research_answer(request: AssistantSynthesisRequest):
     """Development-only, source-constrained synthesis. Production access awaits authentication and rate limiting."""
     if not settings.ai_synthesis_enabled or not settings.ai_api_key:
@@ -308,7 +309,7 @@ class EvidenceExtractionRequest(BaseModel):
     limit: int = Field(default=5, ge=1, le=10)
 
 
-@router.post("/assistant/extract", status_code=201)
+@router.post("/assistant/extract", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("evidence_extraction", settings.enrichment_rate_limit_per_window))])
 async def extract_structured_evidence(
     request: EvidenceExtractionRequest,
     current_user: Annotated[dict, Depends(get_current_user)],
@@ -429,7 +430,7 @@ class EvidenceFieldReviewRequest(BaseModel):
     reviewed_value: object | None = None
 
 
-@router.post("/assistant/extractions/{run_id}/records/{record_id}/fields/{field_name}/review", status_code=201)
+@router.post("/assistant/extractions/{run_id}/records/{record_id}/fields/{field_name}/review", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("evidence_extraction_review"))])
 def review_extracted_evidence_field(
     run_id: UUID,
     record_id: UUID,

@@ -8,6 +8,9 @@ from app.db import engine
 from app.main import MIGRATIONS_DIR, apply_development_migrations
 
 
+
+
+
 @pytest.mark.skipif(
     os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",
     reason="PostgreSQL migration integration test is enabled in CI only.",
@@ -53,6 +56,10 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             "api_rate_limit_buckets",
             "api_rate_limit_maintenance",
             "audit_chain_heads",
+            "vendor_material_offerings",
+            "vendor_material_batches",
+            "batch_analytical_test_results",
+            "batch_analytical_test_result_decisions",
         )
         for table_name in required_tables:
             exists = connection.execute(
@@ -175,6 +182,27 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
         """)).scalar_one()
         assert applicability_indexes >= 2, "Peptide test applicability needs organization and peptide/test lookup indexes"
 
+        batch_traceability_triggers = connection.execute(text("""
+            SELECT count(*) FROM pg_trigger
+            WHERE NOT tgisinternal AND tgname IN (
+                'trg_vendor_material_offering_scope',
+                'trg_vendor_material_batch_scope',
+                'trg_batch_test_result_scope',
+                'trg_batch_test_result_decision_scope',
+                'trg_vendor_material_offerings_immutable_evidence',
+                'trg_vendor_material_batches_immutable_evidence',
+                'trg_batch_analytical_test_results_immutable_evidence',
+                'trg_batch_test_result_decisions_no_update'
+            )
+        """)).scalar_one()
+        assert batch_traceability_triggers == 8, "Vendor material, lot and batch-result integrity/audit triggers must exist"
+
+        batch_form_required = connection.execute(text("""
+            SELECT is_nullable FROM information_schema.columns
+            WHERE table_schema='public' AND table_name='vendor_material_offerings'
+              AND column_name='chemical_form_id'
+        """)).scalar_one()
+        assert batch_form_required == "NO", "A vendor offering must identify its exact chemical form"
 
 @pytest.mark.skipif(
     os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",

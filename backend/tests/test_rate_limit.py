@@ -181,3 +181,27 @@ def test_authenticated_write_rate_limit_uses_user_identity_and_scope(monkeypatch
     assert calls[0][1]["scope"] == "vendor_write"
     assert calls[0][1]["identity"] == "user-123"
     assert calls[0][1]["limit"] >= 1
+
+
+def test_public_request_rate_limit_uses_immediate_peer_not_forwarded_header(monkeypatch):
+    from types import SimpleNamespace
+    from app import rate_limit_dependencies
+
+    captured = {}
+    def record(db, **kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(rate_limit_dependencies, "enforce_rate_limit", record)
+    dependency = rate_limit_dependencies.public_request_rate_limit("bioinformatics_compute", 10)
+    request = SimpleNamespace(
+        client=SimpleNamespace(host="198.51.100.23"),
+        headers={"x-forwarded-for": "203.0.113.99"},
+    )
+    database = object()
+    dependency(request, database)
+    assert captured == {
+        "scope": "bioinformatics_compute",
+        "identity": "198.51.100.23",
+        "limit": 10,
+        "window_seconds": rate_limit_dependencies.settings.rate_limit_window_seconds,
+    }

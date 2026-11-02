@@ -1,7 +1,7 @@
 from pathlib import Path
 
 
-MIGRATIONS = Path(__file__).resolve().parents[1] / "database" / "migrations"
+MIGRATIONS = Path(__file__).resolve().parents[2] / "database" / "migrations"
 
 
 def test_claim_source_locator_migration_is_source_version_aware_and_append_only():

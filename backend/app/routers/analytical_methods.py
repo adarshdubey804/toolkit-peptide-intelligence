@@ -405,3 +405,212 @@ def decide_method_applicability(
     return {"applicability_id": str(applicability_id), "review_status": new_status, "decision": payload.decision}
 
 
+
+
+class LaboratoryCapabilitySubmission(BaseModel):
+    service_id: UUID
+    method_id: UUID
+    peptide_id: UUID | None = None
+    test_purpose: str = Field(min_length=5, max_length=500)
+    material_form: str | None = Field(default=None, max_length=300)
+    sample_matrix: str = Field(min_length=2, max_length=500)
+    instrument_platform: str | None = Field(default=None, max_length=500)
+    sample_requirements: str | None = Field(default=None, max_length=2000)
+    storage_shipping_requirements: str | None = Field(default=None, max_length=2000)
+    evidence_scope: str = Field(min_length=5, max_length=1000)
+    limitations: str = Field(min_length=10, max_length=2000)
+    source_name: str = Field(min_length=2, max_length=120)
+    source_identifier: str = Field(min_length=1, max_length=200)
+    source_url: HttpUrl
+
+
+class LaboratoryCapabilityDecision(BaseModel):
+    decision: Literal["verified", "rejected", "needs_changes"]
+    rationale: str = Field(min_length=20, max_length=4000)
+
+
+@router.get("/laboratory-capabilities")
+def list_verified_laboratory_capabilities(
+    db: Annotated[Session, Depends(get_db)],
+    method_id: UUID | None = None,
+    peptide_id: UUID | None = None,
+    country_code: str | None = Query(default=None, min_length=2, max_length=2),
+    limit: int = Query(default=100, ge=1, le=250),
+):
+    """Return only independently reviewed, facility-specific laboratory capability claims."""
+    rows = db.execute(text("""
+        SELECT lc.id, v.id AS vendor_id, v.legal_name AS laboratory,
+               s.id AS site_id, s.site_name, s.address, s.country_code,
+               vs.id AS service_id, vs.service_name,
+               m.id AS method_id, m.method_name, m.method_category,
+               p.id AS peptide_id, p.preferred_name AS peptide_name,
+               lc.test_purpose, lc.material_form, lc.sample_matrix,
+               lc.instrument_platform, lc.sample_requirements,
+               lc.storage_shipping_requirements, lc.evidence_scope,
+               lc.limitations, sr.source_name, sr.source_identifier,
+               sr.source_url, lc.reviewed_at
+        FROM laboratory_capability_claims lc
+        JOIN vendor_services vs ON vs.id=lc.service_id AND vs.review_status='verified'
+        JOIN vendors v ON v.id=vs.vendor_id
+          AND v.review_status='verified' AND v.verification_status='verified'
+        JOIN vendor_sites s ON s.id=vs.site_id AND s.review_status='verified'
+        JOIN analytical_methods m ON m.id=lc.method_id AND m.review_status='verified'
+        LEFT JOIN peptides p ON p.id=lc.peptide_id AND p.review_status='verified'
+        JOIN source_records sr ON sr.id=lc.source_id
+        WHERE lc.review_status='verified'
+          AND (lc.peptide_id IS NULL OR p.id IS NOT NULL)
+          AND (:method IS NULL OR lc.method_id=:method)
+          AND (:peptide IS NULL OR lc.peptide_id=:peptide)
+          AND (:country IS NULL OR upper(s.country_code)=upper(:country))
+        ORDER BY v.legal_name, s.site_name, m.method_name
+        LIMIT :limit
+    """), {"method": method_id, "peptide": peptide_id,
+           "country": country_code, "limit": limit}).mappings().all()
+    return {
+        "items": [dict(row) for row in rows],
+        "count": len(rows),
+        "scope": "Facility-specific capability claims independently reviewed against cited sources. These records do not establish current capacity, available slots, sample acceptance, method validation, accreditation scope or guaranteed performance."
+    }
+
+
+@router.post("/laboratory-capabilities", status_code=201)
+def submit_laboratory_capability(
+    payload: LaboratoryCapabilitySubmission,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    organization_id, role = _membership(current_user, db)
+    if role not in SUBMIT_ROLES:
+        raise HTTPException(status_code=403, detail="Your role cannot submit laboratory capability claims.")
+    service = db.execute(text("""
+        SELECT vs.id, vs.vendor_id, vs.site_id
+        FROM vendor_services vs
+        JOIN vendors v ON v.id=vs.vendor_id
+          AND v.organization_id=:org
+          AND v.review_status='verified' AND v.verification_status='verified'
+        JOIN vendor_sites s ON s.id=vs.site_id
+          AND s.organization_id=:org AND s.review_status='verified'
+        WHERE vs.id=:service AND vs.review_status='verified'
+    """), {"org": organization_id, "service": payload.service_id}).mappings().first()
+    if not service:
+        raise HTTPException(status_code=404, detail="Verified laboratory service at a verified facility was not found in this organization.")
+    method = db.execute(text("""
+        SELECT id FROM analytical_methods WHERE id=:id AND review_status='verified'
+    """), {"id": payload.method_id}).scalar_one_or_none()
+    if not method:
+        raise HTTPException(status_code=404, detail="Verified analytical method not found.")
+    if payload.peptide_id is not None:
+        peptide = db.execute(text("""
+            SELECT id FROM peptides WHERE id=:id AND review_status='verified'
+        """), {"id": payload.peptide_id}).scalar_one_or_none()
+        if not peptide:
+            raise HTTPException(status_code=404, detail="Verified peptide record not found.")
+    source_id = _source_record(db, payload.source_name, payload.source_identifier, str(payload.source_url))
+    row = db.execute(text("""
+        INSERT INTO laboratory_capability_claims (
+            organization_id, service_id, method_id, peptide_id, test_purpose,
+            material_form, sample_matrix, instrument_platform, sample_requirements,
+            storage_shipping_requirements, evidence_scope, limitations, source_id,
+            review_status, submitted_by
+        ) VALUES (
+            :org, :service, :method, :peptide, :purpose, :material, :matrix,
+            :platform, :sample, :shipping, :scope, :limitations, :source,
+            'in_review', :submitter
+        )
+        RETURNING id, service_id, method_id, peptide_id, test_purpose, review_status, created_at
+    """), {
+        "org": organization_id, "service": payload.service_id, "method": payload.method_id,
+        "peptide": payload.peptide_id, "purpose": payload.test_purpose.strip(),
+        "material": payload.material_form, "matrix": payload.sample_matrix.strip(),
+        "platform": payload.instrument_platform, "sample": payload.sample_requirements,
+        "shipping": payload.storage_shipping_requirements, "scope": payload.evidence_scope.strip(),
+        "limitations": payload.limitations.strip(), "source": source_id,
+        "submitter": current_user["id"],
+    }).mappings().one()
+    db.execute(text("""
+        INSERT INTO audit_events (actor_user_id, organization_id, action, entity_type, entity_id, event_metadata)
+        VALUES (:actor, :org, 'laboratory_capability_submitted',
+                'laboratory_capability_claim', :id,
+                jsonb_build_object('service_id', :service, 'method_id', :method,
+                                   'peptide_id', :peptide, 'source_record_id', :source))
+    """), {"actor": current_user["id"], "org": organization_id, "id": row["id"],
+           "service": str(payload.service_id), "method": str(payload.method_id),
+           "peptide": str(payload.peptide_id) if payload.peptide_id else None,
+           "source": str(source_id)})
+    db.commit()
+    return dict(row)
+
+
+@router.get("/laboratory-capabilities/reviews")
+def laboratory_capability_review_queue(
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    limit: int = Query(default=50, ge=1, le=100),
+):
+    organization_id, role = _membership(current_user, db)
+    if role not in REVIEW_ROLES:
+        raise HTTPException(status_code=403, detail="Curator or reviewer permission is required.")
+    rows = db.execute(text("""
+        SELECT lc.id, lc.service_id, v.legal_name AS laboratory,
+               s.site_name, s.address, vs.service_name,
+               lc.method_id, m.method_name, lc.peptide_id, p.preferred_name AS peptide_name,
+               lc.test_purpose, lc.material_form, lc.sample_matrix,
+               lc.instrument_platform, lc.sample_requirements,
+               lc.storage_shipping_requirements, lc.evidence_scope, lc.limitations,
+               lc.submitted_by, sr.source_name, sr.source_identifier, sr.source_url,
+               lc.created_at
+        FROM laboratory_capability_claims lc
+        JOIN vendor_services vs ON vs.id=lc.service_id
+        JOIN vendors v ON v.id=vs.vendor_id
+        JOIN vendor_sites s ON s.id=vs.site_id
+        JOIN analytical_methods m ON m.id=lc.method_id
+        LEFT JOIN peptides p ON p.id=lc.peptide_id
+        JOIN source_records sr ON sr.id=lc.source_id
+        WHERE lc.organization_id=:org AND lc.review_status='in_review'
+        ORDER BY lc.created_at, lc.id
+        LIMIT :limit
+    """), {"org": organization_id, "limit": limit}).mappings().all()
+    return {"items": [dict(row) for row in rows], "count": len(rows)}
+
+
+@router.post("/laboratory-capabilities/{claim_id}/decisions", status_code=201)
+def decide_laboratory_capability(
+    claim_id: UUID,
+    payload: LaboratoryCapabilityDecision,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    organization_id, role = _membership(current_user, db)
+    if role not in REVIEW_ROLES:
+        raise HTTPException(status_code=403, detail="Curator or reviewer permission is required.")
+    claim = db.execute(text("""
+        SELECT id, submitted_by FROM laboratory_capability_claims
+        WHERE id=:id AND organization_id=:org AND review_status='in_review'
+        FOR UPDATE
+    """), {"id": claim_id, "org": organization_id}).mappings().first()
+    if not claim:
+        raise HTTPException(status_code=404, detail="Laboratory capability review not found in this organization.")
+    if str(claim["submitted_by"]) == current_user["id"]:
+        raise HTTPException(status_code=409, detail="A submitter cannot review their own laboratory capability claim.")
+    db.execute(text("""
+        INSERT INTO laboratory_capability_decisions
+            (claim_id, organization_id, reviewer_id, decision, rationale)
+        VALUES (:claim, :org, :reviewer, :decision, :rationale)
+    """), {"claim": claim_id, "org": organization_id, "reviewer": current_user["id"],
+           "decision": payload.decision, "rationale": payload.rationale.strip()})
+    new_status = "verified" if payload.decision == "verified" else ("rejected" if payload.decision == "rejected" else "draft")
+    db.execute(text("""
+        UPDATE laboratory_capability_claims
+        SET review_status=:status, reviewed_by=:reviewer, reviewed_at=now()
+        WHERE id=:claim
+    """), {"status": new_status, "reviewer": current_user["id"], "claim": claim_id})
+    db.execute(text("""
+        INSERT INTO audit_events (actor_user_id, organization_id, action, entity_type, entity_id, event_metadata)
+        VALUES (:actor, :org, 'laboratory_capability_decided',
+                'laboratory_capability_claim', :id,
+                jsonb_build_object('decision', :decision))
+    """), {"actor": current_user["id"], "org": organization_id, "id": claim_id,
+           "decision": payload.decision})
+    db.commit()
+    return {"claim_id": str(claim_id), "review_status": new_status, "decision": payload.decision,
+            "note": "Curation verifies the sourced capability claim only; it does not validate the analytical method or confirm current laboratory capacity."}

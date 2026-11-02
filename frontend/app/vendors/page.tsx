@@ -16,6 +16,9 @@ type VendorSubmissionOption = { id: string; legal_name: string; review_status: s
 type VendorSiteReview = { id: string; vendor_id: string; legal_name: string; site_name: string; address: string; country_code: string; site_scope: string; source_name: string; source_identifier: string; source_url: string };
 type StarterCandidate = { legal_name: string; website_url: string; country_code: string; vendor_type: string; source_name: string; source_identifier: string; source_url: string; evidence_scope: string; identity_source?: {source_name:string;source_identifier:string;source_url:string;evidence_scope:string} };
 type StarterImportResult = {created_count:number;skipped_count:number;created:{id:string;legal_name:string;review_status:string;verification_status:string}[];skipped:{legal_name:string;reason:string}[]};
+type FacilityCandidate = {site_name:string;address:string;country_code:string;site_scope:string;source_name:string;source_identifier:string;source_url:string};
+type FacilityManifest = {groups:{vendor_name:string;candidates:FacilityCandidate[]}[]};
+type FacilityImportResult = {created_count:number;skipped_count:number;created:{id:string;site_name:string;review_status:string}[];skipped:{site_name:string;reason:string}[]};
 
 export default function VendorsPage() {
   const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -49,6 +52,9 @@ export default function VendorsPage() {
   const [busy, setBusy] = useState(false);
   const [starterManifest, setStarterManifest] = useState<{candidates:StarterCandidate[]}|null>(null);
   const [starterImportResult, setStarterImportResult] = useState<StarterImportResult|null>(null);
+  const [facilityManifest, setFacilityManifest] = useState<FacilityManifest|null>(null);
+  const [facilityVendorId, setFacilityVendorId] = useState("");
+  const [facilityImportResult, setFacilityImportResult] = useState<FacilityImportResult|null>(null);
   const field = "w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-sm text-slate-100";
   const label = "mb-2 block text-xs text-slate-300";
 

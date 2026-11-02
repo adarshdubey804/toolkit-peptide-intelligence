@@ -204,6 +204,37 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
         """)).scalar_one()
         assert batch_form_required == "NO", "A vendor offering must identify its exact chemical form"
 
+        rls_tables = (
+            "vendor_material_offerings",
+            "vendor_material_batches",
+            "batch_analytical_test_results",
+            "batch_analytical_test_result_decisions",
+        )
+        for table_name in rls_tables:
+            rls_state = connection.execute(text("""
+                SELECT relrowsecurity, relforcerowsecurity
+                FROM pg_class WHERE oid=to_regclass(:table_name)
+            """), {"table_name": f"public.{table_name}"}).one()
+            assert rls_state == (True, True), f"RLS and FORCE RLS must be enabled for {table_name}"
+
+        required_policies = connection.execute(text("""
+            SELECT count(*) FROM pg_policies
+            WHERE schemaname='public' AND policyname IN (
+                'vendor_material_offerings_select_scope',
+                'vendor_material_offerings_insert_scope',
+                'vendor_material_offerings_update_scope',
+                'vendor_material_batches_select_scope',
+                'vendor_material_batches_insert_scope',
+                'vendor_material_batches_update_scope',
+                'batch_analytical_test_results_select_scope',
+                'batch_analytical_test_results_insert_scope',
+                'batch_analytical_test_results_update_scope',
+                'batch_analytical_test_result_decisions_select_scope',
+                'batch_analytical_test_result_decisions_insert_scope'
+            )
+        """)).scalar_one()
+        assert required_policies == 11, "All vendor material traceability access paths need explicit RLS policies"
+
 @pytest.mark.skipif(
     os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",
     reason="PostgreSQL audit-chain integration test is enabled in CI only.",
@@ -257,3 +288,28 @@ def test_audit_chain_appends_sequentially_and_rejects_mutation():
                     """), {"event_id": second["id"]})
 
             fixture.rollback()
+
+@pytest.mark.skipif(
+    os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",
+    reason="PostgreSQL transaction-local tenant context test is enabled in CI only.",
+)
+def test_organization_context_is_transaction_local_and_clears_on_commit():
+    organization_id = str(uuid4())
+    with engine.connect() as connection:
+        with connection.begin():
+            bound = connection.execute(text("""
+                SELECT set_config('app.organization_id', :organization_id, true)
+            """), {"organization_id": organization_id}).scalar_one()
+            assert bound == organization_id
+            current = connection.execute(text(
+                "SELECT current_setting('app.organization_id', true)"
+            )).scalar_one()
+            assert current == organization_id
+
+        with connection.begin():
+            current = connection.execute(text(
+                "SELECT current_setting('app.organization_id', true)"
+            )).scalar_one_or_none()
+            assert current is None, "Transaction-local organization context must not leak through the connection pool"
+
+

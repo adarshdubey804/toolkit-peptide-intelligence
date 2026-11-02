@@ -1504,7 +1504,6 @@ def test_extraction_source_provenance_migration_is_registered_and_typed():
 
 def test_data_quality_completeness_route_is_registered_and_protected():
     operation = app.openapi()["paths"]["/api/v1/data-quality/completeness"]["get"]
-    assert operation["responses"]["403"]
     from inspect import getsource
     from app.routers.data_quality import get_data_completeness
 

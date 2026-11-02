@@ -775,7 +775,7 @@ def test_formulation_and_process_rls_inherit_parent_visibility():
             "formulation_sources", "formulation_review_decisions", "process_knowledge_profiles",
             "process_knowledge_stages", "process_knowledge_sources", "process_knowledge_decisions",
         ):
-            connection.exec_driver_sql(f"GRANT SELECT ON {table} TO toolkit_knowledge_rls_test")
+            connection.exec_driver_sql(f"GRANT SELECT, INSERT, UPDATE ON {table} TO toolkit_knowledge_rls_test")
 
         with connection.begin_nested():
             connection.exec_driver_sql("SET LOCAL ROLE toolkit_knowledge_rls_test")
@@ -790,6 +790,59 @@ def test_formulation_and_process_rls_inherit_parent_visibility():
             assert set(connection.execute(text("SELECT profile_id FROM process_knowledge_stages")).scalars()) == {process_a, process_public}
             assert set(connection.execute(text("SELECT profile_id FROM process_knowledge_sources")).scalars()) == {process_a, process_public}
             assert set(connection.execute(text("SELECT profile_id FROM process_knowledge_decisions")).scalars()) == {process_a}
+
+            # Direct-ID writes against another organization's parent or children must fail.
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO formulation_profiles (
+                            formulation_name, formulation_type, intended_research_context,
+                            formulation_rationale, limitations, submitted_by,
+                            owner_organization_id, visibility_scope
+                        ) VALUES ('Cross-tenant formulation', 'research', 'test',
+                                  'must fail', 'must fail', :submitter, :owner, 'organization')
+                    """), {"submitter": user_a, "owner": org_b})
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO formulation_components (formulation_id, component_name, component_role)
+                        VALUES (:form, 'Cross-tenant component', 'buffer')
+                    """), {"form": form_b})
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO formulation_review_decisions (
+                            formulation_id, organization_id, reviewer_id, decision, rationale
+                        ) VALUES (:form, :org, :reviewer, 'verified', 'must fail')
+                    """), {"form": form_b, "org": org_a, "reviewer": user_a})
+
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO process_knowledge_profiles (
+                            profile_title, process_platform, development_context, process_overview,
+                            limitations, submitted_by, owner_organization_id, visibility_scope
+                        ) VALUES ('Cross-tenant process', 'research', 'test', 'must fail',
+                                  'must fail', :submitter, :owner, 'organization')
+                    """), {"submitter": user_a, "owner": org_b})
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO process_knowledge_stages (
+                            profile_id, stage_name, stage_category, scientific_purpose
+                        ) VALUES (:profile, 'Cross-tenant stage', 'analytical', 'must fail')
+                    """), {"profile": process_b})
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO process_knowledge_decisions (
+                            profile_id, organization_id, reviewer_id, decision, rationale
+                        ) VALUES (:profile, :org, :reviewer, 'verified', 'must fail')
+                    """), {"profile": process_b, "org": org_a, "reviewer": user_a})
+
+            connection.execute(text("UPDATE formulation_components SET review_status='verified' WHERE formulation_id=:id"), {"id": form_a})
+            connection.execute(text("UPDATE formulation_stability_observations SET review_status='verified' WHERE formulation_id=:id"), {"id": form_a})
+            connection.execute(text("UPDATE process_knowledge_stages SET review_status='verified' WHERE profile_id=:id"), {"id": process_a})
 
             connection.execute(text("SELECT set_config('app.organization_id', '', true)"))
             assert set(connection.execute(text("SELECT id FROM formulation_profiles")).scalars()) == {form_public}

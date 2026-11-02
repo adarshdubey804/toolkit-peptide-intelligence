@@ -75,6 +75,7 @@ USING (
             WHERE vendor.id=vendor_sites.vendor_id
               AND vendor.verification_status='verified'
               AND vendor.review_status='verified'
+              AND vendor_sites.organization_id=vendor.organization_id
         )
     )
     OR organization_id = NULLIF(current_setting('app.organization_id', true), '')::uuid
@@ -167,7 +168,10 @@ USING (
                       vendor_certifications.site_id IS NULL
                       OR EXISTS (
                           SELECT 1 FROM vendor_sites site
-                          WHERE site.id=vendor_certifications.site_id AND site.review_status='verified'
+                          WHERE site.id=vendor_certifications.site_id
+                            AND site.vendor_id=vendor_certifications.vendor_id
+                            AND site.organization_id=vendor.organization_id
+                            AND site.review_status='verified'
                       )
                   )
               )

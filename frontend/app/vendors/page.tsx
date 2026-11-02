@@ -16,7 +16,7 @@ type VendorSubmissionOption = { id: string; legal_name: string; review_status: s
 type VendorSiteReview = { id: string; vendor_id: string; legal_name: string; site_name: string; address: string; country_code: string; site_scope: string; source_name: string; source_identifier: string; source_url: string };
 type StarterCandidate = { legal_name: string; website_url: string; country_code: string; vendor_type: string; source_name: string; source_identifier: string; source_url: string; evidence_scope: string; identity_source?: {source_name:string;source_identifier:string;source_url:string;evidence_scope:string} };
 type StarterImportResult = {created_count:number;skipped_count:number;created:{id:string;legal_name:string;review_status:string;verification_status:string}[];skipped:{legal_name:string;reason:string}[]};
-type FacilityCandidate = {site_name:string;address:string;country_code:string;site_scope:string;source_name:string;source_identifier:string;source_url:string};
+type FacilityCandidate = {site_name:string;address:string;country_code:string;site_scope:string;source_name:string;source_identifier:string;source_url:string;additional_sources?:{source_name:string;source_identifier:string;source_url:string;evidence_scope:string}[]};
 type FacilityManifest = {groups:{vendor_name:string;candidates:FacilityCandidate[]}[]};
 type FacilityImportResult = {created_count:number;skipped_count:number;created:{id:string;site_name:string;review_status:string}[];skipped:{site_name:string;reason:string}[]};
 

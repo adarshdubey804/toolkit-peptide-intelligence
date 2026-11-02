@@ -1,7 +1,8 @@
 from collections import Counter
 from math import log10
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from ..rate_limit_dependencies import public_request_rate_limit
 from pydantic import BaseModel, Field, field_validator
 
 router = APIRouter(prefix="/api/v1/bioinformatics", tags=["bioinformatics"])
@@ -91,7 +92,7 @@ class AlignmentRequest(BaseModel):
             raise ValueError(str(exc)) from exc
 
 
-@router.post("/analyze")
+@router.post("/analyze", dependencies=[Depends(public_request_rate_limit("bioinformatics_compute", 10))])
 def analyze_sequence(payload: SequenceRequest):
     sequence = payload.sequence
     counts = Counter(sequence)
@@ -124,7 +125,7 @@ def analyze_sequence(payload: SequenceRequest):
     }
 
 
-@router.post("/align")
+@router.post("/align", dependencies=[Depends(public_request_rate_limit("bioinformatics_compute", 10))])
 def align_sequences(payload: AlignmentRequest):
     a, b = payload.sequence_a, payload.sequence_b
     n, m = len(a), len(b)

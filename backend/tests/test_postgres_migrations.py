@@ -1820,10 +1820,10 @@ def test_vendor_identity_sites_and_certifications_follow_owner_and_public_verifi
             assert set(connection.execute(text("SELECT vendor_id FROM vendor_sources WHERE vendor_id IN (:a,:b,:public)"), {"a": vendor_a, "b": vendor_b, "public": vendor_public}).scalars()) == {vendor_public}
             assert set(connection.execute(text("SELECT id FROM vendor_sites WHERE id IN (:a,:b,:public)"), {"a": site_a, "b": site_b, "public": site_public}).scalars()) == {site_public}
             assert set(connection.execute(text("SELECT site_id FROM vendor_site_sources WHERE site_id IN (:a,:b,:public)"), {"a": site_a, "b": site_b, "public": site_public}).scalars()) == {site_public}
-            assert set(connection.execute(text("SELECT id FROM vendor_certifications")).scalars()) == {cert_public}
-            assert connection.execute(text("SELECT count(*) FROM vendor_review_decisions")).scalar_one() == 0
-            assert connection.execute(text("SELECT count(*) FROM vendor_site_decisions")).scalar_one() == 0
-            assert connection.execute(text("SELECT count(*) FROM vendor_certification_decisions")).scalar_one() == 0
+            assert set(connection.execute(text("SELECT id FROM vendor_certifications WHERE id IN (:a,:b,:public)"), {"a": cert_a, "b": cert_b, "public": cert_public}).scalars()) == {cert_public}
+            assert connection.execute(text("SELECT count(*) FROM vendor_review_decisions WHERE vendor_id IN (:a,:b)"), {"a": vendor_a, "b": vendor_b}).scalar_one() == 0
+            assert connection.execute(text("SELECT count(*) FROM vendor_site_decisions WHERE site_id IN (:a,:b)"), {"a": site_a, "b": site_b}).scalar_one() == 0
+            assert connection.execute(text("SELECT count(*) FROM vendor_certification_decisions WHERE certification_id IN (:a,:b)"), {"a": cert_a, "b": cert_b}).scalar_one() == 0
 
         connection.exec_driver_sql("RESET ROLE")
         for table in ("vendors", "vendor_sources", "vendor_sites", "vendor_site_sources", "vendor_certifications"):

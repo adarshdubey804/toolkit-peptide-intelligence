@@ -4,7 +4,7 @@ from typing import Annotated
 from uuid import UUID
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, Field, field_validator
 from pwdlib import PasswordHash
@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..db import get_db
+from ..rate_limit import enforce_rate_limit, request_client_identity
 
 router = APIRouter(prefix="/api/v1/auth", tags=["authentication"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
@@ -86,10 +87,15 @@ def _load_user(db: Session, email: str, organization_id: UUID | None = None):
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
-def register(payload: RegisterRequest, db: Annotated[Session, Depends(get_db)]):
+def register(payload: RegisterRequest, request: Request, db: Annotated[Session, Depends(get_db)]):
     """Create a researcher account and a private organization workspace."""
     if len(settings.app_secret_key) < 32:
         raise HTTPException(status_code=503, detail="Authentication is not configured with a sufficiently long application secret.")
+    enforce_rate_limit(
+        db, scope="registration", identity=request_client_identity(request),
+        limit=settings.registration_rate_limit_per_window,
+        window_seconds=settings.rate_limit_window_seconds,
+    )
     try:
         with db.begin():
             organization_id = db.execute(
@@ -122,8 +128,15 @@ def register(payload: RegisterRequest, db: Annotated[Session, Depends(get_db)]):
 
 
 @router.post("/login")
-def login(payload: LoginRequest, db: Annotated[Session, Depends(get_db)]):
+def login(payload: LoginRequest, request: Request, db: Annotated[Session, Depends(get_db)]):
     if len(settings.app_secret_key) < 32:
+        raise HTTPException(status_code=503, detail="Authentication is not configured with a sufficiently long application secret.")
+    enforce_rate_limit(
+        db, scope="login", identity=request_client_identity(request),
+        limit=settings.login_rate_limit_per_window,
+        window_seconds=settings.rate_limit_window_seconds,
+    )
+    if False:
         raise HTTPException(status_code=503, detail="Authentication is not configured with a sufficiently long application secret.")
     user = _load_user(db, payload.email.strip().lower(), payload.organization_id)
     # A stale or revoked browser preference must not lock a legitimate user out;

@@ -1337,6 +1337,7 @@ def test_agent_sessions_and_messages_are_private_to_user_and_organization():
                         VALUES (:session,'user','Cross-user message attempt.')
                     """), {"session": session_b})
             connection.execute(text("UPDATE agent_sessions SET status='archived' WHERE id=:id"), {"id": session_a})
+            assert connection.execute(text("UPDATE agent_sessions SET status='archived' WHERE id=:id"), {"id": session_b}).rowcount == 0
 
             connection.execute(text("SELECT set_config('app.user_id',:user,true)"), {"user": str(user_b)})
             assert set(connection.execute(text("SELECT id FROM agent_sessions")).scalars()) == {session_b}

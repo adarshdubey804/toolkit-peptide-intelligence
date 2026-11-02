@@ -105,11 +105,15 @@ def list_reviews(
         SELECT cr.id, cr.entity_type, cr.entity_id, cr.source_record_id,
                cr.review_status, cr.priority, cr.assigned_to, cr.submitted_by,
                cr.reviewed_by, cr.reviewed_at, cr.created_at, cr.updated_at,
+               cr.evidence_claim_revision_id,
+               revision.revision_number AS evidence_claim_revision_number,
+               revision.content_hash AS evidence_claim_revision_hash,
                COALESCE(p.preferred_name, ec.claim_text) AS record_label,
                sr.source_name, sr.source_identifier, sr.source_url
         FROM curation_reviews cr
         LEFT JOIN peptides p ON cr.entity_type = 'peptide' AND p.id = cr.entity_id
         LEFT JOIN evidence_claims ec ON cr.entity_type = 'evidence_claim' AND ec.id = cr.entity_id
+        LEFT JOIN evidence_claim_revisions revision ON revision.id = cr.evidence_claim_revision_id
         LEFT JOIN source_records sr ON sr.id = cr.source_record_id
         WHERE (:review_status IS NULL OR cr.review_status = CAST(:review_status AS review_status))
           AND cr.owner_organization_id = :organization_id
@@ -118,6 +122,68 @@ def list_reviews(
         LIMIT :limit
     """), {"review_status": review_status, "limit": limit, "organization_id": organization_id}).mappings().all()
     return {"reviews": [dict(row) for row in rows], "count": len(rows)}
+
+
+
+@router.get("/claims/{claim_id}/revisions")
+def list_claim_revisions(
+    claim_id: UUID,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """List immutable claim snapshots visible through this organization's curation workflow."""
+    organization_id, role = _membership(current_user, db)
+    _require_reviewer_role(role)
+    has_review = db.execute(text("""
+        SELECT 1 FROM curation_reviews
+        WHERE entity_type='evidence_claim' AND entity_id=:claim_id
+          AND owner_organization_id=:org
+        LIMIT 1
+    """), {"claim_id": claim_id, "org": organization_id}).first()
+    if not has_review:
+        raise HTTPException(status_code=404, detail="Evidence claim not found in this organization.")
+    rows = db.execute(text("""
+        SELECT revision.id, revision.claim_id, revision.revision_number,
+               revision.claim_text, revision.claim_domain, revision.evidence_type,
+               revision.confidence_label, revision.limitations, revision.content_hash,
+               revision.revision_origin, revision.supersedes_revision_id, revision.created_at,
+               COUNT(decision.id) FILTER (WHERE decision.owner_organization_id=:org) AS decision_count
+        FROM evidence_claim_revisions revision
+        LEFT JOIN curation_decisions decision
+          ON decision.evidence_claim_revision_id=revision.id
+         AND decision.owner_organization_id=:org
+        WHERE revision.claim_id=:claim_id
+        GROUP BY revision.id
+        ORDER BY revision.revision_number DESC
+    """), {"claim_id": claim_id, "org": organization_id}).mappings().all()
+    return {"items": [dict(row) for row in rows], "count": len(rows)}
+
+
+@router.get("/reviews/{review_id}/claim-revision")
+def get_review_claim_revision(
+    review_id: UUID,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """Return the exact immutable evidence claim snapshot currently under review."""
+    organization_id, role = _membership(current_user, db)
+    _require_reviewer_role(role)
+    row = db.execute(text("""
+        SELECT revision.id, revision.claim_id, revision.revision_number,
+               revision.claim_text, revision.claim_domain, revision.evidence_type,
+               revision.confidence_label, revision.limitations, revision.content_hash,
+               revision.revision_origin, revision.supersedes_revision_id, revision.created_at
+        FROM curation_reviews review
+        JOIN evidence_claim_revisions revision
+          ON revision.id=review.evidence_claim_revision_id
+         AND revision.claim_id=review.entity_id
+        WHERE review.id=:review_id
+          AND review.entity_type='evidence_claim'
+          AND review.owner_organization_id=:org
+    """), {"review_id": review_id, "org": organization_id}).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Evidence-claim revision not found in this organization's review.")
+    return dict(row)
 
 
 @router.patch("/reviews/{review_id}/assignment")
@@ -210,7 +276,8 @@ def decide_review(
         INSERT INTO curation_decisions
             (review_id, owner_organization_id, decision, rationale, reviewer_id, previous_status, new_status)
         VALUES (:review_id, :org, :decision, :rationale, :reviewer, :previous_status, :new_status)
-        RETURNING id, review_id, decision, rationale, reviewer_id, decided_at, previous_status, new_status
+        RETURNING id, review_id, decision, rationale, reviewer_id, decided_at, previous_status, new_status,
+                  evidence_claim_revision_id
     """), {"review_id": review_id, "decision": payload.decision, "rationale": payload.rationale.strip(),
            "reviewer": current_user["id"], "previous_status": review["review_status"], "new_status": new_status,
            "org": organization_id}).mappings().one()

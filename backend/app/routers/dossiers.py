@@ -174,7 +174,7 @@ def create_peptide_dossier(
                 (organization_id, entity_type, entity_id, source_record_id, review_status, priority, submitted_by)
             VALUES (:org, 'peptide', :peptide_id, :source_id, 'in_review', 'normal', :submitter)
             RETURNING id
-        """), {"peptide_id": peptide_id, "source_id": source_id, "submitter": current_user["id"]}).scalar_one()
+        """), {"org": current_user["organization_id"], "peptide_id": peptide_id, "source_id": source_id, "submitter": current_user["id"]}).scalar_one()
 
         db.execute(text("""
             INSERT INTO audit_events (actor_user_id, organization_id, action, entity_type, entity_id, event_metadata)

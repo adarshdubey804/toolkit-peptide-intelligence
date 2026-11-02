@@ -8,6 +8,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..db import get_db
+from ..rate_limit_dependencies import authenticated_write_rate_limit
 from .auth import get_current_user
 
 router = APIRouter(prefix="/api/v1/formulations", tags=["formulation and stability intelligence"])
@@ -135,7 +136,7 @@ def list_formulations(
             "scope": "Curator-reviewed formulation records and individually reviewed components or observations only. Research information, not executable formulation instructions."}
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("formulation_write"))])
 def submit_formulation(
     payload: FormulationSubmission,
     current_user: Annotated[dict, Depends(get_current_user)],
@@ -263,7 +264,7 @@ def formulation_review_queue(
     return {"items": [dict(row) for row in rows], "count": len(rows)}
 
 
-@router.post("/{formulation_id}/decisions", status_code=201)
+@router.post("/{formulation_id}/decisions", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("formulation_write"))])
 def decide_formulation(
     formulation_id: UUID,
     payload: FormulationDecision,

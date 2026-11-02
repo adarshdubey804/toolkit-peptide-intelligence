@@ -1480,3 +1480,14 @@ def test_chemical_form_scope_helper_rejects_missing_or_mismatched_parent():
     with pytest.raises(HTTPException) as no_parent:
         _validate_chemical_form_scope(FakeDatabase(peptide_id), None, form_id)
     assert no_parent.value.status_code == 422
+
+
+def test_evidence_claim_revision_schema_and_curation_contract():
+    migration = MIGRATIONS_DIR / "055_evidence_claim_revision_history.sql"
+    sql = migration.read_text(encoding="utf-8")
+    assert "evidence_claim_revisions" in sql
+    assert "content_hash CHAR(64)" in sql
+    assert "evidence_claim_revision_id" in sql
+    assert "capture_evidence_claim_revision" in sql
+    assert "bind_curation_decision_to_claim_revision" in sql
+    assert "BEFORE UPDATE OR DELETE ON evidence_claim_revisions" in sql

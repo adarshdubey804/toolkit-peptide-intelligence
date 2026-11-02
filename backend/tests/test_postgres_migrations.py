@@ -3279,6 +3279,28 @@ def test_regulatory_source_registry_is_tenant_scoped_and_scheduler_is_column_lim
         connection.execute(text("SELECT set_config('app.organization_id','',true)"))
         connection.execute(text("SELECT set_config('app.user_id','',true)"))
 
+        user_role = "toolkit_reg_source_user_test"
+        connection.exec_driver_sql(f"CREATE ROLE {user_role} NOLOGIN NOBYPASSRLS")
+        connection.exec_driver_sql("GRANT USAGE ON SCHEMA public TO toolkit_reg_source_user_test")
+        connection.exec_driver_sql("GRANT SELECT, INSERT, UPDATE ON regulatory_source_registry TO toolkit_reg_source_user_test")
+
+        with connection.begin_nested():
+            connection.exec_driver_sql("SET LOCAL ROLE toolkit_reg_source_user_test")
+            connection.execute(text("SELECT set_config('app.organization_id',:org,true)"), {"org": str(org_a)})
+            assert set(connection.execute(text(
+                "SELECT id FROM regulatory_source_registry WHERE id IN (:a,:b)"
+            ), {"a": source_a, "b": source_b}).scalars()) == {source_a}
+            assert connection.execute(text("SELECT id FROM regulatory_source_registry WHERE id=:id"),
+                                      {"id": source_b}).scalar_one_or_none() is None
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO regulatory_source_registry
+                        (organization_id,authority,jurisdiction,source_name,source_type,feed_url,official_domain,description,created_by)
+                        VALUES (:org,'Cross tenant','Global','Cross tenant','rss','https://example.org/cross','example.org','Must fail',:user)
+                    """), {"org": org_b, "user": user_a})
+            connection.exec_driver_sql("RESET ROLE")
+
         with connection.begin_nested():
             connection.exec_driver_sql("SET LOCAL ROLE toolkit_regulatory_scheduler")
             assert set(connection.execute(text(
@@ -3328,3 +3350,6 @@ def test_regulatory_source_registry_is_tenant_scoped_and_scheduler_is_column_lim
             assert connection.execute(text("SELECT count(*) FROM audit_chain_heads")).scalar_one() == 0
 
         connection.exec_driver_sql("RESET ROLE")
+        connection.exec_driver_sql("REVOKE SELECT, INSERT, UPDATE ON regulatory_source_registry FROM toolkit_reg_source_user_test")
+        connection.exec_driver_sql("REVOKE USAGE ON SCHEMA public FROM toolkit_reg_source_user_test")
+        connection.exec_driver_sql("DROP ROLE toolkit_reg_source_user_test")

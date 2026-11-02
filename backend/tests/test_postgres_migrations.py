@@ -2065,3 +2065,134 @@ def test_extraction_artifacts_are_isolated_and_parent_links_cannot_cross_tenants
                 extracted_evidence_records, extracted_evidence_field_decisions
             FROM toolkit_extraction_rls_test
         """)
+
+
+
+
+@pytest.mark.skipif(
+    os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",
+    reason="PostgreSQL enrichment artifact RLS test is enabled in CI only.",
+)
+def test_enrichment_candidates_decisions_and_runs_are_organization_scoped():
+    with engine.begin() as connection:
+        connection.execute(text("SELECT pg_advisory_xact_lock(731904221067)"))
+        apply_development_migrations(connection)
+        organization_a = connection.execute(text("""
+            INSERT INTO organizations (name, organization_type)
+            VALUES (:name, 'research_team') RETURNING id
+        """), {"name": "enrichment-rls-a-" + str(uuid4())}).scalar_one()
+        organization_b = connection.execute(text("""
+            INSERT INTO organizations (name, organization_type)
+            VALUES (:name, 'research_team') RETURNING id
+        """), {"name": "enrichment-rls-b-" + str(uuid4())}).scalar_one()
+        user = connection.execute(text("""
+            INSERT INTO user_profiles (display_name, role)
+            VALUES ('Enrichment RLS tester', 'researcher') RETURNING id
+        """)).scalar_one()
+        peptide = connection.execute(text("""
+            INSERT INTO peptides (preferred_name,review_status)
+            VALUES (:name,'in_review') RETURNING id
+        """), {"name": "Enrichment RLS peptide " + str(uuid4())}).scalar_one()
+
+        candidate_a = connection.execute(text("""
+            INSERT INTO enrichment_candidates (
+                organization_id,peptide_id,source_name,source_identifier,source_url,
+                title,match_basis,submitted_by
+            ) VALUES (:org,:peptide,'Fixture','A','https://example.org/a',
+                      'Tenant A candidate','manual',:user) RETURNING id
+        """), {"org": organization_a, "peptide": peptide, "user": user}).scalar_one()
+        candidate_b = connection.execute(text("""
+            INSERT INTO enrichment_candidates (
+                organization_id,peptide_id,source_name,source_identifier,source_url,
+                title,match_basis,submitted_by
+            ) VALUES (:org,:peptide,'Fixture','B','https://example.org/b',
+                      'Tenant B candidate','manual',:user) RETURNING id
+        """), {"org": organization_b, "peptide": peptide, "user": user}).scalar_one()
+        run_a = connection.execute(text("""
+            INSERT INTO enrichment_ingestion_runs (
+                organization_id,peptide_id,started_by,search_query,status
+            ) VALUES (:org,:peptide,:user,'Tenant A search','running') RETURNING id
+        """), {"org": organization_a, "peptide": peptide, "user": user}).scalar_one()
+        run_b = connection.execute(text("""
+            INSERT INTO enrichment_ingestion_runs (
+                organization_id,peptide_id,started_by,search_query,status
+            ) VALUES (:org,:peptide,:user,'Tenant B search','running') RETURNING id
+        """), {"org": organization_b, "peptide": peptide, "user": user}).scalar_one()
+
+        connection.exec_driver_sql("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='toolkit_enrichment_rls_test') THEN
+                    CREATE ROLE toolkit_enrichment_rls_test NOLOGIN;
+                END IF;
+            END $$
+        """)
+        connection.exec_driver_sql("""
+            GRANT SELECT, INSERT, UPDATE ON enrichment_candidates,
+                enrichment_ingestion_runs TO toolkit_enrichment_rls_test
+        """)
+        connection.exec_driver_sql("""
+            GRANT SELECT, INSERT ON enrichment_candidate_decisions
+            TO toolkit_enrichment_rls_test
+        """)
+        connection.exec_driver_sql("SET LOCAL ROLE toolkit_enrichment_rls_test")
+        connection.execute(text("SELECT set_config('app.organization_id', :org, true)"),
+                           {"org": str(organization_a)})
+
+        assert set(connection.execute(text("SELECT id FROM enrichment_candidates")).scalars()) == {candidate_a}
+        assert set(connection.execute(text("SELECT id FROM enrichment_ingestion_runs")).scalars()) == {run_a}
+        assert connection.execute(text(
+            "SELECT id FROM enrichment_candidates WHERE id=:id"
+        ), {"id": candidate_b}).scalar_one_or_none() is None
+        assert connection.execute(text(
+            "SELECT id FROM enrichment_ingestion_runs WHERE id=:id"
+        ), {"id": run_b}).scalar_one_or_none() is None
+
+        with pytest.raises(Exception):
+            with connection.begin_nested():
+                connection.execute(text("""
+                    INSERT INTO enrichment_candidates (
+                        organization_id,peptide_id,source_name,source_identifier,source_url,
+                        title,match_basis,submitted_by
+                    ) VALUES (:org,:peptide,'Fixture','cross','https://example.org/cross',
+                              'Cross-tenant candidate','manual',:user)
+                """), {"org": organization_b, "peptide": peptide, "user": user})
+
+        with pytest.raises(Exception):
+            with connection.begin_nested():
+                connection.execute(text("""
+                    INSERT INTO enrichment_candidate_decisions (
+                        candidate_id,organization_id,reviewer_id,decision,rationale
+                    ) VALUES (:candidate,:org,:user,'accepted',
+                              'Cross-tenant candidate decision must be rejected.')
+                """), {"candidate": candidate_b, "org": organization_a, "user": user})
+
+        connection.execute(text("""
+            INSERT INTO enrichment_candidate_decisions (
+                candidate_id,organization_id,reviewer_id,decision,rationale
+            ) VALUES (:candidate,:org,:user,'accepted',
+                      'Tenant A candidate was reviewed against its source.')
+        """), {"candidate": candidate_a, "org": organization_a, "user": user})
+        connection.execute(text("""
+            UPDATE enrichment_candidates
+            SET candidate_status='accepted',reviewed_by=:user,
+                review_rationale='Tenant A candidate was accepted.',reviewed_at=now()
+            WHERE id=:candidate
+        """), {"user": user, "candidate": candidate_a})
+        connection.execute(text("""
+            UPDATE enrichment_ingestion_runs
+            SET status='completed',finished_at=now(),candidate_count=1
+            WHERE id=:run
+        """), {"run": run_a})
+        assert connection.execute(text(
+            "SELECT COUNT(*) FROM enrichment_candidate_decisions"
+        )).scalar_one() == 1
+
+        connection.exec_driver_sql("RESET ROLE")
+        connection.exec_driver_sql("""
+            REVOKE SELECT, INSERT, UPDATE ON enrichment_candidates,
+                enrichment_ingestion_runs FROM toolkit_enrichment_rls_test
+        """)
+        connection.exec_driver_sql("""
+            REVOKE SELECT, INSERT ON enrichment_candidate_decisions
+            FROM toolkit_enrichment_rls_test
+        """)

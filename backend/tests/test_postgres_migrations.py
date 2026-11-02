@@ -1309,6 +1309,7 @@ def test_curation_reviews_and_decisions_are_organization_scoped():
         connection.exec_driver_sql("GRANT USAGE ON SCHEMA public TO toolkit_curation_rls_test")
         connection.exec_driver_sql("GRANT SELECT, INSERT, UPDATE ON curation_reviews TO toolkit_curation_rls_test")
         connection.exec_driver_sql("GRANT SELECT, INSERT ON curation_decisions TO toolkit_curation_rls_test")
+        connection.exec_driver_sql("GRANT SELECT ON evidence_claim_revisions TO toolkit_curation_rls_test")
 
         with connection.begin_nested():
             connection.exec_driver_sql("SET LOCAL ROLE toolkit_curation_rls_test")
@@ -1339,6 +1340,7 @@ def test_curation_reviews_and_decisions_are_organization_scoped():
         connection.exec_driver_sql("RESET ROLE")
         connection.exec_driver_sql("REVOKE SELECT, INSERT, UPDATE ON curation_reviews FROM toolkit_curation_rls_test")
         connection.exec_driver_sql("REVOKE SELECT, INSERT ON curation_decisions FROM toolkit_curation_rls_test")
+        connection.exec_driver_sql("REVOKE SELECT ON evidence_claim_revisions FROM toolkit_curation_rls_test")
         connection.exec_driver_sql("REVOKE USAGE ON SCHEMA public FROM toolkit_curation_rls_test")
         connection.exec_driver_sql("DROP ROLE toolkit_curation_rls_test")
 

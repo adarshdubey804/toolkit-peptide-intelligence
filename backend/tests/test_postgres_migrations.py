@@ -43,6 +43,7 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             "laboratory_capability_decisions",
             "analytical_test_catalogue",
             "analytical_test_catalogue_sources",
+            "analytical_test_catalogue_decisions",
         )
         for table_name in required_tables:
             exists = connection.execute(

@@ -92,6 +92,13 @@ class VendorSiteCandidate(BaseModel):
     source_identifier: str = Field(min_length=1, max_length=200)
     source_url: HttpUrl
 
+    @field_validator("source_url")
+    @classmethod
+    def facility_source_must_use_https(cls, value):
+        if value.scheme != "https":
+            raise ValueError("Facility evidence sources must use HTTPS.")
+        return value
+
 
 class VendorSiteCandidateBatch(BaseModel):
     candidates: list[VendorSiteCandidate] = Field(min_length=1, max_length=25)

@@ -117,6 +117,37 @@ export default function VendorsPage() {
     finally{setBusy(false);}
   }
 
+  async function previewFacilityBatch() {
+    setBusy(true);setError("");setMessage("");
+    try {
+      const response=await fetch("/vendor-facility-candidates/starter_batch_2026-11.json",{cache:"no-store"});
+      if(!response.ok)throw new Error("Facility candidate manifest could not be loaded.");
+      const data=await response.json();
+      if(!Array.isArray(data.groups)||data.groups.length===0)throw new Error("Facility candidate manifest is empty or invalid.");
+      setFacilityManifest(data);setFacilityImportResult(null);setFacilityVendorId("");
+      setMessage("Official facility candidates are ready for preview.");
+    } catch(e) { setError(e instanceof Error?e.message:"Facility candidate preview failed."); }
+    finally { setBusy(false); }
+  }
+
+  async function importFacilityBatch() {
+    if(!token||!facilityManifest||!facilityVendorId)return;
+    const vendor=organizationVendors.find(v=>v.id===facilityVendorId);
+    const group=facilityManifest.groups.find(g=>g.vendor_name===vendor?.legal_name);
+    if(!group){setError("The selected verified vendor does not match the facility manifest.");return;}
+    setBusy(true);setError("");setMessage("");
+    try {
+      const response=await fetch(API+"/api/v1/vendors/"+facilityVendorId+"/import-site-candidates",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify({candidates:group.candidates})});
+      const data=await response.json();
+      if(!response.ok)throw new Error(data.detail||"Facility candidate import failed.");
+      setFacilityImportResult(data);
+      setMessage(data.created_count+" facility candidate(s) submitted for review; "+data.skipped_count+" duplicate(s) skipped.");
+      await loadOrganizationOptions();
+      if(["organization_admin","curator","reviewer"].includes(role))await loadSiteReviews();
+    } catch(e) { setError(e instanceof Error?e.message:"Facility candidate import failed."); }
+    finally { setBusy(false); }
+  }
+
   async function submitVendor(e: FormEvent) {
     e.preventDefault(); if (!token) return; setBusy(true); setError(""); setMessage("");
     try {

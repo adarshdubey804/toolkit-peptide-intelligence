@@ -261,6 +261,12 @@ def switch_organization(
         raise HTTPException(status_code=404, detail="Active organization membership not found.")
 
     user = dict(membership)
+    # The audit event belongs to the target organization, not the previous
+    # organization context established while validating the current token.
+    db.execute(
+        text("SELECT set_config('app.organization_id', :organization_id, true)"),
+        {"organization_id": str(payload.organization_id)},
+    )
     db.execute(text("""
         INSERT INTO audit_events
             (actor_user_id, organization_id, action, entity_type, entity_id, event_metadata)

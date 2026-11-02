@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..db import get_db
+from ..services.source_persistence import persist_normalized_source_record
 from ..rate_limit import enforce_rate_limit, request_client_identity
 from ..integrations.alphafold import AlphaFoldProvider
 from ..integrations.clinicaltrials import ClinicalTrialsProvider
@@ -352,20 +353,35 @@ async def extract_structured_evidence(
     persisted = []
     for record in records:
         source = citation_map[record["source_citation_id"]]
+        source_snapshot = persist_normalized_source_record(
+            db,
+            source_name=source["source"],
+            source_identifier=source["identifier"],
+            source_url=source["url"],
+            title=source["title"],
+            payload=source,
+        )
         row = db.execute(text("""
             INSERT INTO extracted_evidence_records
               (organization_id,run_id,source_citation_id,source_name,source_identifier,
-               source_url,source_title,extraction,extraction_model)
-            VALUES(:org,:run,:citation,:source,:identifier,:url,:title,CAST(:extraction AS jsonb),:model)
-            RETURNING id,review_status,created_at
+               source_url,source_title,extraction,extraction_model,
+               source_record_id,source_record_version_id)
+            VALUES(:org,:run,:citation,:source,:identifier,:url,:title,CAST(:extraction AS jsonb),:model,
+                   :source_record_id,:source_record_version_id)
+            RETURNING id,review_status,created_at,source_record_id,source_record_version_id
         """), {
             "org": org, "run": run["id"], "citation": record["source_citation_id"],
             "source": source["source"], "identifier": source["identifier"],
             "url": source["url"], "title": source["title"],
             "extraction": json.dumps(record), "model": settings.ai_model,
+            "source_record_id": source_snapshot["source_record_id"],
+            "source_record_version_id": source_snapshot["source_record_version_id"],
         }).mappings().one()
         persisted.append({"id": str(row["id"]), "source_citation_id": record["source_citation_id"],
                           "source_title": source["title"], "extraction": record,
+                          "source_record_id": str(row["source_record_id"]),
+                          "source_record_version_id": str(row["source_record_version_id"]),
+                          "source_content_hash": source_snapshot["content_hash"],
                           "review_status": row["review_status"]})
     db.commit()
     return {
@@ -392,10 +408,16 @@ def get_structured_extraction_run(
     if not run:
         raise HTTPException(status_code=404, detail="Evidence extraction run not found.")
     rows = db.execute(text("""
-        SELECT id,source_citation_id,source_name,source_identifier,source_url,source_title,
-               extraction,review_status,created_at
-        FROM extracted_evidence_records
-        WHERE run_id=:run AND organization_id=:org ORDER BY created_at,id
+        SELECT record.id,record.source_citation_id,record.source_name,record.source_identifier,
+               record.source_url,record.source_title,record.extraction,record.review_status,
+               record.created_at,record.source_record_id,record.source_record_version_id,
+               version.content_hash AS source_content_hash,
+               version.payload_kind AS source_payload_kind,
+               version.captured_at AS source_version_captured_at
+        FROM extracted_evidence_records record
+        LEFT JOIN source_record_versions version ON version.id=record.source_record_version_id
+        WHERE record.run_id=:run AND record.organization_id=:org
+        ORDER BY record.created_at,record.id
     """), {"run": run_id, "org": org}).mappings().all()
     return {"run": dict(run), "records": [dict(row) for row in rows],
             "notice": "Extraction records remain unreviewed and are not promoted to verified evidence claims."}

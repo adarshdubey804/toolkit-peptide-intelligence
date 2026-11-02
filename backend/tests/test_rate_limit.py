@@ -13,6 +13,9 @@ class FakeResult:
     def scalar_one(self):
         return self.value
 
+    def scalar_one_or_none(self):
+        return self.value
+
 
 class FakeDB:
     def __init__(self, count, now):
@@ -52,6 +55,7 @@ def test_rate_limit_uses_database_clock_and_commits_shared_bucket():
     assert "ON CONFLICT (bucket_key) DO UPDATE" in insert_sql
     assert params["bucket_key"] == "login:192.0.2.10"
     assert params["window_started_at"] == datetime(2026, 11, 2, 10, 0, 0, tzinfo=timezone.utc)
+    assert "api_rate_limit_maintenance" in db.statements[3][0]
 
 
 def test_rate_limit_returns_429_and_retry_after_when_exceeded():

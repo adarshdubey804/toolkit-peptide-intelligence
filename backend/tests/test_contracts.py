@@ -1583,3 +1583,23 @@ def test_data_quality_router_is_registered_exactly_once():
     source = (Path(__file__).resolve().parents[1] / "app" / "main.py").read_text(encoding="utf-8")
     assert source.count("from .routers.data_quality import router as data_quality_router") == 1
     assert source.count("app.include_router(data_quality_router)") == 1
+
+
+def test_all_sensitive_write_routes_have_per_user_rate_limit_dependencies():
+    from app.routers.analytical_methods import router as analytical_router
+    from app.routers.enrichment import router as enrichment_router
+    from app.routers.vendors import router as vendor_router
+
+    expected = (
+        (enrichment_router, "enrichment_write"),
+        (vendor_router, "vendor_write"),
+        (analytical_router, "analytical_write"),
+    )
+    for router, scope in expected:
+        post_routes = [route for route in router.routes if "POST" in getattr(route, "methods", set())]
+        assert post_routes
+        for route in post_routes:
+            assert any(
+                getattr(dependency.call, "rate_limit_scope", None) == scope
+                for dependency in route.dependant.dependencies
+            ), f"{route.path} is missing its {scope} rate limit"

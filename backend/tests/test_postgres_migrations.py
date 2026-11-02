@@ -52,7 +52,11 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             "analytical_test_framework_links",
             "api_rate_limit_buckets",
             "api_rate_limit_maintenance",
-            "audit_chain_heads",\n            "vendor_material_offerings",\n            "vendor_material_batches",\n            "batch_analytical_test_results",\n            "batch_analytical_test_result_decisions",
+            "audit_chain_heads",
+            "vendor_material_offerings",
+            "vendor_material_batches",
+            "batch_analytical_test_results",
+            "batch_analytical_test_result_decisions",
         )
         for table_name in required_tables:
             exists = connection.execute(

@@ -1,7 +1,7 @@
 # Database Architecture Audit
 
 **Audit date:** 2026-11-02  
-**Scope:** Repository schema and application access patterns on `main`, migrations 001–037, and relevant backend routers.  
+**Scope:** Repository schema and application access patterns on `main`, migrations 001–038, and relevant backend routers.  
 **Important limitation:** This is a repository-level architecture review. It does not establish the live PostgreSQL database's current schema, data quality, query plans, backup state, or deployment configuration. Those require access to the deployed database and environment.
 
 ## Executive assessment
@@ -27,17 +27,28 @@ It is not yet ready to be treated as a complete, production-grade scientific dat
 
 ### P0 — Tenant ownership is not consistently explicit
 
-The schema mixes global reference data with organization-submitted content, but the ownership/promotion contract is not consistently represented in the row itself.
+The schema mixes global reference data with organization-submitted content. Migration 038 now adds explicit organization ownership to curation reviews/decisions, analytical methods, formulation profiles, process-knowledge profiles, and molecular-interaction assessments; the corresponding submission and review queries use that stored owner rather than inferring it from current submitter memberships. The ownership/promotion contract is improved but not yet complete across every domain.
 
 Examples:
 - `peptides`, `publications`, `targets`, `pathways`, and source registry records are naturally candidates for shared global master data.
 - Vendor records gain an `organization_id` in later migrations.
-- Formulation and process-knowledge parent records identify submitters, while review decisions carry an organization ID. Some review queries infer organization ownership by joining the submitter to current active membership.
-- Curation reviews similarly rely on submitter membership for organization scoping.
+- Before migration 038, formulation, process-knowledge, analytical-method, molecular-interaction, and curation-review queries inferred organization scope from the submitter's current memberships. A user with multiple active memberships could therefore expose the same submission in more than one organization's review queue.
 
-This can make ownership depend on a user's current membership. If a submitter is suspended, leaves an organization, or changes organization, records can become difficult to discover or their ownership can become ambiguous.
+Migration 038 now records owner organization IDs on these parent submission/review tables. It backfills from audit events first, then only from users with exactly one membership row. Ambiguous legacy rows remain NULL and are intentionally excluded from organization review queues until manually resolved; ownership is never guessed from a multi-organization user's current memberships.
 
-**Required design:** Every contributed record must have an explicit immutable `owner_organization_id` (or an explicit global/system owner), plus an explicit visibility/publication state. Membership should authorize access to the owner organization; it should not be the only stored evidence of ownership. Public promotion should be a separate, reviewed transition. Avoid adding `organization_id` indiscriminately to shared master tables.
+**Required design:** Continue extending explicit immutable ownership to any remaining standalone organization submissions. Child records should inherit access through an explicitly owned parent with enforced foreign keys. Vendor services/certifications inherit their owner through the organization-owned vendor; regulatory versions/change events inherit through organization-owned guidance. Shared master tables (peptides, publications, targets, pathways, source records) must not be assigned arbitrary tenant ownership. Public promotion remains a separate reviewed transition.
+
+
+### Current ownership map after migration 038
+
+| Data class | Tables / families | Ownership rule |
+|---|---|---|
+| Organization-owned submissions | curation reviews and decisions, analytical methods, formulation profiles, process-knowledge profiles, molecular-interaction assessments, vendor records, laboratory claims, regulatory guidance, extraction runs, peptide applicability | Store organization ID on the parent submission; enforce it in reads, decisions and updates. |
+| Parent-inherited child records | formulation components/observations/sources, process stages/sources, interaction sources, vendor services/certifications, regulatory versions/change events | Resolve access through the explicitly owned parent and verify that child-to-parent links cannot cross organizations. |
+| Shared scientific master | canonical peptide records, aliases/sequences/properties, targets, pathways, publications, source records and curated public reference catalogues | System/global records; draft submissions are accessed through their organization-owned review request and public visibility follows reviewed promotion. |
+| Operational / append-only | migration ledger, rate-limit buckets, audit chain heads and audit events | Platform operations or append-only history; not ordinary tenant-owned scientific content. |
+
+Legacy rows whose owner cannot be attributed safely are deliberately left without an organization ID and are not shown in tenant review queues. A controlled remediation process is required; do not auto-assign them to the submitter's current organization.
 
 ### P0 — Tenant isolation is application-enforced, not visibly database-enforced
 
@@ -114,7 +125,7 @@ A record should not become globally visible merely because a reviewer changed it
 
 1. **Validate merged migrations 036–037 in the target deployment environment**; verify shared rate-limit behavior, audit-chain append/immutability/integrity, and rollback/backup strategy against the actual PostgreSQL version and role permissions.
 2. **Create a schema inventory and ownership matrix** for every table: global, organization-owned, derived/cache, append-only history, or operational.
-3. **Resolve tenant ownership** for formulation, process knowledge, curation, and other organization-contributed records. Add cross-tenant integration tests before any RLS rollout.
+3. **Complete tenant ownership and legacy remediation** after migration 038. Resolve ambiguous NULL-owner legacy rows through a controlled admin process, add negative cross-tenant integration tests for every organization-scoped router, then evaluate RLS.
 4. **Design canonical peptide identity** with test fixtures covering linear peptides, D-amino acids, noncanonical residues, terminal modifications, cyclization, conjugates, salts, and sequence aliases.
 5. **Add revision/supersession semantics** to scientific parent records and bind decisions to exact revisions.
 6. **Strengthen citation locators and source versioning** while respecting source licenses.

@@ -102,7 +102,7 @@ def list_process_knowledge(
                )) FROM process_knowledge_sources pks JOIN source_records sr ON sr.id=pks.source_record_id
                WHERE pks.profile_id=pk.id), '[]'::jsonb) AS sources
         FROM process_knowledge_profiles pk LEFT JOIN peptides p ON p.id=pk.peptide_id
-        WHERE pk.review_status='verified'
+        WHERE pk.review_status='verified' AND pk.visibility_scope='public'
           AND (:q IS NULL OR pk.profile_title ILIKE '%' || :q || '%' OR pk.development_context ILIKE '%' || :q || '%')
           AND (:platform IS NULL OR pk.process_platform=:platform)
           AND (:peptide IS NULL OR pk.peptide_id=:peptide)
@@ -129,16 +129,16 @@ def submit_process_knowledge(
         INSERT INTO process_knowledge_profiles (
             peptide_id, profile_title, process_platform, development_context, process_overview,
             critical_quality_attributes, process_impurity_context, scale_up_considerations,
-            limitations, review_status, submitted_by
+            limitations, review_status, submitted_by, owner_organization_id, visibility_scope
         ) VALUES (:peptide, :title, :platform, :context, :overview, CAST(:cqa AS jsonb),
-                  CAST(:impurities AS jsonb), :scaleup, :limitations, 'in_review', :submitter)
+                  CAST(:impurities AS jsonb), :scaleup, :limitations, 'in_review', :submitter, :org, 'organization')
         RETURNING id, profile_title, process_platform, review_status
     """), {"peptide": payload.peptide_id, "title": payload.profile_title.strip(),
            "platform": payload.process_platform, "context": payload.development_context,
            "overview": payload.process_overview, "cqa": __import__("json").dumps(payload.critical_quality_attributes),
            "impurities": __import__("json").dumps(payload.process_impurity_context),
            "scaleup": payload.scale_up_considerations, "limitations": payload.limitations,
-           "submitter": current_user["id"]}).mappings().one()
+           "submitter": current_user["id"], "org": organization_id}).mappings().one()
     profile_id = row["id"]
     for source in payload.sources:
         source_id = _source(db, source)
@@ -197,10 +197,7 @@ def process_review_queue(
                )) FROM process_knowledge_stages ps LEFT JOIN source_records sr2 ON sr2.id=ps.source_id
                WHERE ps.profile_id=pk.id), '[]'::jsonb) AS stages
         FROM process_knowledge_profiles pk
-        WHERE pk.review_status='in_review'
-          AND EXISTS (SELECT 1 FROM organization_memberships om
-                      WHERE om.user_id=pk.submitted_by AND om.organization_id=:org
-                        AND om.membership_status='active')
+        WHERE pk.review_status='in_review' AND pk.owner_organization_id=:org
         ORDER BY pk.created_at LIMIT :limit
     """), {"org": organization_id, "limit": limit}).mappings().all()
     return {"items": [dict(row) for row in rows], "count": len(rows)}
@@ -218,9 +215,8 @@ def decide_process_knowledge(
         raise HTTPException(status_code=403, detail="Curator or reviewer permission is required.")
     profile = db.execute(text("""
         SELECT pk.* FROM process_knowledge_profiles pk
-        JOIN organization_memberships om ON om.user_id=pk.submitted_by
         WHERE pk.id=:id AND pk.review_status='in_review'
-          AND om.organization_id=:org AND om.membership_status='active'
+          AND pk.owner_organization_id=:org
         FOR UPDATE OF pk
     """), {"id": profile_id, "org": organization_id}).mappings().first()
     if not profile:

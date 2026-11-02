@@ -100,6 +100,7 @@ class BatchTestResultSubmission(SourceFields):
 class MaterialDecision(BaseModel):
     decision: Literal["verified", "rejected", "needs_changes"]
     rationale: str = Field(min_length=20, max_length=4000)
+    visibility_scope: Literal["public", "organization", "restricted"] = "restricted"
 
 
 def _membership(user: dict, db: Session):
@@ -464,12 +465,22 @@ def decide_material_record(
     status = "verified" if payload.decision == "verified" else (
         "rejected" if payload.decision == "rejected" else "draft"
     )
-    db.execute(text(f"""
-        UPDATE {table} SET review_status=:status, reviewed_by=:reviewer, reviewed_at=now()
-        WHERE id=:id
-    """), {"status": status, "reviewer": current_user["id"], "id": record_id})
+    if record_type == "offering":
+        db.execute(text("""
+            UPDATE vendor_material_offerings
+            SET review_status=:status, reviewed_by=:reviewer, reviewed_at=now(),
+                visibility_scope=:visibility_scope
+            WHERE id=:id
+        """), {"status": status, "reviewer": current_user["id"], "id": record_id,
+               "visibility_scope": payload.visibility_scope if status == "verified" else "restricted"})
+    else:
+        db.execute(text(f"""
+            UPDATE {table} SET review_status=:status, reviewed_by=:reviewer, reviewed_at=now()
+            WHERE id=:id
+        """), {"status": status, "reviewer": current_user["id"], "id": record_id})
     _audit(db, current_user, org, f"vendor_material_{record_type}_decided", record_type,
            record_id, {"decision": payload.decision, "rationale": payload.rationale.strip()})
     db.commit()
     return {"record_id": str(record_id), "record_type": record_type,
-            "review_status": status, "decision": payload.decision}
+            "review_status": status, "decision": payload.decision,
+            "visibility_scope": payload.visibility_scope if record_type == "offering" and status == "verified" else "restricted"}

@@ -27,8 +27,6 @@ Development startup applies all ordered SQL migrations in `database/migrations`.
 
 - Organization-scoped test-catalogue review: migration `033_analytical_test_catalogue_curation.sql` adds append-only review decisions. Authenticated GET `/api/v1/analytical-methods/test-catalogue/reviews` and POST `/api/v1/analytical-methods/test-catalogue/{test_id}/decisions` allow curators/reviewers to record organization-specific verification, rejection or change requests. These decisions do not globally promote or alter the shared draft catalogue.
 
-- Organization-scoped test-catalogue review: migration `033_analytical_test_catalogue_curation.sql` adds append-only review decisions. Authenticated GET `/api/v1/analytical-methods/test-catalogue/reviews` and POST `/api/v1/analytical-methods/test-catalogue/{test_id}/decisions` allow curators/reviewers to record organization-specific verification, rejection or change requests. These decisions do not globally promote or alter the shared draft catalogue.
-
 ## Evidence intelligence and scientific appraisal
 
 - Migration 013 adds reviewer-authored `evidence_appraisals` and organization-scoped `publication_duplicate_candidates`.

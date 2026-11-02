@@ -113,7 +113,7 @@ The current member-management workflow adds an existing registered account immed
 The regulatory feed worker requires a separate `SCHEDULER_DATABASE_URL`. Provision a dedicated login with `NOBYPASSRLS`, grant it membership in the migration-created `toolkit_regulatory_scheduler` role, and store its credential in the deployment secret manager. The migration runner must be allowed to create the NOLOGIN scheduler role, or the DBA must provision that role before applying migration 064. Example DBA setup for the separate login (set its password through the managed secret workflow):
 
 ```sql
-CREATE ROLE toolkit_regulatory_scheduler_login LOGIN NOBYPASSRLS;
+CREATE ROLE toolkit_regulatory_scheduler_login LOGIN NOINHERIT NOBYPASSRLS;
 GRANT toolkit_regulatory_scheduler TO toolkit_regulatory_scheduler_login;
 GRANT CONNECT ON DATABASE your_database TO toolkit_regulatory_scheduler_login;
 ```

@@ -8,8 +8,10 @@ def test_schema_governance_docs_track_current_migration_baseline():
     audit = (REPOSITORY_ROOT / "docs" / "DATABASE_ARCHITECTURE_AUDIT.md").read_text(encoding="utf-8")
     inventory = (REPOSITORY_ROOT / "docs" / "SCHEMA_OWNERSHIP_INVENTORY.md").read_text(encoding="utf-8")
 
-    assert "migrations 001–044" in audit
-    assert "migrations 001–044" in inventory
+    assert "migrations 001–063" in audit
+    assert "migrations 001–063" in inventory
+    assert "migrations 001–063" in audit
+    assert "Migrations 044–063" in inventory
     assert "Verification status and publication visibility are independent" in inventory
     assert "direct-ID access" in inventory
     assert "AI outputs as cited, unreviewed candidates" in inventory

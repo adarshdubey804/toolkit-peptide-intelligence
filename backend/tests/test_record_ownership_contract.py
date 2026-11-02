@@ -8,12 +8,15 @@ def test_explicit_record_ownership_migration_preserves_ambiguous_legacy_rows():
     sql = (MIGRATIONS / "038_explicit_record_ownership.sql").read_text(encoding="utf-8")
     for expected in (
         "owner_organization_id",
-        "visibility_scope",
+        "visibility_scope TEXT NOT NULL DEFAULT 'restricted'",
         "HAVING count(*) = 1",
         "SET visibility_scope = 'restricted'",
         "formulation_visibility_scope_check",
         "process_knowledge_visibility_scope_check",
         "analytical_method_visibility_scope_check",
+        "formulation_owner_scope_check",
+        "process_knowledge_owner_scope_check",
+        "analytical_method_owner_scope_check",
     ):
         assert expected in sql
 

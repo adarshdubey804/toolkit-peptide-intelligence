@@ -84,6 +84,8 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             "regulatory_guidance_versions",
             "regulatory_change_events",
             "regulatory_change_decisions",
+            "regulatory_source_observations",
+            "regulatory_source_poll_runs",
             "claim_source_locators",
             "analytical_methods",
             "analytical_method_sources",
@@ -407,6 +409,21 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             )
         """)).scalar_one()
         assert regulatory_policy_count == 13, "Regulatory guidance and change-history access paths need explicit RLS policies"
+
+        for table_name in ("regulatory_source_observations", "regulatory_source_poll_runs"):
+            state = connection.execute(text("""
+                SELECT relrowsecurity, relforcerowsecurity
+                FROM pg_class WHERE oid=to_regclass(:table_name)
+            """), {"table_name": f"public.{table_name}"}).one()
+            assert tuple(state) == (True, True), f"RLS and FORCE RLS must be enabled for {table_name}"
+        source_scheduler_policy_count = connection.execute(text("""
+            SELECT count(*) FROM pg_policies
+            WHERE schemaname='public' AND policyname IN (
+                'regulatory_source_observations_select_scope','regulatory_source_observations_insert_scope','regulatory_source_observations_update_scope',
+                'regulatory_source_poll_runs_select_scope','regulatory_source_poll_runs_insert_scope','regulatory_source_poll_runs_update_scope'
+            )
+        """)).scalar_one()
+        assert source_scheduler_policy_count == 6, "Regulatory source observations and poll runs need explicit RLS policies"
 
 @pytest.mark.skipif(
     os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",
@@ -1532,3 +1549,86 @@ def test_regulatory_guidance_versions_and_decisions_follow_owner_and_public_veri
             connection.exec_driver_sql(f"REVOKE SELECT, INSERT ON {table} FROM toolkit_regulatory_rls_test")
         connection.exec_driver_sql("REVOKE USAGE ON SCHEMA public FROM toolkit_regulatory_rls_test")
         connection.exec_driver_sql("DROP ROLE toolkit_regulatory_rls_test")
+
+
+@pytest.mark.skipif(os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",
+                    reason="PostgreSQL regulatory source scheduler RLS integration test is enabled in CI only.")
+def test_regulatory_source_observations_and_poll_runs_are_organization_scoped():
+    with engine.begin() as connection:
+        connection.execute(text("SELECT pg_advisory_xact_lock(731904221067)"))
+        apply_development_migrations(connection)
+        org_a = connection.execute(text("INSERT INTO organizations (name,organization_type) VALUES (:n,'research_team') RETURNING id"),
+                                   {"n": "reg-source-a-" + str(uuid4())}).scalar_one()
+        org_b = connection.execute(text("INSERT INTO organizations (name,organization_type) VALUES (:n,'research_team') RETURNING id"),
+                                   {"n": "reg-source-b-" + str(uuid4())}).scalar_one()
+        user_a = connection.execute(text("INSERT INTO user_profiles (display_name,role) VALUES ('Reg Source A','researcher') RETURNING id")).scalar_one()
+        user_b = connection.execute(text("INSERT INTO user_profiles (display_name,role) VALUES ('Reg Source B','researcher') RETURNING id")).scalar_one()
+
+        def source(org, user, label):
+            return connection.execute(text("""
+                INSERT INTO regulatory_source_registry
+                (organization_id,authority,jurisdiction,source_name,source_type,feed_url,official_domain,description,created_by)
+                VALUES (:org,'Research Authority','Global',:name,'rss',:url,'example.org','Test source registry row.',:user)
+                RETURNING id
+            """), {"org": org, "user": user, "name": label + " source",
+                   "url": "https://example.org/" + label + "/" + str(uuid4())}).scalar_one()
+
+        source_a = source(org_a, user_a, "a")
+        source_b = source(org_b, user_b, "b")
+        run_a = connection.execute(text("""
+            INSERT INTO regulatory_source_poll_runs (organization_id,source_id,trigger_type,status,finished_at)
+            VALUES (:org,:source,'manual','success',now()) RETURNING id
+        """), {"org": org_a, "source": source_a}).scalar_one()
+        run_b = connection.execute(text("""
+            INSERT INTO regulatory_source_poll_runs (organization_id,source_id,trigger_type,status,finished_at)
+            VALUES (:org,:source,'manual','success',now()) RETURNING id
+        """), {"org": org_b, "source": source_b}).scalar_one()
+        observation_a = connection.execute(text("""
+            INSERT INTO regulatory_source_observations
+            (organization_id,source_id,external_identifier,item_title,item_url,content_hash,raw_metadata)
+            VALUES (:org,:source,:external,'Source A update','https://example.org/a-update',:hash,'{}'::jsonb)
+            RETURNING id
+        """), {"org": org_a, "source": source_a, "external": str(uuid4()), "hash": "a" * 64}).scalar_one()
+        observation_b = connection.execute(text("""
+            INSERT INTO regulatory_source_observations
+            (organization_id,source_id,external_identifier,item_title,item_url,content_hash,raw_metadata)
+            VALUES (:org,:source,:external,'Source B update','https://example.org/b-update',:hash,'{}'::jsonb)
+            RETURNING id
+        """), {"org": org_b, "source": source_b, "external": str(uuid4()), "hash": "b" * 64}).scalar_one()
+
+        role = "toolkit_reg_source_rls_test"
+        if not connection.execute(text("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname=:r)"), {"r": role}).scalar_one():
+            connection.exec_driver_sql(f"CREATE ROLE {role} NOLOGIN NOBYPASSRLS")
+        connection.exec_driver_sql("GRANT USAGE ON SCHEMA public TO toolkit_reg_source_rls_test")
+        for table in ("regulatory_source_observations", "regulatory_source_poll_runs"):
+            connection.exec_driver_sql(f"GRANT SELECT, INSERT, UPDATE ON {table} TO toolkit_reg_source_rls_test")
+
+        with connection.begin_nested():
+            connection.exec_driver_sql("SET LOCAL ROLE toolkit_reg_source_rls_test")
+            connection.execute(text("SELECT set_config('app.organization_id',:org,true)"), {"org": str(org_a)})
+            assert set(connection.execute(text("SELECT id FROM regulatory_source_poll_runs")).scalars()) == {run_a}
+            assert set(connection.execute(text("SELECT id FROM regulatory_source_observations")).scalars()) == {observation_a}
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO regulatory_source_poll_runs (organization_id,source_id,trigger_type,status,finished_at)
+                        VALUES (:org,:source,'manual','success',now())
+                    """), {"org": org_b, "source": source_b})
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO regulatory_source_observations
+                        (organization_id,source_id,external_identifier,item_title,item_url,content_hash,raw_metadata)
+                        VALUES (:org,:source,:external,'Cross-tenant item','https://example.org/cross',:hash,'{}'::jsonb)
+                    """), {"org": org_b, "source": source_b, "external": str(uuid4()), "hash": "c" * 64})
+            connection.execute(text("UPDATE regulatory_source_poll_runs SET status='error',finished_at=now() WHERE id=:id"), {"id": run_a})
+            connection.execute(text("UPDATE regulatory_source_observations SET review_status='accepted' WHERE id=:id"), {"id": observation_a})
+            connection.execute(text("SELECT set_config('app.organization_id','',true)"))
+            assert connection.execute(text("SELECT count(*) FROM regulatory_source_poll_runs")).scalar_one() == 0
+            assert connection.execute(text("SELECT count(*) FROM regulatory_source_observations")).scalar_one() == 0
+
+        connection.exec_driver_sql("RESET ROLE")
+        for table in ("regulatory_source_observations", "regulatory_source_poll_runs"):
+            connection.exec_driver_sql(f"REVOKE SELECT, INSERT, UPDATE ON {table} FROM toolkit_reg_source_rls_test")
+        connection.exec_driver_sql("REVOKE USAGE ON SCHEMA public FROM toolkit_reg_source_rls_test")
+        connection.exec_driver_sql("DROP ROLE toolkit_reg_source_rls_test")

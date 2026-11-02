@@ -19,6 +19,14 @@ MAX_SOURCES_PER_RUN = 25
 MAX_FEED_BYTES = 2_000_000
 
 
+def _set_organization_context(db, organization_id):
+    """Bind worker writes to the source owner's transaction-local RLS context."""
+    db.execute(
+        text("SELECT set_config('app.organization_id', :organization_id, true)"),
+        {"organization_id": str(organization_id)},
+    )
+
+
 async def _fetch_feed(url: str) -> list[dict]:
     async with httpx.AsyncClient(
         timeout=httpx.Timeout(15.0, connect=4.0),
@@ -63,6 +71,7 @@ async def poll_due_sources(limit: int = MAX_SOURCES_PER_RUN) -> dict:
             valid_domain = domain in APPROVED_REGULATORY_DOMAINS and (
                 host == domain or host.endswith("." + domain)
             )
+            _set_organization_context(db, source["organization_id"])
             run = db.execute(text("""
                 INSERT INTO regulatory_source_poll_runs
                   (organization_id,source_id,trigger_type,status)
@@ -80,6 +89,8 @@ async def poll_due_sources(limit: int = MAX_SOURCES_PER_RUN) -> dict:
                 if not valid_domain:
                     raise ValueError("domain_not_allowlisted")
                 items = await _fetch_feed(source["feed_url"])
+                # The reservation commit ended the previous transaction; rebind before tenant-owned writes.
+                _set_organization_context(db, source["organization_id"])
                 inserted = 0
                 for item in items:
                     digest = hashlib.sha256(
@@ -119,6 +130,7 @@ async def poll_due_sources(limit: int = MAX_SOURCES_PER_RUN) -> dict:
                 succeeded += 1
             except Exception as exc:
                 db.rollback()
+                _set_organization_context(db, source["organization_id"])
                 db.execute(text("""
                     UPDATE regulatory_source_poll_runs
                     SET status='error',error_code=:error,finished_at=now()

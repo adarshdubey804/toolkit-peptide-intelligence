@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from typing import Any
+from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -24,7 +25,7 @@ def persist_normalized_source_record(
     payload: dict[str, Any],
     retrieved_at: datetime | None = None,
     source_version: str | None = None,
-) -> dict[str, str]:
+) -> dict[str, Any]:
     """Upsert stable source identity and insert/find an immutable normalized snapshot."""
     envelope = build_source_envelope(
         source_name=source_name,
@@ -34,6 +35,7 @@ def persist_normalized_source_record(
         retrieved_at=retrieved_at,
         source_version=source_version,
     )
+    retrieved_at_value = datetime.fromisoformat(envelope["retrieved_at"])
     row = db.execute(text("""
         INSERT INTO source_records (
             source_name, source_identifier, source_url, retrieved_at,
@@ -54,7 +56,7 @@ def persist_normalized_source_record(
         "source_name": envelope["source_name"],
         "source_identifier": envelope["source_identifier"],
         "source_url": envelope["source_url"],
-        "retrieved_at": envelope["retrieved_at"],
+        "retrieved_at": retrieved_at_value,
         "source_version": envelope["source_version"],
         "content_hash": envelope["content_hash"],
         "title": title,
@@ -72,7 +74,7 @@ def persist_normalized_source_record(
         "source_id": row["id"],
         "content_hash": envelope["content_hash"],
         "payload": json.dumps(envelope["raw_payload"], ensure_ascii=False, allow_nan=False),
-        "captured_at": envelope["retrieved_at"],
+        "captured_at": retrieved_at_value,
     })
     version = db.execute(text("""
         SELECT id FROM source_record_versions
@@ -80,8 +82,8 @@ def persist_normalized_source_record(
     """), {"source_id": row["id"], "content_hash": envelope["content_hash"]}).mappings().one()
 
     return {
-        "source_record_id": str(row["id"]),
-        "source_record_version_id": str(version["id"]),
+        "source_record_id": row["id"],
+        "source_record_version_id": version["id"],
         "content_hash": envelope["content_hash"],
         "source_url": envelope["source_url"],
     }

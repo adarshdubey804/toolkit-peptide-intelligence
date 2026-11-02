@@ -211,6 +211,16 @@ def create_project(
         INSERT INTO project_memberships (project_id, user_id, project_role)
         VALUES (:project_id, :user_id, 'owner')
     """), {"project_id": project["id"], "user_id": current_user["id"]})
+    db.execute(text("""
+        INSERT INTO audit_events
+            (actor_user_id, organization_id, action, entity_type, entity_id, event_metadata)
+        VALUES
+            (:actor, :organization_id, 'research_project_created', 'research_project', :project_id,
+             jsonb_build_object('visibility', :visibility))
+    """), {
+        "actor": current_user["id"], "organization_id": organization_id,
+        "project_id": project["id"], "visibility": payload.visibility,
+    })
     db.commit()
     return dict(project)
 

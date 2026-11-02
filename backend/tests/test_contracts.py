@@ -1225,3 +1225,45 @@ def test_reference_framework_crosswalk_migration_keeps_review_and_limitations_fi
         "USP_503_1",
     ):
         assert expected in sql
+
+def test_authenticated_user_is_scoped_to_the_organization_in_the_jwt():
+    from uuid import uuid4
+
+    from app.routers.auth import _create_access_token, get_current_user
+
+    user_id = uuid4()
+    token_organization_id = uuid4()
+    other_organization_id = uuid4()
+    token = _create_access_token(str(user_id), str(token_organization_id), "researcher")
+
+    class FakeResult:
+        def mappings(self):
+            return self
+
+        def first(self):
+            return {
+                "id": user_id,
+                "email": "researcher@example.org",
+                "display_name": "Researcher",
+                "organization_id": token_organization_id,
+                "role": "researcher",
+                "is_active": True,
+                "organization_name": "Token Organization",
+            }
+
+    class FakeDatabase:
+        statement = None
+        parameters = None
+
+        def execute(self, statement, parameters):
+            self.statement = str(statement)
+            self.parameters = parameters
+            return FakeResult()
+
+    db = FakeDatabase()
+    user = get_current_user(token, db)
+
+    assert "om.organization_id = :organization_id" in db.statement
+    assert db.parameters["organization_id"] == token_organization_id
+    assert db.parameters["organization_id"] != other_organization_id
+    assert user["organization_id"] == str(token_organization_id)

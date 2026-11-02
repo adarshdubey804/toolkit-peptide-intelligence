@@ -143,6 +143,9 @@ def get_current_user(token: Annotated[str | None, Depends(oauth2_scheme)], db: A
             issuer="toolkit-peptide-intelligence",
         )
         user_id = UUID(claims["sub"])
+        # Bind the authenticated session to the organization selected when the
+        # token was issued. Never choose an arbitrary active membership.
+        organization_id = UUID(claims["org"])
     except (jwt.InvalidTokenError, KeyError, ValueError):
         raise unauthorized
     user = db.execute(text("""
@@ -151,10 +154,11 @@ def get_current_user(token: Annotated[str | None, Depends(oauth2_scheme)], db: A
         FROM user_profiles up
         JOIN organization_memberships om ON om.user_id = up.id
         JOIN organizations o ON o.id = om.organization_id
-        WHERE up.id = :user_id AND om.membership_status = 'active'
-        ORDER BY om.created_at
+        WHERE up.id = :user_id
+          AND om.organization_id = :organization_id
+          AND om.membership_status = 'active'
         LIMIT 1
-    """), {"user_id": user_id}).mappings().first()
+    """), {"user_id": user_id, "organization_id": organization_id}).mappings().first()
     if not user or not user["is_active"]:
         raise unauthorized
     return _user_response(user)

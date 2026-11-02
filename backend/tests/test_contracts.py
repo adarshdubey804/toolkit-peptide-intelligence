@@ -1510,3 +1510,15 @@ def test_extraction_artifact_rls_migration_has_select_insert_and_parent_guards()
         assert table + "_insert_scope" in sql
     assert "enforce_extraction_run_organization" in sql
     assert "enforce_extraction_decision_organization" in sql
+
+
+def test_data_quality_completeness_route_is_registered_and_protected():
+    operation = app.openapi()["paths"]["/api/v1/data-quality/completeness"]["get"]
+    from inspect import getsource
+    from app.routers.data_quality import get_data_completeness
+
+    source = getsource(get_data_completeness)
+    assert "organization_memberships" in source
+    assert "organization_admin" in source
+    assert "curator" in source
+    assert "reviewer" in source

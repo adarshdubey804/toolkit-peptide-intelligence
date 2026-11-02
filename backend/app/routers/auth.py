@@ -42,6 +42,7 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: str = Field(min_length=5, max_length=254)
     password: str = Field(min_length=1, max_length=128)
+    organization_id: UUID | None = None
 
 
 def _create_access_token(user_id: str, organization_id: str | None, role: str) -> str:
@@ -70,7 +71,7 @@ def _user_response(row) -> dict:
     }
 
 
-def _load_user(db: Session, email: str):
+def _load_user(db: Session, email: str, organization_id: UUID | None = None):
     return db.execute(text("""
         SELECT up.id, up.email, up.password_hash, up.display_name,
                om.organization_id, om.role, up.is_active, o.name AS organization_name
@@ -78,9 +79,10 @@ def _load_user(db: Session, email: str):
         LEFT JOIN organization_memberships om ON om.user_id = up.id AND om.membership_status = 'active'
         LEFT JOIN organizations o ON o.id = om.organization_id
         WHERE lower(up.email) = :email
+          AND (:organization_id IS NULL OR om.organization_id = :organization_id)
         ORDER BY om.created_at
         LIMIT 1
-    """), {"email": email}).mappings().first()
+    """), {"email": email, "organization_id": organization_id}).mappings().first()
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
@@ -123,7 +125,7 @@ def register(payload: RegisterRequest, db: Annotated[Session, Depends(get_db)]):
 def login(payload: LoginRequest, db: Annotated[Session, Depends(get_db)]):
     if len(settings.app_secret_key) < 32:
         raise HTTPException(status_code=503, detail="Authentication is not configured with a sufficiently long application secret.")
-    user = _load_user(db, payload.email.strip().lower())
+    user = _load_user(db, payload.email.strip().lower(), payload.organization_id)
     # Always perform one Argon2 verification, including for unknown email
     # addresses and accounts without a password hash, to reduce timing-based
     # account enumeration.

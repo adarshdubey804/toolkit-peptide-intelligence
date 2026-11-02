@@ -1,5 +1,7 @@
 "use client";
 
+import { getPreferredOrganizationId, setPreferredOrganizationId } from "@/lib/auth";
+
 import { FormEvent, useState } from "react";
 import Link from "next/link";
 
@@ -41,7 +43,7 @@ export default function FormulationsPage(){
  }
  async function signIn(e:FormEvent){
   e.preventDefault();setBusy(true);setError("");
-  try{const r=await fetch(API+"/api/v1/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,password})});const d=await r.json();if(!r.ok)throw new Error(d.detail||"Sign in failed.");setToken(d.access_token);setRole(d.user.role);setPassword("");setNotice("Signed in as "+d.user.role+".");}
+  try{const r=await fetch(API+"/api/v1/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,password,organization_id:getPreferredOrganizationId()})});const d=await r.json();if(!r.ok)throw new Error(d.detail||"Sign in failed.");setPreferredOrganizationId(d.user.organization_id);setToken(d.access_token);setRole(d.user.role);setPassword("");setNotice("Signed in as "+d.user.role+".");}
   catch(e){setError(e instanceof Error?e.message:"Sign in failed.");}finally{setBusy(false);}
  }
  async function submit(e:FormEvent){

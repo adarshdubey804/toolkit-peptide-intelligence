@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 
 const API = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
@@ -20,7 +20,7 @@ export default function AnalyticalTestCataloguePage() {
   const [loading,setLoading]=useState(false);
   const field="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-sm text-slate-100";
   const pretty=(v:string)=>v.replaceAll("_"," ");
-  async function load(e?:React.FormEvent) {
+  async function load(e?:FormEvent) {
     e?.preventDefault();setLoading(true);setError("");
     try {
       const params=new URLSearchParams();if(q.trim())params.set("q",q.trim());if(attribute)params.set("quality_attribute",attribute);

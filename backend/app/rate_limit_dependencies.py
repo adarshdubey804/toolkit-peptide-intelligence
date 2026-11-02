@@ -10,7 +10,7 @@ from .rate_limit import enforce_rate_limit
 from .routers.auth import get_current_user
 
 
-def authenticated_write_rate_limit(scope: str) -> Callable:
+def authenticated_write_rate_limit(scope: str, limit: int | None = None) -> Callable:
     """Build a per-user, database-shared rate-limit dependency for a write route."""
     def dependency(
         current_user: Annotated[dict, Depends(get_current_user)],
@@ -20,7 +20,7 @@ def authenticated_write_rate_limit(scope: str) -> Callable:
             db,
             scope=scope,
             identity=str(current_user["id"]),
-            limit=settings.sensitive_write_rate_limit_per_window,
+            limit=limit or settings.sensitive_write_rate_limit_per_window,
             window_seconds=settings.rate_limit_window_seconds,
         )
 

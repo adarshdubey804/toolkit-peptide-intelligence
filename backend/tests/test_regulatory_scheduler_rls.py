@@ -13,12 +13,16 @@ def test_regulatory_scheduler_binds_org_context_after_each_transaction_boundary(
 
 
 def test_regulatory_source_registry_and_scheduler_rls_are_separated():
-    sql = (ROOT / "database" / "migrations" / "053_regulatory_source_scheduler_row_level_security.sql").read_text(encoding="utf-8")
-    for table in ("regulatory_source_registry", "regulatory_source_observations", "regulatory_source_poll_runs", "audit_chain_heads"):
-        assert f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY" in sql
-        assert f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY" in sql
-    assert "current_user = 'toolkit_regulatory_scheduler'" in sql
-    assert "GRANT UPDATE (last_polled_at, next_poll_at, last_poll_status)" in sql
+    scheduler_sql = (ROOT / "database" / "migrations" / "053_regulatory_source_scheduler_row_level_security.sql").read_text(encoding="utf-8")
+    registry_sql = (ROOT / "database" / "migrations" / "064_regulatory_source_registry_row_level_security.sql").read_text(encoding="utf-8")
+    for table in ("regulatory_source_observations", "regulatory_source_poll_runs"):
+        assert f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY" in scheduler_sql
+        assert f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY" in scheduler_sql
+    for table in ("regulatory_source_registry", "audit_chain_heads"):
+        assert f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY" in registry_sql
+        assert f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY" in registry_sql
+    assert "current_user = 'toolkit_regulatory_scheduler'" in registry_sql
+    assert "GRANT UPDATE (last_polled_at, next_poll_at, last_poll_status)" in registry_sql
 
 
 def test_scheduler_uses_dedicated_database_role_and_fails_closed_without_it():

@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, HttpUrl
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from ..db import get_db
+from ..rate_limit_dependencies import authenticated_write_rate_limit
 from .auth import get_current_user
 
 router=APIRouter(prefix="/api/v1/regulatory",tags=["regulatory and quality intelligence"])
@@ -62,7 +63,7 @@ def list_guidance(jurisdiction:str|None=None,authority:str|None=None,document_ty
  ORDER BY g.jurisdiction,g.authority,g.document_title LIMIT :lim"""),{"j":jurisdiction,"a":authority,"t":document_type,"lim":limit}).mappings().all()
  return {"items":[dict(x) for x in rows],"count":len(rows),"scope":"Only curator-reviewed source records are shown. Inclusion does not establish legal applicability or organizational compliance."}
 
-@router.post("",status_code=201)
+@router.post("",status_code=201, dependencies=[Depends(authenticated_write_rate_limit("regulatory_write"))])
 def submit_guidance(payload:GuidanceInput,user:Annotated[dict,Depends(get_current_user)],db:Annotated[Session,Depends(get_db)]):
  org,role=membership(user,db)
  if role not in SUBMIT: raise HTTPException(403,"Your role cannot submit regulatory references.")
@@ -84,7 +85,7 @@ def review_queue(user:Annotated[dict,Depends(get_current_user)],db:Annotated[Ses
  WHERE g.organization_id=:org AND g.review_status='in_review' ORDER BY g.created_at LIMIT :lim"""),{"org":org,"lim":limit}).mappings().all()
  return {"items":[dict(x) for x in rows]}
 
-@router.post("/{guidance_id}/decisions")
+@router.post("/{guidance_id}/decisions", dependencies=[Depends(authenticated_write_rate_limit("regulatory_write"))])
 def decide(guidance_id:UUID,payload:Decision,user:Annotated[dict,Depends(get_current_user)],db:Annotated[Session,Depends(get_db)]):
  org,role=membership(user,db)
  if role not in REVIEW: raise HTTPException(403,"Curator or reviewer permission is required.")
@@ -124,7 +125,7 @@ class ChangeDecision(BaseModel):
  decision: Literal["confirmed_change","not_a_change","published"]
  rationale: str = Field(min_length=20,max_length=4000)
 
-@router.post("/{guidance_id}/observations",status_code=201)
+@router.post("/{guidance_id}/observations",status_code=201, dependencies=[Depends(authenticated_write_rate_limit("regulatory_write"))])
 def observe_guidance_version(guidance_id:UUID,payload:VersionObservation,user:Annotated[dict,Depends(get_current_user)],db:Annotated[Session,Depends(get_db)]):
  org,role=membership(user,db)
  if role not in SUBMIT: raise HTTPException(403,"Your role cannot submit monitoring observations.")
@@ -172,7 +173,7 @@ def change_review_queue(user:Annotated[dict,Depends(get_current_user)],db:Annota
  WHERE g.organization_id=:org AND e.status='needs_review' ORDER BY e.created_at LIMIT :lim"""),{"org":org,"lim":limit}).mappings().all()
  return {"items":[dict(x) for x in rows]}
 
-@router.post("/changes/{event_id}/decisions")
+@router.post("/changes/{event_id}/decisions", dependencies=[Depends(authenticated_write_rate_limit("regulatory_write"))])
 def decide_change(event_id:UUID,payload:ChangeDecision,user:Annotated[dict,Depends(get_current_user)],db:Annotated[Session,Depends(get_db)]):
  org,role=membership(user,db)
  if role not in REVIEW: raise HTTPException(403,"Curator or reviewer permission is required.")
@@ -211,7 +212,7 @@ def list_regulatory_sources(user:Annotated[dict,Depends(get_current_user)],db:An
  FROM regulatory_source_registry WHERE organization_id=:org ORDER BY authority,source_name"""),{"org":org}).mappings().all()
  return {"items":[dict(x) for x in rows],"count":len(rows),"notice":"Registry entries are organization-managed source metadata; registration does not certify an authority or initiate automated polling."}
 
-@router.post("/sources",status_code=201)
+@router.post("/sources",status_code=201, dependencies=[Depends(authenticated_write_rate_limit("regulatory_write"))])
 def register_regulatory_source(payload:RegulatorySourceInput,user:Annotated[dict,Depends(get_current_user)],db:Annotated[Session,Depends(get_db)]):
  org,role=membership(user,db)
  if role not in {"organization_admin","curator"}: raise HTTPException(403,"Organization admin or curator permission is required.")
@@ -250,7 +251,7 @@ def _parse_rss_items(xml_bytes: bytes):
  return items
 
 
-@router.post("/sources/{source_id}/poll")
+@router.post("/sources/{source_id}/poll", dependencies=[Depends(authenticated_write_rate_limit("regulatory_write"))])
 async def poll_regulatory_source(source_id:UUID,user:Annotated[dict,Depends(get_current_user)],db:Annotated[Session,Depends(get_db)]):
  org,role=membership(user,db)
  if role not in REVIEW: raise HTTPException(403,"Curator or reviewer permission is required.")
@@ -302,7 +303,7 @@ class RegulatoryFeedDecision(BaseModel):
  rationale:str=Field(min_length=20,max_length=4000)
 
 
-@router.post("/sources/observations/{observation_id}/decision")
+@router.post("/sources/observations/{observation_id}/decision", dependencies=[Depends(authenticated_write_rate_limit("regulatory_write"))])
 def decide_regulatory_source_observation(observation_id:UUID,payload:RegulatoryFeedDecision,user:Annotated[dict,Depends(get_current_user)],db:Annotated[Session,Depends(get_db)]):
  org,role=membership(user,db)
  if role not in REVIEW: raise HTTPException(403,"Curator or reviewer permission is required.")

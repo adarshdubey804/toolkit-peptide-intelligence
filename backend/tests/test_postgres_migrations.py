@@ -41,6 +41,8 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             "vendor_site_decisions",
             "laboratory_capability_claims",
             "laboratory_capability_decisions",
+            "analytical_test_catalogue",
+            "analytical_test_catalogue_sources",
         )
         for table_name in required_tables:
             exists = connection.execute(
@@ -48,6 +50,11 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
                 {"table_name": f"public.{table_name}"},
             ).scalar_one()
             assert exists, f"Expected migration-created table {table_name!r}"
+
+        seeded_test_count = connection.execute(text("SELECT count(*) FROM analytical_test_catalogue")).scalar_one()
+        assert seeded_test_count == 12, "The initial reference catalogue must contain twelve draft test entries"
+        draft_test_count = connection.execute(text("SELECT count(*) FROM analytical_test_catalogue WHERE review_status='draft'")).scalar_one()
+        assert draft_test_count == 12, "Seeded test definitions must remain explicitly unreviewed"
 
         site_column_exists = connection.execute(text("""
             SELECT EXISTS (

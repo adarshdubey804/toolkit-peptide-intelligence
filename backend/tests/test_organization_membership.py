@@ -1,5 +1,4 @@
 import pytest
-from fastapi import HTTPException
 from pydantic import ValidationError
 from uuid import uuid4
 
@@ -13,6 +12,8 @@ def test_organization_member_addition_is_admin_scoped_and_role_bounded():
     assert MemberAdd(email="  COLLEAGUE@example.org ", role="reviewer").email == "colleague@example.org"
     with pytest.raises(ValidationError):
         MemberAdd(email="colleague@example.org", role="organization_admin")
+    with pytest.raises(ValidationError):
+        MemberAdd(email="not-an-email", role="reviewer")
 
 
 def test_user_can_list_organizations_and_switch_only_to_an_active_membership(monkeypatch):

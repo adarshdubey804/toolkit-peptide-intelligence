@@ -79,6 +79,11 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             "curation_decisions",
             "agent_sessions",
             "agent_session_messages",
+            "regulatory_guidance_records",
+            "regulatory_guidance_decisions",
+            "regulatory_guidance_versions",
+            "regulatory_change_events",
+            "regulatory_change_decisions",
             "claim_source_locators",
             "analytical_methods",
             "analytical_method_sources",
@@ -379,6 +384,29 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             )
         """)).scalar_one()
         assert agent_policy_count == 5, "Agent sessions and messages need user-and-organization RLS policies"
+
+        regulatory_rls_tables = (
+            "regulatory_guidance_records", "regulatory_guidance_decisions",
+            "regulatory_guidance_versions", "regulatory_change_events",
+            "regulatory_change_decisions",
+        )
+        for table_name in regulatory_rls_tables:
+            state = connection.execute(text("""
+                SELECT relrowsecurity, relforcerowsecurity
+                FROM pg_class WHERE oid=to_regclass(:table_name)
+            """), {"table_name": f"public.{table_name}"}).one()
+            assert tuple(state) == (True, True), f"RLS and FORCE RLS must be enabled for {table_name}"
+        regulatory_policy_count = connection.execute(text("""
+            SELECT count(*) FROM pg_policies
+            WHERE schemaname='public' AND policyname IN (
+                'regulatory_guidance_records_select_scope','regulatory_guidance_records_insert_scope','regulatory_guidance_records_update_scope',
+                'regulatory_guidance_decisions_select_scope','regulatory_guidance_decisions_insert_scope',
+                'regulatory_guidance_versions_select_scope','regulatory_guidance_versions_insert_scope','regulatory_guidance_versions_update_scope',
+                'regulatory_change_events_select_scope','regulatory_change_events_insert_scope','regulatory_change_events_update_scope',
+                'regulatory_change_decisions_select_scope','regulatory_change_decisions_insert_scope'
+            )
+        """)).scalar_one()
+        assert regulatory_policy_count == 13, "Regulatory guidance and change-history access paths need explicit RLS policies"
 
 @pytest.mark.skipif(
     os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",
@@ -1357,3 +1385,150 @@ def test_agent_sessions_and_messages_are_private_to_user_and_organization():
         connection.exec_driver_sql("REVOKE SELECT, INSERT ON agent_session_messages FROM toolkit_agent_rls_test")
         connection.exec_driver_sql("REVOKE USAGE ON SCHEMA public FROM toolkit_agent_rls_test")
         connection.exec_driver_sql("DROP ROLE toolkit_agent_rls_test")
+
+
+@pytest.mark.skipif(os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",
+                    reason="PostgreSQL regulatory guidance RLS integration test is enabled in CI only.")
+def test_regulatory_guidance_versions_and_decisions_follow_owner_and_public_verified_scope():
+    with engine.begin() as connection:
+        connection.execute(text("SELECT pg_advisory_xact_lock(731904221067)"))
+        apply_development_migrations(connection)
+        org_a = connection.execute(text("INSERT INTO organizations (name,organization_type) VALUES (:n,'research_team') RETURNING id"),
+                                   {"n": "regulatory-a-" + str(uuid4())}).scalar_one()
+        org_b = connection.execute(text("INSERT INTO organizations (name,organization_type) VALUES (:n,'research_team') RETURNING id"),
+                                   {"n": "regulatory-b-" + str(uuid4())}).scalar_one()
+        user_a = connection.execute(text("INSERT INTO user_profiles (display_name,role) VALUES ('Regulatory A','researcher') RETURNING id")).scalar_one()
+        user_b = connection.execute(text("INSERT INTO user_profiles (display_name,role) VALUES ('Regulatory B','researcher') RETURNING id")).scalar_one()
+        source = connection.execute(text("""
+            INSERT INTO source_records (source_name,source_identifier,source_url,raw_metadata)
+            VALUES ('Regulatory RLS source',:identifier,'https://example.org/regulatory-rls','{}'::jsonb) RETURNING id
+        """), {"identifier": str(uuid4())}).scalar_one()
+
+        def guidance(org, user, title, status):
+            return connection.execute(text("""
+                INSERT INTO regulatory_guidance_records
+                (organization_id,authority,jurisdiction,document_type,document_title,scope_summary,
+                 source_record_id,review_status,submitted_by)
+                VALUES (:org,'Research Authority','Global','guidance',:title,
+                        'This summary is a scoped research reference, not a compliance determination.',
+                        :source,:status,:user) RETURNING id
+            """), {"org": org, "user": user, "title": title, "status": status, "source": source}).scalar_one()
+
+        guidance_a = guidance(org_a, user_a, "Private guidance A " + str(uuid4()), "in_review")
+        guidance_b = guidance(org_b, user_b, "Private guidance B " + str(uuid4()), "in_review")
+        guidance_public = guidance(org_b, user_b, "Public verified guidance " + str(uuid4()), "verified")
+        connection.execute(text("""
+            INSERT INTO regulatory_guidance_decisions (guidance_id,organization_id,reviewer_id,decision,rationale)
+            VALUES (:guidance,:org,:user,'verified','Organization-scoped guidance review decision A.')
+        """), {"guidance": guidance_a, "org": org_a, "user": user_b})
+        connection.execute(text("""
+            INSERT INTO regulatory_guidance_decisions (guidance_id,organization_id,reviewer_id,decision,rationale)
+            VALUES (:guidance,:org,:user,'verified','Organization-scoped guidance review decision B.')
+        """), {"guidance": guidance_b, "org": org_b, "user": user_a})
+
+        def version(guidance_id, user, status, suffix):
+            return connection.execute(text("""
+                INSERT INTO regulatory_guidance_versions
+                (guidance_id,version_or_revision,source_url,content_hash,observed_by,observation_note,review_status)
+                VALUES (:guidance,:version,:url,:hash,:user,'Observed source version for RLS test.',:status)
+                RETURNING id
+            """), {"guidance": guidance_id, "version": suffix,
+                   "url": "https://example.org/regulatory/" + suffix,
+                   "hash": (("c" if suffix == "P1" else suffix[0].lower()) * 64), "user": user, "status": status}).scalar_one()
+
+        version_a = version(guidance_a, user_a, "pending_review", "A1")
+        version_b = version(guidance_b, user_b, "pending_review", "B1")
+        version_public = version(guidance_public, user_b, "accepted", "P1")
+
+        def event(guidance_id, version_id, user, status):
+            return connection.execute(text("""
+                INSERT INTO regulatory_change_events
+                (guidance_id,new_version_id,change_type,change_summary,submitted_by,status)
+                VALUES (:guidance,:version,'new_version','A sufficiently detailed regulatory source change summary.',:user,:status)
+                RETURNING id
+            """), {"guidance": guidance_id, "version": version_id, "user": user, "status": status}).scalar_one()
+
+        event_a = event(guidance_a, version_a, user_a, "needs_review")
+        event_b = event(guidance_b, version_b, user_b, "needs_review")
+        event_public = event(guidance_public, version_public, user_b, "published")
+        connection.execute(text("""
+            INSERT INTO regulatory_change_decisions (event_id,organization_id,reviewer_id,decision,rationale)
+            VALUES (:event,:org,:user,'published','Organization-scoped change decision A.')
+        """), {"event": event_a, "org": org_a, "user": user_b})
+        connection.execute(text("""
+            INSERT INTO regulatory_change_decisions (event_id,organization_id,reviewer_id,decision,rationale)
+            VALUES (:event,:org,:user,'published','Organization-scoped change decision B.')
+        """), {"event": event_b, "org": org_b, "user": user_a})
+
+        role = "toolkit_regulatory_rls_test"
+        if not connection.execute(text("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname=:r)"), {"r": role}).scalar_one():
+            connection.exec_driver_sql(f"CREATE ROLE {role} NOLOGIN NOBYPASSRLS")
+        connection.exec_driver_sql("GRANT USAGE ON SCHEMA public TO toolkit_regulatory_rls_test")
+        for table in ("regulatory_guidance_records", "regulatory_guidance_versions", "regulatory_change_events"):
+            connection.exec_driver_sql(f"GRANT SELECT, INSERT, UPDATE ON {table} TO toolkit_regulatory_rls_test")
+        for table in ("regulatory_guidance_decisions", "regulatory_change_decisions"):
+            connection.exec_driver_sql(f"GRANT SELECT, INSERT ON {table} TO toolkit_regulatory_rls_test")
+
+        with connection.begin_nested():
+            connection.exec_driver_sql("SET LOCAL ROLE toolkit_regulatory_rls_test")
+            connection.execute(text("SELECT set_config('app.organization_id',:org,true)"), {"org": str(org_a)})
+            assert set(connection.execute(text("SELECT id FROM regulatory_guidance_records")).scalars()) == {guidance_a, guidance_public}
+            assert set(connection.execute(text("SELECT guidance_id FROM regulatory_guidance_decisions")).scalars()) == {guidance_a}
+            assert set(connection.execute(text("SELECT id FROM regulatory_guidance_versions")).scalars()) == {version_a, version_public}
+            assert set(connection.execute(text("SELECT id FROM regulatory_change_events")).scalars()) == {event_a, event_public}
+            assert set(connection.execute(text("SELECT event_id FROM regulatory_change_decisions")).scalars()) == {event_a}
+
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO regulatory_guidance_records
+                        (organization_id,authority,jurisdiction,document_type,document_title,scope_summary,source_record_id,submitted_by)
+                        VALUES (:org,'Authority','Global','guidance','Cross-org record',
+                                'This cross-org guidance submission must fail under the active tenant context.',:source,:user)
+                    """), {"org": org_b, "source": source, "user": user_a})
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO regulatory_guidance_versions
+                        (guidance_id,source_url,observed_by,observation_note)
+                        VALUES (:guidance,'https://example.org/cross-org-version',:user,'Cross-org version must fail.')
+                    """), {"guidance": guidance_b, "user": user_a})
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO regulatory_change_events
+                        (guidance_id,new_version_id,change_type,change_summary,submitted_by)
+                        VALUES (:guidance,:version,'new_version','Cross-org event must fail with a sufficiently long summary.',:user)
+                    """), {"guidance": guidance_b, "version": version_b, "user": user_a})
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO regulatory_guidance_decisions
+                        (guidance_id,organization_id,reviewer_id,decision,rationale)
+                        VALUES (:guidance,:org,:user,'verified','Cross-org guidance decision must fail.')
+                    """), {"guidance": guidance_b, "org": org_a, "user": user_a})
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO regulatory_change_decisions
+                        (event_id,organization_id,reviewer_id,decision,rationale)
+                        VALUES (:event,:org,:user,'published','Cross-org change decision must fail.')
+                    """), {"event": event_b, "org": org_a, "user": user_a})
+
+            connection.execute(text("UPDATE regulatory_guidance_records SET limitations='Owner-only update.' WHERE id=:id"), {"id": guidance_a})
+            connection.execute(text("UPDATE regulatory_guidance_versions SET observation_note='Owner-only update.' WHERE id=:id"), {"id": version_a})
+            connection.execute(text("UPDATE regulatory_change_events SET impact_assessment='Owner-only update.' WHERE id=:id"), {"id": event_a})
+            connection.execute(text("SELECT set_config('app.organization_id','',true)"))
+            assert set(connection.execute(text("SELECT id FROM regulatory_guidance_records")).scalars()) == {guidance_public}
+            assert set(connection.execute(text("SELECT id FROM regulatory_guidance_versions")).scalars()) == {version_public}
+            assert set(connection.execute(text("SELECT id FROM regulatory_change_events")).scalars()) == {event_public}
+            assert connection.execute(text("SELECT count(*) FROM regulatory_guidance_decisions")).scalar_one() == 0
+            assert connection.execute(text("SELECT count(*) FROM regulatory_change_decisions")).scalar_one() == 0
+
+        connection.exec_driver_sql("RESET ROLE")
+        for table in ("regulatory_guidance_records", "regulatory_guidance_versions", "regulatory_change_events"):
+            connection.exec_driver_sql(f"REVOKE SELECT, INSERT, UPDATE ON {table} FROM toolkit_regulatory_rls_test")
+        for table in ("regulatory_guidance_decisions", "regulatory_change_decisions"):
+            connection.exec_driver_sql(f"REVOKE SELECT, INSERT ON {table} FROM toolkit_regulatory_rls_test")
+        connection.exec_driver_sql("REVOKE USAGE ON SCHEMA public FROM toolkit_regulatory_rls_test")
+        connection.exec_driver_sql("DROP ROLE toolkit_regulatory_rls_test")

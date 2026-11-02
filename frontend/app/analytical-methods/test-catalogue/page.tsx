@@ -46,7 +46,7 @@ export default function AnalyticalTestCataloguePage() {
       </form>
     </div>
     {error&&<div role="alert" className="mt-5 rounded-xl border border-rose-400/30 p-4 text-sm text-rose-200">{error}</div>}
-    <div className="mt-7 flex items-center justify-between"><h2 className="text-2xl font-semibold">Reference entries</h2><Link href="/analytical-methods/test-catalogue/review" className="text-sm text-emerald-300 underline">Review entries</Link> <Link href="/analytical-methods/test-catalogue/applicability" className="text-sm text-sky-300 underline">Peptide applicability matrix</Link><span className="muted text-xs">{items.length} entries</span></div>
+    <div className="mt-7 flex items-center justify-between"><h2 className="text-2xl font-semibold">Reference entries</h2><Link href="/analytical-methods/test-catalogue/review" className="text-sm text-emerald-300 underline">Review entries</Link> <Link href="/analytical-methods/test-catalogue/applicability" className="text-sm text-sky-300 underline">Peptide applicability matrix</Link> <Link href="/analytical-methods/test-catalogue/frameworks" className="text-sm text-violet-300 underline">Reference frameworks</Link><span className="muted text-xs">{items.length} entries</span></div>
     {loading&&<p className="muted mt-4 text-sm">Loading catalogue…</p>}
     {!loading&&items.length===0&&<div className="panel mt-4 p-6 text-sm muted">No entries match this search.</div>}
     <section className="mt-4 grid gap-4 lg:grid-cols-2">

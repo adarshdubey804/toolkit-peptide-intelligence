@@ -1200,3 +1200,28 @@ def test_peptide_test_applicability_payload_rejects_unsupported_status_and_non_h
         PeptideTestApplicabilitySubmission(**{**payload, "applicability_status": "mandatory"})
     with pytest.raises(ValidationError):
         PeptideTestApplicabilitySubmission(**{**payload, "source_url": "http://example.org/reference"})
+
+
+def test_analytical_reference_framework_crosswalk_route_is_registered():
+    paths = app.openapi()["paths"]
+    path = "/api/v1/analytical-methods/test-catalogue/frameworks"
+    assert "get" in paths[path]
+    params = {item["name"]: item for item in paths[path]["get"]["parameters"]}
+    assert params["limit"]["schema"]["maximum"] == 250
+
+
+def test_reference_framework_crosswalk_migration_keeps_review_and_limitations_fields():
+    sql = (MIGRATIONS_DIR / "035_analytical_reference_framework_crosswalk.sql").read_text(encoding="utf-8")
+    for expected in (
+        "analytical_reference_frameworks",
+        "analytical_test_framework_links",
+        "framework_code",
+        "jurisdiction_or_system",
+        "official_status",
+        "applicability_limitations",
+        "review_status",
+        "ICH_Q2_R2",
+        "ICH_Q14",
+        "USP_503_1",
+    ):
+        assert expected in sql

@@ -930,3 +930,38 @@ def decide_peptide_test_applicability(
         "decision": payload.decision,
         "note": "This organization-specific decision does not globally verify the peptide or test definition."
     }
+
+
+@router.get("/test-catalogue/frameworks")
+def list_analytical_reference_frameworks(
+    db: Annotated[Session, Depends(get_db)],
+    test_id: UUID | None = None,
+    framework_code: str | None = Query(default=None, min_length=2, max_length=80),
+    limit: int = Query(default=100, ge=1, le=250),
+):
+    """List source-linked guidance and compendial context without inferring legal applicability."""
+    rows = db.execute(text("""
+        SELECT f.id, f.framework_code, f.issuing_body, f.document_title,
+               f.reference_identifier, f.document_type, f.jurisdiction_or_system,
+               f.version_or_edition, f.effective_date, f.official_status,
+               f.scope_summary, f.applicability_limitations,
+               f.review_status AS framework_review_status,
+               sr.source_name, sr.source_identifier, sr.source_url,
+               t.id AS test_id, t.catalogue_code, t.test_name,
+               l.relationship, l.evidence_scope AS link_evidence_scope,
+               l.applicability_limitations AS link_limitations,
+               l.review_status AS link_review_status
+        FROM analytical_reference_frameworks f
+        JOIN source_records sr ON sr.id=f.source_id
+        LEFT JOIN analytical_test_framework_links l ON l.framework_id=f.id
+        LEFT JOIN analytical_test_catalogue t ON t.id=l.test_id
+        WHERE (:test IS NULL OR l.test_id=:test)
+          AND (:code IS NULL OR f.framework_code=:code)
+        ORDER BY f.issuing_body, f.framework_code, t.catalogue_code
+        LIMIT :limit
+    """), {"test": test_id, "code": framework_code, "limit": limit}).mappings().all()
+    return {
+        "items": [dict(row) for row in rows],
+        "count": len(rows),
+        "scope": "Reference-framework crosswalk candidates. Records are draft and do not establish jurisdictional adoption, legal applicability, mandatory testing, compendial compliance or product-specific acceptance criteria."
+    }

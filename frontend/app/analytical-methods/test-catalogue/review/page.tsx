@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import Link from "next/link";
 
 const API = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
@@ -26,7 +26,7 @@ export default function TestCatalogueReviewPage() {
     }catch(e){setError(e instanceof Error?e.message:"Could not load review queue.");}
     finally{setBusy(false);}
   }
-  async function signIn(e:React.FormEvent) {
+  async function signIn(e:FormEvent) {
     e.preventDefault();setBusy(true);setError("");setNotice("");
     try {
       const response=await fetch(API+"/api/v1/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,password})});

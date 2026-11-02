@@ -22,10 +22,13 @@ def test_curation_reviews_are_scoped_by_stored_owner_not_submitter_membership():
 def test_dossier_and_enrichment_access_use_review_owner_organization():
     dossiers = _source("dossiers.py")
     enrichment = _source("enrichment.py")
+    evidence = _source("evidence_intelligence.py")
     assert "(organization_id, entity_type, entity_id, source_record_id" in dossiers
     assert "cr.organization_id = :organization_id" in enrichment
     assert "cr.organization_id=:org" in enrichment
     assert "JOIN organization_memberships om ON om.user_id=cr.submitted_by" not in enrichment
+    assert "cr.organization_id=:org" in evidence
+    assert "JOIN organization_memberships om ON om.user_id=cr.submitted_by" not in evidence
 
 
 def test_scientific_submission_tables_store_and_filter_owner_organization():

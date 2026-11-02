@@ -1,6 +1,6 @@
 # Schema ownership and governance inventory
 
-**Baseline:** migrations 001–044 on `main` (2026-11-02)  
+**Baseline:** migrations 001–063 on `main` (2026-11-02)  
 **Purpose:** define the intended ownership, visibility, provenance, and lifecycle contract for the existing schema before expanding ingestion or AI write access.
 
 > This is a repository-level design inventory. It does not assert that every existing row is compliant, that every route enforces the contract, or that the live PostgreSQL deployment has this exact schema. Validate against the deployed database before enabling database policies or bulk imports.
@@ -51,7 +51,7 @@
 
 ## Known gaps / not yet proven
 
-- Migrations 044–047 enable RLS for vendor material traceability, analytical methods, formulations and process knowledge. Other organization-owned domains and background workers remain outside this bounded rollout.
+- Migrations 044–063 now enable RLS across vendor materials, analytical methods, formulations, process knowledge, molecular interactions, evidence appraisal, curation workflows, agent sessions, regulatory guidance and scheduler records, vendor identity and services, laboratory capability claims, peptide applicability, analytical test-catalogue decisions, audit events, extraction artifacts and enrichment artifacts. The source registry remains a documented cross-organization scheduler/control-plane exception; remaining tenant-owned tables, routes and background workers still require table-by-table verification.
 - The audit does not prove every organization contribution and child table has a complete owner key or that every router has negative cross-tenant tests.
 - The audit does not establish live PostgreSQL schema parity, production role permissions, query plans, backup/restore, monitoring, TLS, or secret management.
 - Canonical peptide identity has a chemical-form foundation, but a complete deterministic identity fingerprint and collision-tested normalization for D-residues, noncanonical residues, terminal chemistry, cyclization, conjugates, salts, and aliases is not yet established.

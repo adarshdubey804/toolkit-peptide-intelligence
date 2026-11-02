@@ -263,9 +263,9 @@ def list_verified_applicability(
                a.reviewed_at
         FROM peptide_method_applicability a
         JOIN peptides p ON p.id=a.peptide_id AND p.review_status='verified'
-        JOIN analytical_methods m ON m.id=a.method_id AND m.review_status='verified'
+        JOIN analytical_methods m ON m.id=a.method_id AND m.review_status='verified' AND m.visibility_scope='public'
         JOIN source_records sr ON sr.id=a.source_id
-        WHERE a.review_status='verified'
+        WHERE a.review_status='verified' AND a.visibility_scope='public'
           AND (:peptide IS NULL OR a.peptide_id=:peptide)
           AND (:method IS NULL OR a.method_id=:method)
         ORDER BY p.preferred_name, a.test_purpose
@@ -295,7 +295,8 @@ def submit_method_applicability(
     method = db.execute(text("""
         SELECT id FROM analytical_methods
         WHERE id=:id AND review_status='verified'
-    """), {"id": payload.method_id}).scalar_one_or_none()
+          AND (visibility_scope='public' OR owner_organization_id=:org)
+    """), {"id": payload.method_id, "org": organization_id}).scalar_one_or_none()
     if not method:
         raise HTTPException(status_code=404, detail="Verified analytical method not found.")
     source_id = _source_record(db, payload.source_name, payload.source_identifier, str(payload.source_url))
@@ -450,10 +451,10 @@ def list_verified_laboratory_capabilities(
         JOIN vendors v ON v.id=vs.vendor_id
           AND v.review_status='verified' AND v.verification_status='verified'
         JOIN vendor_sites s ON s.id=vs.site_id AND s.review_status='verified'
-        JOIN analytical_methods m ON m.id=lc.method_id AND m.review_status='verified'
+        JOIN analytical_methods m ON m.id=lc.method_id AND m.review_status='verified' AND m.visibility_scope='public'
         LEFT JOIN peptides p ON p.id=lc.peptide_id AND p.review_status='verified'
         JOIN source_records sr ON sr.id=lc.source_id
-        WHERE lc.review_status='verified'
+        WHERE lc.review_status='verified' AND lc.visibility_scope='public'
           AND (lc.peptide_id IS NULL OR p.id IS NOT NULL)
           AND (:method IS NULL OR lc.method_id=:method)
           AND (:peptide IS NULL OR lc.peptide_id=:peptide)
@@ -492,7 +493,8 @@ def submit_laboratory_capability(
         raise HTTPException(status_code=404, detail="Verified laboratory service at a verified facility was not found in this organization.")
     method = db.execute(text("""
         SELECT id FROM analytical_methods WHERE id=:id AND review_status='verified'
-    """), {"id": payload.method_id}).scalar_one_or_none()
+          AND (visibility_scope='public' OR owner_organization_id=:org)
+    """), {"id": payload.method_id, "org": organization_id}).scalar_one_or_none()
     if not method:
         raise HTTPException(status_code=404, detail="Verified analytical method not found.")
     if payload.peptide_id is not None:
@@ -778,7 +780,7 @@ def list_verified_peptide_test_applicability(
         JOIN peptides p ON p.id=a.peptide_id AND p.review_status='verified'
         JOIN analytical_test_catalogue t ON t.id=a.test_id AND t.review_status='verified'
         JOIN source_records sr ON sr.id=a.source_id
-        WHERE a.review_status='verified'
+        WHERE a.review_status='verified' AND a.visibility_scope='public'
           AND (:peptide IS NULL OR a.peptide_id=:peptide)
           AND (:test IS NULL OR a.test_id=:test)
           AND (:status IS NULL OR a.applicability_status=:status)

@@ -38,6 +38,8 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             "vendors", "vendor_sources", "vendor_review_decisions",
             "vendor_sites", "vendor_site_sources", "vendor_site_decisions",
             "vendor_certifications", "vendor_certification_decisions",
+            "vendor_services", "vendor_service_decisions",
+            "vendor_service_evidence_links", "vendor_service_evidence_link_decisions",
             "extracted_evidence_field_decisions",
             "peptide_method_applicability",
             "peptide_method_applicability_decisions",
@@ -453,6 +455,27 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             )
         """)).scalar_one()
         assert vendor_policy_count == 21, "Vendor identity, site and certification access paths need explicit RLS policies"
+
+        vendor_service_rls_tables = (
+            "vendor_services", "vendor_service_decisions",
+            "vendor_service_evidence_links", "vendor_service_evidence_link_decisions",
+        )
+        for table_name in vendor_service_rls_tables:
+            state = connection.execute(text("""
+                SELECT relrowsecurity, relforcerowsecurity
+                FROM pg_class WHERE oid=to_regclass(:table_name)
+            """), {"table_name": f"public.{table_name}"}).one()
+            assert tuple(state) == (True, True), f"RLS and FORCE RLS must be enabled for {table_name}"
+        vendor_service_policy_count = connection.execute(text("""
+            SELECT count(*) FROM pg_policies
+            WHERE schemaname='public' AND policyname IN (
+                'vendor_services_select_scope','vendor_services_insert_scope','vendor_services_update_scope',
+                'vendor_service_decisions_select_scope','vendor_service_decisions_insert_scope',
+                'vendor_service_evidence_links_select_scope','vendor_service_evidence_links_insert_scope','vendor_service_evidence_links_update_scope',
+                'vendor_service_evidence_link_decisions_select_scope','vendor_service_evidence_link_decisions_insert_scope'
+            )
+        """)).scalar_one()
+        assert vendor_service_policy_count == 10, "Vendor service and evidence-link access paths need explicit RLS policies"
 
 @pytest.mark.skipif(
     os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",

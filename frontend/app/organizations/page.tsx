@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useState } from "react";
 
 const API = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 
@@ -109,11 +109,6 @@ export default function OrganizationsPage() {
       setError(e instanceof Error ? e.message : "Could not update member role.");
     } finally { setBusy(false); }
   }
-
-  useEffect(() => {
-    if (!token) return;
-    void loadWorkspace(token).catch(e => setError(e instanceof Error ? e.message : "Workspace unavailable."));
-  }, []);
 
   const isAdmin = user?.role === "organization_admin";
 

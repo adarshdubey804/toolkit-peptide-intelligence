@@ -2881,6 +2881,17 @@ def test_peptide_method_and_test_applicability_are_tenant_scoped():
                         "source":cross_test_source,"owner":user_a,
                     })
 
+            # A curator can advance an organization-owned assessment, but verification
+            # alone does not make an organization-scoped assessment public.
+            connection.execute(text("""
+                UPDATE peptide_method_applicability SET review_status='verified'
+                WHERE id=:id
+            """), {"id":method_a})
+            connection.execute(text("""
+                UPDATE peptide_test_applicability SET review_status='verified'
+                WHERE id=:id
+            """), {"id":test_a})
+
             with pytest.raises(Exception):
                 with connection.begin_nested():
                     connection.execute(text("""

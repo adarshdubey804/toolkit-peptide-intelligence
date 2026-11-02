@@ -471,7 +471,7 @@ def test_vendor_material_offering_rls_enforces_organization_and_public_scope():
 
         with pytest.raises(Exception):
             with connection.begin_nested():
-            connection.execute(text("""
+                connection.execute(text("""
                 INSERT INTO analytical_method_decisions
                     (method_id, organization_id, reviewer_id, decision, rationale)
                 VALUES (:method, :wrong_org, :reviewer, 'verified',

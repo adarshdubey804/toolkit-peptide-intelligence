@@ -1018,3 +1018,35 @@ def test_vendor_service_submission_requires_a_verified_facility_reference():
             source_identifier="service-catalogue-001",
             source_url="https://example.org/services",
         )
+
+
+
+def test_vendor_candidate_batch_import_contract_and_unverified_defaults():
+    from pydantic import ValidationError
+    from app.routers.vendors import VendorCandidateBatch
+
+    valid = {
+        "legal_name": "Example Peptide Company",
+        "website_url": "https://example.org",
+        "country_code": "US",
+        "vendor_type": "peptide_manufacturer",
+        "source_name": "Official company website",
+        "source_identifier": "official-service-page:example",
+        "source_url": "https://example.org/peptide-services",
+        "evidence_scope": "Official service page describes custom peptide synthesis; facility and certification claims are not inferred.",
+    }
+    batch = VendorCandidateBatch(candidates=[valid])
+    assert len(batch.candidates) == 1
+    with pytest.raises(ValidationError):
+        VendorCandidateBatch(candidates=[])
+    with pytest.raises(ValidationError):
+        VendorCandidateBatch(candidates=[{**valid, "country_code": "USA"}])
+    with pytest.raises(ValidationError):
+        VendorCandidateBatch(candidates=[{**valid, "source_url": "http://example.org/source"}])
+
+
+
+def test_vendor_candidate_import_route_is_registered():
+    paths = app.openapi()["paths"]
+    assert "/api/v1/vendors/import-candidates" in paths
+    assert "post" in paths["/api/v1/vendors/import-candidates"]

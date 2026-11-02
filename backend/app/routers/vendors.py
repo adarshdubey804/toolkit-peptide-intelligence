@@ -83,6 +83,20 @@ class VendorSiteSubmission(BaseModel):
     source_url: HttpUrl
 
 
+class VendorSiteCandidateSource(BaseModel):
+    source_name: str = Field(min_length=2, max_length=120)
+    source_identifier: str = Field(min_length=1, max_length=200)
+    source_url: HttpUrl
+    evidence_scope: str = Field(min_length=5, max_length=1000)
+
+    @field_validator("source_url")
+    @classmethod
+    def additional_source_must_use_https(cls, value):
+        if value.scheme != "https":
+            raise ValueError("Facility evidence sources must use HTTPS.")
+        return value
+
+
 class VendorSiteCandidate(BaseModel):
     site_name: str = Field(min_length=2, max_length=200)
     address: str = Field(min_length=5, max_length=1000)
@@ -91,6 +105,7 @@ class VendorSiteCandidate(BaseModel):
     source_name: str = Field(min_length=2, max_length=120)
     source_identifier: str = Field(min_length=1, max_length=200)
     source_url: HttpUrl
+    additional_sources: list[VendorSiteCandidateSource] = Field(default_factory=list, max_length=5)
 
     @field_validator("source_url")
     @classmethod
@@ -1072,6 +1087,24 @@ def import_vendor_site_candidates(
         """), {
             "site": site["id"], "source": source_id, "scope": candidate.site_scope.strip(),
         })
+        for extra_source in candidate.additional_sources:
+            extra_source_url = _candidate_source_url(
+                str(vendor["website_url"]), str(extra_source.source_url)
+            )
+            extra_source_id = _source_record(
+                db,
+                extra_source.source_name.strip(),
+                extra_source.source_identifier.strip(),
+                extra_source_url,
+            )
+            db.execute(text("""
+                INSERT INTO vendor_site_sources (site_id, source_record_id, evidence_scope)
+                VALUES (:site, :source, :scope) ON CONFLICT DO NOTHING
+            """), {
+                "site": site["id"],
+                "source": extra_source_id,
+                "scope": extra_source.evidence_scope.strip(),
+            })
         db.execute(text("""
             INSERT INTO audit_events (
                 actor_user_id, organization_id, action, entity_type, entity_id, event_metadata

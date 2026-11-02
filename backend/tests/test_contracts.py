@@ -1500,3 +1500,16 @@ def test_extraction_source_provenance_migration_is_registered_and_typed():
     assert "normalized_provider_record" in sql
     assert "enforce_extracted_source_version_match" in sql
     assert "source_record_versions_append_only" in sql
+
+
+def test_data_quality_completeness_route_is_registered_and_protected():
+    operation = app.openapi()["paths"]["/api/v1/data-quality/completeness"]["get"]
+    assert operation["responses"]["403"]
+    from inspect import getsource
+    from app.routers.data_quality import get_data_completeness
+
+    source = getsource(get_data_completeness)
+    assert "organization_memberships" in source
+    assert "organization_admin" in source
+    assert "curator" in source
+    assert "reviewer" in source

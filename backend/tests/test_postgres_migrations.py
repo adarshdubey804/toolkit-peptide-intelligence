@@ -1661,3 +1661,174 @@ def test_regulatory_source_observations_and_poll_runs_are_organization_scoped():
             connection.exec_driver_sql(f"REVOKE SELECT, INSERT, UPDATE ON {table} FROM toolkit_reg_source_rls_test")
         connection.exec_driver_sql("REVOKE USAGE ON SCHEMA public FROM toolkit_reg_source_rls_test")
         connection.exec_driver_sql("DROP ROLE toolkit_reg_source_rls_test")
+
+
+@pytest.mark.skipif(os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",
+                    reason="PostgreSQL vendor identity/site/certification RLS integration test is enabled in CI only.")
+def test_vendor_identity_sites_and_certifications_follow_owner_and_public_verified_scope():
+    with engine.begin() as connection:
+        connection.execute(text("SELECT pg_advisory_xact_lock(731904221067)"))
+        apply_development_migrations(connection)
+        org_a = connection.execute(text("INSERT INTO organizations (name,organization_type) VALUES (:n,'research_team') RETURNING id"),
+                                   {"n": "vendor-rls-a-" + str(uuid4())}).scalar_one()
+        org_b = connection.execute(text("INSERT INTO organizations (name,organization_type) VALUES (:n,'research_team') RETURNING id"),
+                                   {"n": "vendor-rls-b-" + str(uuid4())}).scalar_one()
+        user_a = connection.execute(text("INSERT INTO user_profiles (display_name,role) VALUES ('Vendor A','researcher') RETURNING id")).scalar_one()
+        user_b = connection.execute(text("INSERT INTO user_profiles (display_name,role) VALUES ('Vendor B','researcher') RETURNING id")).scalar_one()
+        source = connection.execute(text("""
+            INSERT INTO source_records (source_name,source_identifier,source_url,raw_metadata)
+            VALUES ('Vendor RLS source',:identifier,'https://example.org/vendor-rls','{}'::jsonb) RETURNING id
+        """), {"identifier": str(uuid4())}).scalar_one()
+
+        def vendor(org, user, label, status):
+            return connection.execute(text("""
+                INSERT INTO vendors
+                (legal_name,website_url,country_code,vendor_type,verification_status,review_status,submitted_by,organization_id)
+                VALUES (:name,:url,'US','laboratory',:verification,:review,:user,:org) RETURNING id
+            """), {"name": label + " vendor " + str(uuid4()), "url": "https://example.org/" + label,
+                   "verification": "verified" if status == "verified" else "unverified",
+                   "review": status, "user": user, "org": org}).scalar_one()
+
+        vendor_a = vendor(org_a, user_a, "a", "in_review")
+        vendor_b = vendor(org_b, user_b, "b", "in_review")
+        vendor_public = vendor(org_b, user_b, "public", "verified")
+
+        def site(vendor_id, org, user, label, status):
+            return connection.execute(text("""
+                INSERT INTO vendor_sites
+                (vendor_id,site_name,address,country_code,site_scope,organization_id,review_status,submitted_by)
+                VALUES (:vendor,:name,'Test address','US','analytical testing',:org,:status,:user) RETURNING id
+            """), {"vendor": vendor_id, "name": label + " site", "org": org, "user": user, "status": status}).scalar_one()
+
+        site_a = site(vendor_a, org_a, user_a, "A", "in_review")
+        site_b = site(vendor_b, org_b, user_b, "B", "in_review")
+        site_public = site(vendor_public, org_b, user_b, "Public", "verified")
+
+        for vendor_id, label in ((vendor_a, "A"), (vendor_b, "B"), (vendor_public, "Public")):
+            connection.execute(text("""
+                INSERT INTO vendor_sources (vendor_id,source_record_id,relationship,evidence_scope)
+                VALUES (:vendor,:source,'vendor_identity','Source supports vendor identity.')
+            """), {"vendor": vendor_id, "source": source})
+        for site_id, label in ((site_a, "A"), (site_b, "B"), (site_public, "Public")):
+            connection.execute(text("""
+                INSERT INTO vendor_site_sources (site_id,source_record_id,evidence_scope)
+                VALUES (:site,:source,'Source supports facility details.')
+            """), {"site": site_id, "source": source})
+
+        def certification(vendor_id, site_id, status):
+            return connection.execute(text("""
+                INSERT INTO vendor_certifications
+                (vendor_id,site_id,certification_name,issuing_body,certificate_reference,scope,
+                 verification_source_id,verification_status)
+                VALUES (:vendor,:site,'Quality system certification','Independent body',:reference,
+                        'Quality system scope',:source,:status) RETURNING id
+            """), {"vendor": vendor_id, "site": site_id, "reference": str(uuid4()),
+                   "source": source, "status": status}).scalar_one()
+
+        cert_a = certification(vendor_a, site_a, "unverified")
+        cert_b = certification(vendor_b, site_b, "unverified")
+        cert_public = certification(vendor_public, site_public, "verified")
+
+        connection.execute(text("""
+            INSERT INTO vendor_review_decisions (vendor_id,organization_id,reviewer_id,decision,rationale)
+            VALUES (:vendor,:org,:user,'verified','Independent vendor identity decision for organization A.')
+        """), {"vendor": vendor_a, "org": org_a, "user": user_b})
+        connection.execute(text("""
+            INSERT INTO vendor_review_decisions (vendor_id,organization_id,reviewer_id,decision,rationale)
+            VALUES (:vendor,:org,:user,'verified','Independent vendor identity decision for organization B.')
+        """), {"vendor": vendor_b, "org": org_b, "user": user_a})
+        connection.execute(text("""
+            INSERT INTO vendor_site_decisions (site_id,organization_id,reviewer_id,decision,rationale)
+            VALUES (:site,:org,:user,'verified','Independent facility review decision for organization A.')
+        """), {"site": site_a, "org": org_a, "user": user_b})
+        connection.execute(text("""
+            INSERT INTO vendor_site_decisions (site_id,organization_id,reviewer_id,decision,rationale)
+            VALUES (:site,:org,:user,'verified','Independent facility review decision for organization B.')
+        """), {"site": site_b, "org": org_b, "user": user_a})
+        connection.execute(text("""
+            INSERT INTO vendor_certification_decisions (certification_id,organization_id,reviewer_id,decision,rationale)
+            VALUES (:cert,:org,:user,'verified','Independent certification review decision for organization A.')
+        """), {"cert": cert_a, "org": org_a, "user": user_b})
+        connection.execute(text("""
+            INSERT INTO vendor_certification_decisions (certification_id,organization_id,reviewer_id,decision,rationale)
+            VALUES (:cert,:org,:user,'verified','Independent certification review decision for organization B.')
+        """), {"cert": cert_b, "org": org_b, "user": user_a})
+
+        role = "toolkit_vendor_directory_rls_test"
+        if not connection.execute(text("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname=:r)"), {"r": role}).scalar_one():
+            connection.exec_driver_sql(f"CREATE ROLE {role} NOLOGIN NOBYPASSRLS")
+        connection.exec_driver_sql("GRANT USAGE ON SCHEMA public TO toolkit_vendor_directory_rls_test")
+        for table in ("vendors", "vendor_sources", "vendor_sites", "vendor_site_sources", "vendor_certifications"):
+            connection.exec_driver_sql(f"GRANT SELECT, INSERT, UPDATE ON {table} TO toolkit_vendor_directory_rls_test")
+        for table in ("vendor_review_decisions", "vendor_site_decisions", "vendor_certification_decisions"):
+            connection.exec_driver_sql(f"GRANT SELECT, INSERT ON {table} TO toolkit_vendor_directory_rls_test")
+
+        with connection.begin_nested():
+            connection.exec_driver_sql("SET LOCAL ROLE toolkit_vendor_directory_rls_test")
+            connection.execute(text("SELECT set_config('app.organization_id',:org,true)"), {"org": str(org_a)})
+            assert set(connection.execute(text("SELECT id FROM vendors")).scalars()) == {vendor_a, vendor_public}
+            assert set(connection.execute(text("SELECT vendor_id FROM vendor_sources")).scalars()) == {vendor_a, vendor_public}
+            assert set(connection.execute(text("SELECT id FROM vendor_sites")).scalars()) == {site_a, site_public}
+            assert set(connection.execute(text("SELECT site_id FROM vendor_site_sources")).scalars()) == {site_a, site_public}
+            assert set(connection.execute(text("SELECT vendor_id FROM vendor_certifications")).scalars()) == {vendor_a, vendor_public}
+            assert set(connection.execute(text("SELECT vendor_id FROM vendor_review_decisions")).scalars()) == {vendor_a}
+            assert set(connection.execute(text("SELECT site_id FROM vendor_site_decisions")).scalars()) == {site_a}
+            assert set(connection.execute(text("SELECT certification_id FROM vendor_certification_decisions")).scalars()) == {cert_a}
+
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO vendors (legal_name,vendor_type,verification_status,review_status,submitted_by,organization_id)
+                        VALUES ('Cross-tenant vendor','laboratory','unverified','in_review',:user,:org)
+                    """), {"user": user_a, "org": org_b})
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO vendor_sites (vendor_id,organization_id,review_status,submitted_by,site_scope)
+                        VALUES (:vendor,:org,'in_review',:user,'Cross-tenant site')
+                    """), {"vendor": vendor_b, "org": org_b, "user": user_a})
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO vendor_certifications (vendor_id,site_id,certification_name,verification_status)
+                        VALUES (:vendor,:site,'Cross-tenant certificate','unverified')
+                    """), {"vendor": vendor_b, "site": site_b})
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO vendor_review_decisions (vendor_id,organization_id,reviewer_id,decision,rationale)
+                        VALUES (:vendor,:org,:user,'verified','Cross-tenant vendor decision must fail.')
+                    """), {"vendor": vendor_b, "org": org_a, "user": user_a})
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO vendor_site_decisions (site_id,organization_id,reviewer_id,decision,rationale)
+                        VALUES (:site,:org,:user,'verified','Cross-tenant site decision must fail.')
+                    """), {"site": site_b, "org": org_a, "user": user_a})
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO vendor_certification_decisions (certification_id,organization_id,reviewer_id,decision,rationale)
+                        VALUES (:cert,:org,:user,'verified','Cross-tenant certification decision must fail.')
+                    """), {"cert": cert_b, "org": org_a, "user": user_a})
+
+            connection.execute(text("UPDATE vendors SET verification_notes='Owner-only update.' WHERE id=:id"), {"id": vendor_a})
+            connection.execute(text("UPDATE vendor_sites SET site_scope='Owner-only update.' WHERE id=:id"), {"id": site_a})
+            connection.execute(text("UPDATE vendor_certifications SET scope='Owner-only update.' WHERE id=:id"), {"id": cert_a})
+            connection.execute(text("SELECT set_config('app.organization_id','',true)"))
+            assert set(connection.execute(text("SELECT id FROM vendors")).scalars()) == {vendor_public}
+            assert set(connection.execute(text("SELECT vendor_id FROM vendor_sources")).scalars()) == {vendor_public}
+            assert set(connection.execute(text("SELECT id FROM vendor_sites")).scalars()) == {site_public}
+            assert set(connection.execute(text("SELECT site_id FROM vendor_site_sources")).scalars()) == {site_public}
+            assert set(connection.execute(text("SELECT id FROM vendor_certifications")).scalars()) == {cert_public}
+            assert connection.execute(text("SELECT count(*) FROM vendor_review_decisions")).scalar_one() == 0
+            assert connection.execute(text("SELECT count(*) FROM vendor_site_decisions")).scalar_one() == 0
+            assert connection.execute(text("SELECT count(*) FROM vendor_certification_decisions")).scalar_one() == 0
+
+        connection.exec_driver_sql("RESET ROLE")
+        for table in ("vendors", "vendor_sources", "vendor_sites", "vendor_site_sources", "vendor_certifications"):
+            connection.exec_driver_sql(f"REVOKE SELECT, INSERT, UPDATE ON {table} FROM toolkit_vendor_directory_rls_test")
+        for table in ("vendor_review_decisions", "vendor_site_decisions", "vendor_certification_decisions"):
+            connection.exec_driver_sql(f"REVOKE SELECT, INSERT ON {table} FROM toolkit_vendor_directory_rls_test")
+        connection.exec_driver_sql("REVOKE USAGE ON SCHEMA public FROM toolkit_vendor_directory_rls_test")
+        connection.exec_driver_sql("DROP ROLE toolkit_vendor_directory_rls_test")

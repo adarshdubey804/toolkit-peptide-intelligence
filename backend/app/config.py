@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     public_research_rate_limit_per_window: int = Field(default=30, ge=1)
     sensitive_write_rate_limit_per_window: int = Field(default=20, ge=1)
     enrichment_rate_limit_per_window: int = Field(default=10, ge=1)
+    ai_research_rate_limit_per_window: int = Field(default=5, ge=1)
     ncbi_email: str | None = None
     ncbi_api_key: str | None = None
     ai_synthesis_enabled: bool = False

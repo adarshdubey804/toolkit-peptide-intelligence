@@ -8,6 +8,8 @@ from app.main import MIGRATIONS_DIR, app
 def test_vendor_material_traceability_routes_are_registered_and_bounded():
     paths = app.openapi()["paths"]
     assert "/api/v1/vendor-materials/offerings" in paths
+    assert "/api/v1/vendor-materials/mine/offerings" in paths
+    assert "get" in paths["/api/v1/vendor-materials/mine/offerings"]
     assert "get" in paths["/api/v1/vendor-materials/offerings"]
     assert "post" in paths["/api/v1/vendor-materials/offerings"]
     assert "/api/v1/vendor-materials/offerings/{offering_id}/batches" in paths

@@ -248,6 +248,31 @@ def submit_material_offering(
             "note": "The offering remains restricted and in review. It is not public or a live-inventory assertion."}
 
 
+@router.get("/mine/offerings")
+def my_organization_material_offerings(
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    limit: int = Query(default=100, ge=1, le=200),
+):
+    """List private and public offerings owned by the caller's active organization."""
+    org, _ = _membership(current_user, db)
+    rows = db.execute(text("""
+        SELECT o.id, o.vendor_id, v.legal_name AS vendor_name,
+               o.peptide_id, p.preferred_name AS peptide_name,
+               o.chemical_form_id, f.form_name, o.product_name,
+               o.catalogue_reference, o.review_status, o.visibility_scope, o.created_at
+        FROM vendor_material_offerings o
+        JOIN vendors v ON v.id=o.vendor_id
+        JOIN peptides p ON p.id=o.peptide_id
+        JOIN peptide_chemical_forms f ON f.id=o.chemical_form_id
+        WHERE o.organization_id=:org
+        ORDER BY o.created_at DESC, o.id
+        LIMIT :limit
+    """), {"org": org, "limit": limit}).mappings().all()
+    return {"items": [dict(row) for row in rows], "count": len(rows),
+            "scope": "All offering review states are visible only to the owning organization."}
+
+
 @router.get("/offerings/{offering_id}/batches")
 def list_organization_batches(
     offering_id: UUID,

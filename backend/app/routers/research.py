@@ -5,13 +5,14 @@ from typing import Annotated, Literal
 from uuid import UUID
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..db import get_db
+from ..rate_limit import enforce_rate_limit, request_client_identity
 from ..integrations.alphafold import AlphaFoldProvider
 from ..integrations.clinicaltrials import ClinicalTrialsProvider
 from ..integrations.pubchem import PubChemProvider
@@ -33,7 +34,24 @@ from ..integrations.pubmed import PubMedProvider
 from ..integrations.rcsb import RCSBProvider
 from ..integrations.uniprot import UniProtProvider
 
-router = APIRouter(prefix="/api/v1/research", tags=["research"])
+def limit_public_research_discovery(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+) -> None:
+    enforce_rate_limit(
+        db,
+        scope="public_research_discovery",
+        identity=request_client_identity(request),
+        limit=settings.public_research_rate_limit_per_window,
+        window_seconds=settings.rate_limit_window_seconds,
+    )
+
+
+router = APIRouter(
+    prefix="/api/v1/research",
+    tags=["research"],
+    dependencies=[Depends(limit_public_research_discovery)],
+)
 
 
 @router.get("/pubmed")

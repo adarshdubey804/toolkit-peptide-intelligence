@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..db import get_db
+from ..services.source_persistence import persist_normalized_source_record
 from ..rate_limit import enforce_rate_limit, request_client_identity
 from ..integrations.alphafold import AlphaFoldProvider
 from ..integrations.clinicaltrials import ClinicalTrialsProvider
@@ -352,20 +353,35 @@ async def extract_structured_evidence(
     persisted = []
     for record in records:
         source = citation_map[record["source_citation_id"]]
+        source_snapshot = persist_normalized_source_record(
+            db,
+            source_name=source["source"],
+            source_identifier=source["identifier"],
+            source_url=source["url"],
+            title=source["title"],
+            payload=source,
+        )
         row = db.execute(text("""
             INSERT INTO extracted_evidence_records
               (organization_id,run_id,source_citation_id,source_name,source_identifier,
-               source_url,source_title,extraction,extraction_model)
-            VALUES(:org,:run,:citation,:source,:identifier,:url,:title,CAST(:extraction AS jsonb),:model)
-            RETURNING id,review_status,created_at
+               source_url,source_title,extraction,extraction_model,
+               source_record_id,source_record_version_id)
+            VALUES(:org,:run,:citation,:source,:identifier,:url,:title,CAST(:extraction AS jsonb),:model,
+                   :source_record_id,:source_record_version_id)
+            RETURNING id,review_status,created_at,source_record_id,source_record_version_id
         """), {
             "org": org, "run": run["id"], "citation": record["source_citation_id"],
             "source": source["source"], "identifier": source["identifier"],
             "url": source["url"], "title": source["title"],
             "extraction": json.dumps(record), "model": settings.ai_model,
+            "source_record_id": source_snapshot["source_record_id"],
+            "source_record_version_id": source_snapshot["source_record_version_id"],
         }).mappings().one()
         persisted.append({"id": str(row["id"]), "source_citation_id": record["source_citation_id"],
                           "source_title": source["title"], "extraction": record,
+                          "source_record_id": str(row["source_record_id"]),
+                          "source_record_version_id": str(row["source_record_version_id"]),
+                          "source_content_hash": source_snapshot["content_hash"],
                           "review_status": row["review_status"]})
     db.commit()
     return {

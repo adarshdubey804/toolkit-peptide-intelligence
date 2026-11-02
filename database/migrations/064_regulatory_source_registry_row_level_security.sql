@@ -4,6 +4,11 @@ DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='toolkit_regulatory_scheduler') THEN
         CREATE ROLE toolkit_regulatory_scheduler NOLOGIN NOBYPASSRLS;
+    ELSIF EXISTS (
+        SELECT 1 FROM pg_roles
+        WHERE rolname='toolkit_regulatory_scheduler' AND (rolcanlogin OR rolbypassrls)
+    ) THEN
+        RAISE EXCEPTION 'toolkit_regulatory_scheduler must remain NOLOGIN and NOBYPASSRLS';
     END IF;
 END
 $$;

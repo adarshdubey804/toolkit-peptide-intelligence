@@ -77,6 +77,8 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             "publication_duplicate_decisions",
             "curation_reviews",
             "curation_decisions",
+            "agent_sessions",
+            "agent_session_messages",
             "claim_source_locators",
             "analytical_methods",
             "analytical_method_sources",
@@ -362,6 +364,21 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             )
         """)).scalar_one()
         assert curation_policy_count == 5, "Curation review and decision access paths need explicit RLS policies"
+
+        for table_name in ("agent_sessions", "agent_session_messages"):
+            state = connection.execute(text("""
+                SELECT relrowsecurity, relforcerowsecurity
+                FROM pg_class WHERE oid=to_regclass(:table_name)
+            """), {"table_name": f"public.{table_name}"}).one()
+            assert tuple(state) == (True, True), f"RLS and FORCE RLS must be enabled for {table_name}"
+        agent_policy_count = connection.execute(text("""
+            SELECT count(*) FROM pg_policies
+            WHERE schemaname='public' AND policyname IN (
+                'agent_sessions_select_scope','agent_sessions_insert_scope','agent_sessions_update_scope',
+                'agent_session_messages_select_scope','agent_session_messages_insert_scope'
+            )
+        """)).scalar_one()
+        assert agent_policy_count == 5, "Agent sessions and messages need user-and-organization RLS policies"
 
 @pytest.mark.skipif(
     os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",
@@ -1241,3 +1258,102 @@ def test_curation_reviews_and_decisions_are_organization_scoped():
         connection.exec_driver_sql("REVOKE SELECT, INSERT ON curation_decisions FROM toolkit_curation_rls_test")
         connection.exec_driver_sql("REVOKE USAGE ON SCHEMA public FROM toolkit_curation_rls_test")
         connection.exec_driver_sql("DROP ROLE toolkit_curation_rls_test")
+
+
+@pytest.mark.skipif(os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",
+                    reason="PostgreSQL agent session RLS integration test is enabled in CI only.")
+def test_agent_sessions_and_messages_are_private_to_user_and_organization():
+    with engine.begin() as connection:
+        connection.execute(text("SELECT pg_advisory_xact_lock(731904221067)"))
+        apply_development_migrations(connection)
+        org_a = connection.execute(text("INSERT INTO organizations (name,organization_type) VALUES (:n,'research_team') RETURNING id"),
+                                   {"n": "agent-a-" + str(uuid4())}).scalar_one()
+        org_b = connection.execute(text("INSERT INTO organizations (name,organization_type) VALUES (:n,'research_team') RETURNING id"),
+                                   {"n": "agent-b-" + str(uuid4())}).scalar_one()
+        user_a = connection.execute(text("INSERT INTO user_profiles (display_name,role) VALUES ('Agent A','researcher') RETURNING id")).scalar_one()
+        user_b = connection.execute(text("INSERT INTO user_profiles (display_name,role) VALUES ('Agent B','researcher') RETURNING id")).scalar_one()
+        user_c = connection.execute(text("INSERT INTO user_profiles (display_name,role) VALUES ('Agent C','researcher') RETURNING id")).scalar_one()
+
+        def session(org, user, title):
+            return connection.execute(text("""
+                INSERT INTO agent_sessions (organization_id,user_id,agent_id,title)
+                VALUES (:org,:user,'research-assistant',:title) RETURNING id
+            """), {"org": org, "user": user, "title": title}).scalar_one()
+
+        session_a = session(org_a, user_a, "User A private session")
+        session_b = session(org_a, user_b, "User B private session")
+        session_c = session(org_b, user_c, "User C private session")
+        def message(session_id, role, content):
+            return connection.execute(text("""
+                INSERT INTO agent_session_messages (session_id,sender_role,content)
+                VALUES (:session,:role,:content) RETURNING id
+            """), {"session": session_id, "role": role, "content": content}).scalar_one()
+
+        message_a = message(session_a, "user", "Private message for user A.")
+        message_b = message(session_b, "user", "Private message for user B.")
+        message_c = message(session_c, "user", "Private message for user C.")
+
+        with pytest.raises(Exception):
+            with connection.begin_nested():
+                connection.execute(text("UPDATE agent_session_messages SET content='mutated' WHERE id=:id"), {"id": message_a})
+        with pytest.raises(Exception):
+            with connection.begin_nested():
+                connection.execute(text("DELETE FROM agent_session_messages WHERE id=:id"), {"id": message_a})
+
+        role = "toolkit_agent_rls_test"
+        if not connection.execute(text("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname=:r)"), {"r": role}).scalar_one():
+            connection.exec_driver_sql(f"CREATE ROLE {role} NOLOGIN NOBYPASSRLS")
+        connection.exec_driver_sql("GRANT USAGE ON SCHEMA public TO toolkit_agent_rls_test")
+        connection.exec_driver_sql("GRANT SELECT, INSERT, UPDATE ON agent_sessions TO toolkit_agent_rls_test")
+        connection.exec_driver_sql("GRANT SELECT, INSERT ON agent_session_messages TO toolkit_agent_rls_test")
+
+        with connection.begin_nested():
+            connection.exec_driver_sql("SET LOCAL ROLE toolkit_agent_rls_test")
+            connection.execute(text("SELECT set_config('app.organization_id',:org,true), set_config('app.user_id',:user,true)"),
+                               {"org": str(org_a), "user": str(user_a)})
+            assert set(connection.execute(text("SELECT id FROM agent_sessions")).scalars()) == {session_a}
+            assert set(connection.execute(text("SELECT session_id FROM agent_session_messages")).scalars()) == {session_a}
+            own_new_session = connection.execute(text("""
+                INSERT INTO agent_sessions (organization_id,user_id,agent_id,title)
+                VALUES (:org,:user,'research-assistant','New session created under RLS')
+                RETURNING id
+            """), {"org": org_a, "user": user_a}).scalar_one()
+            connection.execute(text("""
+                INSERT INTO agent_session_messages (session_id,sender_role,content)
+                VALUES (:session,'user','Valid user-scoped message.')
+            """), {"session": own_new_session})
+            assert set(connection.execute(text("SELECT id FROM agent_sessions")).scalars()) == {session_a, own_new_session}
+            assert set(connection.execute(text("SELECT session_id FROM agent_session_messages")).scalars()) == {session_a, own_new_session}
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO agent_sessions (organization_id,user_id,agent_id,title)
+                        VALUES (:org,:user,'research-assistant','Impersonation attempt')
+                    """), {"org": org_a, "user": user_b})
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO agent_session_messages (session_id,sender_role,content)
+                        VALUES (:session,'user','Cross-user message attempt.')
+                    """), {"session": session_b})
+            connection.execute(text("UPDATE agent_sessions SET status='archived' WHERE id=:id"), {"id": session_a})
+            assert connection.execute(text("UPDATE agent_sessions SET status='archived' WHERE id=:id"), {"id": session_b}).rowcount == 0
+
+            connection.execute(text("SELECT set_config('app.user_id',:user,true)"), {"user": str(user_b)})
+            assert set(connection.execute(text("SELECT id FROM agent_sessions")).scalars()) == {session_b}
+            assert set(connection.execute(text("SELECT session_id FROM agent_session_messages")).scalars()) == {session_b}
+
+            connection.execute(text("SELECT set_config('app.organization_id',:org,true), set_config('app.user_id',:user,true)"),
+                               {"org": str(org_b), "user": str(user_c)})
+            assert set(connection.execute(text("SELECT id FROM agent_sessions")).scalars()) == {session_c}
+            assert set(connection.execute(text("SELECT session_id FROM agent_session_messages")).scalars()) == {session_c}
+
+            connection.execute(text("SELECT set_config('app.organization_id','',true), set_config('app.user_id','',true)"))
+            assert connection.execute(text("SELECT count(*) FROM agent_sessions")).scalar_one() == 0
+            assert connection.execute(text("SELECT count(*) FROM agent_session_messages")).scalar_one() == 0
+
+        connection.exec_driver_sql("RESET ROLE")
+        connection.exec_driver_sql("REVOKE SELECT, INSERT, UPDATE ON agent_sessions FROM toolkit_agent_rls_test")
+        connection.exec_driver_sql("REVOKE SELECT, INSERT ON agent_session_messages FROM toolkit_agent_rls_test")
+        connection.exec_driver_sql("REVOKE USAGE ON SCHEMA public FROM toolkit_agent_rls_test")
+        connection.exec_driver_sql("DROP ROLE toolkit_agent_rls_test")

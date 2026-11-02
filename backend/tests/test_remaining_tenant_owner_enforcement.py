@@ -42,3 +42,16 @@ def test_interaction_and_decision_owner_migration_is_present():
     assert "molecular_interaction_assessments" in migration
     assert "owner_organization_id" in migration
     assert "visibility_scope" in migration
+
+
+
+def test_batch_analytical_result_cannot_reference_another_organizations_private_method():
+    source = _source("vendor_materials.py")
+    assert "visibility_scope='public' OR owner_organization_id=:org" in source
+    assert '{"id": payload.method_id, "org": org}' in source
+
+
+def test_public_material_offerings_do_not_expose_unverified_site_identifiers():
+    source = _source("vendor_materials.py")
+    assert "site.id AS site_id" in source
+    assert "v.legal_name AS vendor_name, o.site_id" not in source

@@ -12,5 +12,5 @@ def test_evidence_appraisal_rls_migration_scopes_all_review_tables():
     ):
         assert f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY" in sql
         assert f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY" in sql
-    assert "appraisal.organization_id=organization_id" in sql
-    assert "candidate.organization_id=organization_id" in sql
+    assert "appraisal.organization_id=evidence_appraisal_decisions.organization_id" in sql
+    assert "candidate.organization_id=publication_duplicate_decisions.organization_id" in sql

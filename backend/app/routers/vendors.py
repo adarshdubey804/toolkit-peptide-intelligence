@@ -231,6 +231,9 @@ def import_vendor_candidates(
     if role not in SUBMIT_ROLES:
         raise HTTPException(status_code=403, detail="Your role cannot import vendor candidates.")
 
+    # Serialize imports within an organization so concurrent batches cannot race duplicate checks.
+    db.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(CAST(:org AS text), 0))"),
+               {"org": organization_id})
     created = []
     skipped = []
     seen_websites = set()

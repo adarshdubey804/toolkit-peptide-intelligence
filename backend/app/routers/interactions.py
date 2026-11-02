@@ -124,19 +124,19 @@ def submit_interaction(
     source_id = _source(db, payload.source)
     row = db.execute(text("""
         INSERT INTO molecular_interaction_assessments (
-            peptide_id, target_id, structure_identifier, structure_source_url,
+            organization_id, peptide_id, target_id, structure_identifier, structure_source_url,
             interaction_method, evidence_type, analysis_tool, analysis_version,
             interface_summary, interacting_residues, interaction_features,
             score_name, score_value, score_unit, score_interpretation, limitations,
             source_id, review_status, submitted_by
         ) VALUES (
-            :peptide, :target, :structure_id, :structure_url, :method, CAST(:evidence AS evidence_type),
+            :org, :peptide, :target, :structure_id, :structure_url, :method, CAST(:evidence AS evidence_type),
             :tool, :version, :summary, CAST(:residues AS jsonb), CAST(:features AS jsonb),
             :score_name, :score_value, :score_unit, :score_interpretation, :limitations,
             :source, 'in_review', :submitter
         ) RETURNING id, review_status
     """), {
-        "peptide": payload.peptide_id, "target": payload.target_id,
+        "org": organization_id, "peptide": payload.peptide_id, "target": payload.target_id,
         "structure_id": payload.structure_identifier, "structure_url": structure_url,
         "method": payload.interaction_method, "evidence": payload.evidence_type,
         "tool": payload.analysis_tool, "version": payload.analysis_version,
@@ -178,11 +178,7 @@ def interaction_review_queue(
         FROM molecular_interaction_assessments a
         JOIN peptides p ON p.id=a.peptide_id JOIN targets t ON t.id=a.target_id
         JOIN source_records sr ON sr.id=a.source_id
-        WHERE a.review_status='in_review' AND EXISTS (
-            SELECT 1 FROM organization_memberships om
-            WHERE om.user_id=a.submitted_by AND om.organization_id=:org
-              AND om.membership_status='active'
-        )
+        WHERE a.review_status='in_review' AND a.organization_id=:org
         ORDER BY a.created_at LIMIT :limit
     """), {"org": organization_id, "limit": limit}).mappings().all()
     return {"items": [dict(row) for row in rows], "count": len(rows)}
@@ -200,9 +196,8 @@ def decide_interaction(
         raise HTTPException(status_code=403, detail="Curator or reviewer permission is required.")
     row = db.execute(text("""
         SELECT a.* FROM molecular_interaction_assessments a
-        JOIN organization_memberships om ON om.user_id=a.submitted_by
         WHERE a.id=:id AND a.review_status='in_review'
-          AND om.organization_id=:org AND om.membership_status='active'
+          AND a.organization_id=:org
         FOR UPDATE OF a
     """), {"id": assessment_id, "org": organization_id}).mappings().first()
     if not row:

@@ -1313,6 +1313,17 @@ def test_agent_sessions_and_messages_are_private_to_user_and_organization():
                                {"org": str(org_a), "user": str(user_a)})
             assert set(connection.execute(text("SELECT id FROM agent_sessions")).scalars()) == {session_a}
             assert set(connection.execute(text("SELECT session_id FROM agent_session_messages")).scalars()) == {session_a}
+            own_new_session = connection.execute(text("""
+                INSERT INTO agent_sessions (organization_id,user_id,agent_id,title)
+                VALUES (:org,:user,'research-assistant','New session created under RLS')
+                RETURNING id
+            """), {"org": org_a, "user": user_a}).scalar_one()
+            connection.execute(text("""
+                INSERT INTO agent_session_messages (session_id,sender_role,content)
+                VALUES (:session,'user','Valid user-scoped message.')
+            """), {"session": own_new_session})
+            assert set(connection.execute(text("SELECT id FROM agent_sessions")).scalars()) == {session_a, own_new_session}
+            assert set(connection.execute(text("SELECT session_id FROM agent_session_messages")).scalars()) == {session_a, own_new_session}
             with pytest.raises(Exception):
                 with connection.begin_nested():
                     connection.execute(text("""

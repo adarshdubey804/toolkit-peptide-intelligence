@@ -49,7 +49,7 @@ Legacy records with ambiguous owners remain NULL/restricted and must be resolved
 
 ### P0 — Tenant isolation is application-enforced, not visibly database-enforced
 
-The inspected migrations contain organization membership and organization-scoped query patterns, but migrations 044–052 now enable transaction-scoped RLS for vendor materials, analytical methods, formulations, process knowledge, molecular interactions, evidence appraisals, publication duplicate review, curation workflows, user-private agent sessions and regulatory guidance history. Regulatory source registry and scheduler tables still need a worker-safe tenant design.
+The inspected migrations contain organization membership and organization-scoped query patterns, but migrations 044–052 now enable transaction-scoped RLS for vendor materials, analytical methods, formulations, process knowledge, molecular interactions, evidence appraisals, publication duplicate review, curation workflows, user-private agent sessions and regulatory guidance history. Regulatory source observations and poll-run history are now organization-scoped; the cross-tenant source registry remains a documented worker-control-plane exception until a dedicated worker role is introduced.
 
 A missed organization predicate in one endpoint can therefore expose another tenant's data.
 

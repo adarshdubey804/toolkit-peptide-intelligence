@@ -183,3 +183,19 @@ This is an early development scaffold, not production-ready software. Production
 - Field review history is available at GET `/api/v1/research/assistant/extractions/{run_id}/records/{record_id}/history`. Original AI extraction JSON is not overwritten; corrections are separate decision events with reviewer identity and rationale.
 - Frontend reviewer workspace: `/evidence-review`. Reviewers sign in and load a run UUID returned by the extraction endpoint.
 - Field-level editorial decisions do not automatically promote records into the verified peptide catalogue or canonical evidence claims. Source review and canonical curation remain separate.
+
+
+### Source-backed vendor candidate intake
+
+Authorized organization contributors can batch-import up to 25 vendor candidates with `POST /api/v1/vendors/import-candidates`. The endpoint requires an HTTPS service/identity source URL and an evidence-scope note for every candidate. Each candidate may include a separate `identity_source` (for example, an official contact or imprint page) so the company reference country and service claim can retain distinct provenance. It creates organization-owned records with `review_status=in_review` and `verification_status=unverified`; these records are not publicly listed until independent curator review. Duplicate official website URLs within the batch or organization are skipped. The endpoint does not create facilities, certifications, or service-capability records from a company-level marketing page.
+
+A starter manifest with five candidates and separate service/identity source records is provided at `data/vendor_candidates/starter_batch_2026-11.json`. Each entry is a research candidate supported by the cited official page, not a verified vendor, facility, certification, current inventory, or guarantee of peptide-specific service availability. Curators must verify company identity and source scope before approval; facility, service and certification claims follow their separate review workflows.
+
+Example request:
+
+```bash
+curl -X POST "$API_BASE/api/v1/vendors/import-candidates" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data-binary @data/vendor_candidates/starter_batch_2026-11.json
+```

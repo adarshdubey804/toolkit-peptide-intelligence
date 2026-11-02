@@ -1,0 +1,84 @@
+{
+  "candidates": [
+    {
+      "legal_name": "Bachem",
+      "website_url": "https://www.bachem.com/",
+      "country_code": "CH",
+      "vendor_type": "cdmo",
+      "source_name": "Official company website",
+      "source_identifier": "official-service-page:bachem-custom-peptide-synthesis",
+      "source_url": "https://www.bachem.com/custom-peptide-synthesis-services/",
+      "evidence_scope": "Official service page describes custom peptide synthesis, non-GMP research synthesis, peptide modifications and analytical services including HPLC and mass spectrometry. Candidate classification only; no facility, certification, current capacity, inventory or project-specific suitability is inferred.",
+      "identity_source": {
+        "source_name": "Official company imprint",
+        "source_identifier": "official-company-imprint:bachem-holding",
+        "source_url": "https://www.bachem.com/imprint/",
+        "evidence_scope": "Official imprint identifies Bachem Holding AG at Bubendorf, Switzerland. Country code records the documented corporate reference country; this is not a substitute for individual production-site records."
+      }
+    },
+    {
+      "legal_name": "GenScript",
+      "website_url": "https://www.genscript.com/",
+      "country_code": "US",
+      "vendor_type": "peptide_manufacturer",
+      "source_name": "Official company website",
+      "source_identifier": "official-service-page:genscript-peptide-services",
+      "source_url": "https://www.genscript.com/peptide-services.html",
+      "evidence_scope": "Official peptide services page describes custom peptide synthesis, peptide libraries and cGMP peptide services. Candidate classification only; no facility address, certification, current capacity, inventory or project-specific suitability is inferred.",
+      "identity_source": {
+        "source_name": "Official company contact page",
+        "source_identifier": "official-contact:genscript-usa",
+        "source_url": "https://www.genscript.com/contact.html",
+        "evidence_scope": "Official contact page lists the USA regional office in Piscataway, New Jersey. Country code records this documented regional reference office, not a claim about legal domicile or exclusive operating location."
+      }
+    },
+    {
+      "legal_name": "AnaSpec",
+      "website_url": "https://www.anaspec.com/",
+      "country_code": "US",
+      "vendor_type": "peptide_manufacturer",
+      "source_name": "Official company website",
+      "source_identifier": "official-service-page:anaspec-custom-peptides",
+      "source_url": "https://www.anaspec.com/en/custom-peptides",
+      "evidence_scope": "Official service page describes custom peptide synthesis, modifications, peptide libraries and optional analytical tests such as HPLC, mass spectrometry, peptide content and endotoxin testing. Candidate classification only; no facility, certification, current capacity, inventory or project-specific suitability is inferred.",
+      "identity_source": {
+        "source_name": "Official company contact page",
+        "source_identifier": "official-contact:anaspec-headquarters",
+        "source_url": "https://www.anaspec.com/en/contact",
+        "evidence_scope": "Official contact page identifies AnaSpec headquarters in Fremont, California, USA. Country code records the documented headquarters country; operational sites and their individual capabilities remain separate records."
+      }
+    },
+    {
+      "legal_name": "Thermo Fisher Scientific",
+      "website_url": "https://www.thermofisher.com/",
+      "country_code": "US",
+      "vendor_type": "research_reagent_supplier",
+      "source_name": "Official company website",
+      "source_identifier": "official-service-page:thermofisher-custom-peptide-synthesis",
+      "source_url": "https://www.thermofisher.com/es/en/home/life-science/protein-biology/peptides-proteins/custom-peptide-synthesis-services.html",
+      "evidence_scope": "Official service page describes custom peptide synthesis, peptide modifications and purification by HPLC. Candidate classification only; no local facility, certification, current capacity, inventory or project-specific suitability is inferred.",
+      "identity_source": {
+        "source_name": "Official corporate headquarters page",
+        "source_identifier": "official-headquarters:thermofisher-waltham",
+        "source_url": "https://jobs.thermofisher.com/global/en/our-hq-waltham/",
+        "evidence_scope": "Official corporate page identifies worldwide headquarters in Waltham, Massachusetts, USA. Country code records the documented corporate headquarters country, not the location of all peptide services."
+      }
+    },
+    {
+      "legal_name": "SGS",
+      "website_url": "https://www.sgs.com/",
+      "country_code": "CH",
+      "vendor_type": "analytical_laboratory",
+      "source_name": "Official company website",
+      "source_identifier": "official-service-page:sgs-india-biopharmaceutical-services",
+      "source_url": "https://www.sgs.com/en-in/service-groups/biopharmaceutical-services",
+      "evidence_scope": "Official SGS India page describes biopharmaceutical testing including product characterization, analytical method development and validation, bioanalysis and quality control, and lists a Mumbai contact. This is a general biopharmaceutical-services candidate only; peptide-specific capability and the exact services performed at the Mumbai facility are not established by this page.",
+      "identity_source": {
+        "source_name": "Official corporate headquarters announcement",
+        "source_identifier": "official-headquarters:sgs-baar",
+        "source_url": "https://www.sgs.com/en-in/news/2026/01/sgs-inaugurates-new-global-headquarters-in-baar-switzerland",
+        "evidence_scope": "Official SGS announcement states its global headquarters was inaugurated in Baar, Switzerland, on 29 January 2026. Country code records the corporate headquarters country; the cited India service page separately lists a Mumbai contact but does not prove peptide-specific testing at that site."
+      }
+    }
+  ]
+}

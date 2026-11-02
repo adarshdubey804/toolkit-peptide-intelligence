@@ -4,7 +4,7 @@ from uuid import UUID
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, field_validator
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -25,6 +25,43 @@ class VendorSubmission(BaseModel):
     source_identifier: str = Field(min_length=1, max_length=200)
     source_url: HttpUrl
     evidence_scope: str = Field(min_length=5, max_length=1000)
+
+
+class VendorCandidateIdentitySource(BaseModel):
+    source_name: str = Field(min_length=2, max_length=120)
+    source_identifier: str = Field(min_length=1, max_length=200)
+    source_url: HttpUrl
+    evidence_scope: str = Field(min_length=5, max_length=1000)
+
+    @field_validator("source_url")
+    @classmethod
+    def identity_source_must_use_https(cls, value):
+        if value.scheme != "https":
+            raise ValueError("Identity evidence sources must use HTTPS.")
+        return value
+
+
+class VendorCandidateImport(BaseModel):
+    legal_name: str = Field(min_length=2, max_length=300)
+    website_url: HttpUrl
+    country_code: str = Field(min_length=2, max_length=2)
+    vendor_type: Literal["peptide_manufacturer", "cdmo", "cro", "analytical_laboratory", "research_reagent_supplier", "other"]
+    source_name: str = Field(min_length=2, max_length=120)
+    source_identifier: str = Field(min_length=1, max_length=200)
+    source_url: HttpUrl
+    evidence_scope: str = Field(min_length=5, max_length=1000)
+    identity_source: VendorCandidateIdentitySource | None = None
+
+    @field_validator("source_url")
+    @classmethod
+    def service_source_must_use_https(cls, value):
+        if value.scheme != "https":
+            raise ValueError("Service evidence sources must use HTTPS.")
+        return value
+
+
+class VendorCandidateBatch(BaseModel):
+    candidates: list[VendorCandidateImport] = Field(min_length=1, max_length=25)
 
 
 class VendorServiceSubmission(BaseModel):
@@ -74,6 +111,19 @@ def _source_host(url: str):
     if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
         raise HTTPException(status_code=422, detail="Evidence source must use HTTPS without embedded credentials.")
     return url
+
+
+def _candidate_source_url(website_url: str, source_url: str):
+    website_host = (urlsplit(_source_host(website_url)).hostname or "").lower()
+    source_host = (urlsplit(_source_host(source_url)).hostname or "").lower()
+    website_host = website_host.removeprefix("www.")
+    source_host = source_host.removeprefix("www.")
+    if source_host != website_host and not source_host.endswith("." + website_host):
+        raise HTTPException(
+            status_code=422,
+            detail="Candidate evidence URLs must be hosted on the official company website domain.",
+        )
+    return source_url
 
 
 def _source_record(db: Session, source_name: str, identifier: str, url: str):
@@ -195,6 +245,112 @@ def submit_vendor(
            "type": payload.vendor_type, "source": str(source_id)})
     db.commit()
     return dict(vendor)
+
+
+@router.post("/import-candidates", status_code=201)
+def import_vendor_candidates(
+    payload: VendorCandidateBatch,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """Batch-intake source-backed vendor candidates as unverified records for human review."""
+    organization_id, role = _membership(current_user, db)
+    if role not in SUBMIT_ROLES:
+        raise HTTPException(status_code=403, detail="Your role cannot import vendor candidates.")
+
+    # Serialize imports within an organization so concurrent batches cannot race duplicate checks.
+    db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(CAST(:org AS text), 0))"),
+        {"org": organization_id},
+    )
+    created = []
+    skipped = []
+    seen_websites = set()
+    for candidate in payload.candidates:
+        website = _source_host(str(candidate.website_url))
+        source_url = _candidate_source_url(website, str(candidate.source_url))
+        normalized_website = website.lower().rstrip("/")
+        if normalized_website in seen_websites:
+            skipped.append({"legal_name": candidate.legal_name, "reason": "duplicate_in_batch"})
+            continue
+        seen_websites.add(normalized_website)
+
+        existing = db.execute(text("""
+            SELECT id, legal_name FROM vendors
+            WHERE organization_id=:org
+              AND rtrim(lower(coalesce(website_url,'')), '/')=:website
+            LIMIT 1
+        """), {"org": organization_id, "website": normalized_website}).mappings().first()
+        if existing:
+            skipped.append({"legal_name": candidate.legal_name, "reason": "website_already_in_organization"})
+            continue
+
+        source_id = _source_record(
+            db, candidate.source_name.strip(), candidate.source_identifier.strip(), source_url
+        )
+        vendor = db.execute(text("""
+            INSERT INTO vendors (
+                legal_name, website_url, country_code, vendor_type,
+                verification_status, review_status, submitted_by, organization_id
+            )
+            VALUES (:name, :website, :country, :type, 'unverified', 'in_review', :submitter, :org)
+            RETURNING id, legal_name, review_status, verification_status, created_at
+        """), {
+            "name": candidate.legal_name.strip(),
+            "website": website,
+            "country": candidate.country_code.upper(),
+            "type": candidate.vendor_type,
+            "submitter": current_user["id"],
+            "org": organization_id,
+        }).mappings().one()
+        db.execute(text("""
+            INSERT INTO vendor_sources (vendor_id, source_record_id, evidence_scope)
+            VALUES (:vendor, :source, :scope)
+        """), {
+            "vendor": vendor["id"],
+            "source": source_id,
+            "scope": candidate.evidence_scope.strip(),
+        })
+        if candidate.identity_source:
+            identity_source_id = _source_record(
+                db,
+                candidate.identity_source.source_name.strip(),
+                candidate.identity_source.source_identifier.strip(),
+                _candidate_source_url(website, str(candidate.identity_source.source_url)),
+            )
+            db.execute(text("""
+                INSERT INTO vendor_sources (vendor_id, source_record_id, evidence_scope)
+                VALUES (:vendor, :source, :scope) ON CONFLICT DO NOTHING
+            """), {
+                "vendor": vendor["id"],
+                "source": identity_source_id,
+                "scope": candidate.identity_source.evidence_scope.strip(),
+            })
+        db.execute(text("""
+            INSERT INTO audit_events (
+                actor_user_id, organization_id, action, entity_type, entity_id, event_metadata
+            )
+            VALUES (
+                :actor, :org, 'vendor_candidate_imported', 'vendor', :id,
+                jsonb_build_object('vendor_type', :type, 'source_record_id', :source,
+                                   'intake_status', 'unverified_review_candidate')
+            )
+        """), {
+            "actor": current_user["id"], "org": organization_id, "id": vendor["id"],
+            "type": candidate.vendor_type, "source": str(source_id),
+        })
+        created.append(dict(vendor))
+
+    db.commit()
+    return {
+        "created": created,
+        "created_count": len(created),
+        "skipped": skipped,
+        "skipped_count": len(skipped),
+        "review_status": "in_review",
+        "verification_status": "unverified",
+        "public_visibility": "not_listed_until_independent_review",
+    }
 
 
 @router.post("/{vendor_id}/services", status_code=201)

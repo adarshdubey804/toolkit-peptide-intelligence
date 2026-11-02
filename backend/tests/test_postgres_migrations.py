@@ -2150,3 +2150,165 @@ def test_data_quality_report_counts_source_revision_and_extraction_coverage():
         assert report["organization_evidence"]["claims"]["with_revision"] == 1
         assert report["organization_evidence"]["extractions"]["with_source_version"] == 1
         assert report["organization_evidence"]["curation"]["claim_revision_bound_decisions"] == 1
+
+
+@pytest.mark.skipif(os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",
+                    reason="PostgreSQL vendor service/evidence RLS integration test is enabled in CI only.")
+def test_vendor_services_and_evidence_links_follow_owner_and_verified_public_scope():
+    with engine.begin() as connection:
+        connection.execute(text("SELECT pg_advisory_xact_lock(731904221067)"))
+        apply_development_migrations(connection)
+        org_a = connection.execute(text("INSERT INTO organizations (name,organization_type) VALUES (:n,'research_team') RETURNING id"),
+                                   {"n": "vendor-service-a-" + str(uuid4())}).scalar_one()
+        org_b = connection.execute(text("INSERT INTO organizations (name,organization_type) VALUES (:n,'research_team') RETURNING id"),
+                                   {"n": "vendor-service-b-" + str(uuid4())}).scalar_one()
+        user_a = connection.execute(text("INSERT INTO user_profiles (display_name,role) VALUES ('Vendor Service A','researcher') RETURNING id")).scalar_one()
+        user_b = connection.execute(text("INSERT INTO user_profiles (display_name,role) VALUES ('Vendor Service B','researcher') RETURNING id")).scalar_one()
+        source = connection.execute(text("""
+            INSERT INTO source_records (source_name,source_identifier,source_url,raw_metadata)
+            VALUES ('Vendor service RLS source',:identifier,'https://example.org/vendor-service-rls','{}'::jsonb) RETURNING id
+        """), {"identifier": str(uuid4())}).scalar_one()
+        peptide = connection.execute(text("INSERT INTO peptides (preferred_name,review_status) VALUES (:name,'verified') RETURNING id"),
+                                     {"name": "Vendor service peptide " + str(uuid4())}).scalar_one()
+
+        def vendor(org, user, label, status):
+            return connection.execute(text("""
+                INSERT INTO vendors (legal_name,vendor_type,verification_status,review_status,submitted_by,organization_id)
+                VALUES (:name,'laboratory',:verification,:status,:user,:org) RETURNING id
+            """), {"name": label + " service vendor " + str(uuid4()),
+                   "verification": "verified" if status == "verified" else "unverified",
+                   "status": status, "user": user, "org": org}).scalar_one()
+
+        vendor_a = vendor(org_a, user_a, "A", "in_review")
+        vendor_b = vendor(org_b, user_b, "B", "in_review")
+        vendor_public = vendor(org_b, user_b, "Public", "verified")
+
+        def site(vendor_id, org, user, label, status):
+            return connection.execute(text("""
+                INSERT INTO vendor_sites (vendor_id,site_name,organization_id,review_status,submitted_by,site_scope)
+                VALUES (:vendor,:name,:org,:status,:user,'analytical testing')
+                RETURNING id
+            """), {"vendor": vendor_id, "name": label + " service site", "org": org,
+                   "status": status, "user": user}).scalar_one()
+
+        site_a = site(vendor_a, org_a, user_a, "A", "in_review")
+        site_b = site(vendor_b, org_b, user_b, "B", "in_review")
+        site_public = site(vendor_public, org_b, user_b, "Public", "verified")
+
+        def service(vendor_id, site_id, user, label, status):
+            return connection.execute(text("""
+                INSERT INTO vendor_services
+                (vendor_id,site_id,service_name,capability_description,review_status,submitted_by,evidence_source_id)
+                VALUES (:vendor,:site,:name,'Source-backed service capability description.',:status,:user,:source)
+                RETURNING id
+            """), {"vendor": vendor_id, "site": site_id, "name": label + " peptide service",
+                   "status": status, "user": user, "source": source}).scalar_one()
+
+        service_a = service(vendor_a, site_a, user_a, "A", "in_review")
+        service_b = service(vendor_b, site_b, user_b, "B", "in_review")
+        service_public = service(vendor_public, site_public, user_b, "Public", "verified")
+        connection.execute(text("""
+            INSERT INTO vendor_service_decisions (service_id,organization_id,reviewer_id,decision,rationale)
+            VALUES (:service,:org,:user,'verified','Independent service review decision for organization A.')
+        """), {"service": service_a, "org": org_a, "user": user_b})
+        connection.execute(text("""
+            INSERT INTO vendor_service_decisions (service_id,organization_id,reviewer_id,decision,rationale)
+            VALUES (:service,:org,:user,'verified','Independent service review decision for organization B.')
+        """), {"service": service_b, "org": org_b, "user": user_a})
+
+        def evidence_link(service_id, org, user, label, status):
+            return connection.execute(text("""
+                INSERT INTO vendor_service_evidence_links
+                (organization_id,service_id,peptide_id,relationship_type,evidence_scope,limitations,
+                 source_id,review_status,submitted_by)
+                VALUES (:org,:service,:peptide,'peptide_supply','Source describes peptide supply scope.',
+                        'Vendor statement is not independent proof of product quality.',:source,:status,:user)
+                RETURNING id
+            """), {"org": org, "service": service_id, "peptide": peptide,
+                   "source": source, "status": status, "user": user}).scalar_one()
+
+        link_a = evidence_link(service_a, org_a, user_a, "A", "in_review")
+        link_b = evidence_link(service_b, org_b, user_b, "B", "in_review")
+        link_public = evidence_link(service_public, org_b, user_b, "Public", "verified")
+        connection.execute(text("""
+            INSERT INTO vendor_service_evidence_link_decisions (link_id,organization_id,reviewer_id,decision,rationale)
+            VALUES (:link,:org,:user,'verified','Independent service evidence review for organization A.')
+        """), {"link": link_a, "org": org_a, "user": user_b})
+        connection.execute(text("""
+            INSERT INTO vendor_service_evidence_link_decisions (link_id,organization_id,reviewer_id,decision,rationale)
+            VALUES (:link,:org,:user,'verified','Independent service evidence review for organization B.')
+        """), {"link": link_b, "org": org_b, "user": user_a})
+
+        role = "toolkit_vendor_service_rls_test"
+        if not connection.execute(text("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname=:r)"), {"r": role}).scalar_one():
+            connection.exec_driver_sql(f"CREATE ROLE {role} NOLOGIN NOBYPASSRLS")
+        connection.exec_driver_sql("GRANT USAGE ON SCHEMA public TO toolkit_vendor_service_rls_test")
+        for table in ("vendors", "vendor_sites", "peptides", "analytical_methods"):
+            connection.exec_driver_sql(f"GRANT SELECT ON {table} TO toolkit_vendor_service_rls_test")
+        for table in ("vendor_services", "vendor_service_evidence_links"):
+            connection.exec_driver_sql(f"GRANT SELECT, INSERT, UPDATE ON {table} TO toolkit_vendor_service_rls_test")
+        for table in ("vendor_service_decisions", "vendor_service_evidence_link_decisions"):
+            connection.exec_driver_sql(f"GRANT SELECT, INSERT ON {table} TO toolkit_vendor_service_rls_test")
+
+        with connection.begin_nested():
+            connection.exec_driver_sql("SET LOCAL ROLE toolkit_vendor_service_rls_test")
+            connection.execute(text("SELECT set_config('app.organization_id',:org,true)"), {"org": str(org_a)})
+            assert set(connection.execute(text("SELECT id FROM vendor_services WHERE id IN (:a,:b,:public)"),
+                                          {"a": service_a, "b": service_b, "public": service_public}).scalars()) == {service_a, service_public}
+            assert set(connection.execute(text("SELECT service_id FROM vendor_service_decisions WHERE service_id IN (:a,:b)"),
+                                          {"a": service_a, "b": service_b}).scalars()) == {service_a}
+            assert set(connection.execute(text("SELECT id FROM vendor_service_evidence_links WHERE id IN (:a,:b,:public)"),
+                                          {"a": link_a, "b": link_b, "public": link_public}).scalars()) == {link_a, link_public}
+            assert set(connection.execute(text("SELECT link_id FROM vendor_service_evidence_link_decisions WHERE link_id IN (:a,:b)"),
+                                          {"a": link_a, "b": link_b}).scalars()) == {link_a}
+
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO vendor_services (vendor_id,site_id,service_name,review_status,submitted_by)
+                        VALUES (:vendor,:site,'Cross-tenant service','in_review',:user)
+                    """), {"vendor": vendor_b, "site": site_b, "user": user_a})
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO vendor_service_decisions (service_id,organization_id,reviewer_id,decision,rationale)
+                        VALUES (:service,:org,:user,'verified','Cross-tenant service decision must fail.')
+                    """), {"service": service_b, "org": org_a, "user": user_a})
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO vendor_service_evidence_links
+                        (organization_id,service_id,peptide_id,relationship_type,evidence_scope,limitations,source_id,submitted_by)
+                        VALUES (:org,:service,:peptide,'peptide_supply','Cross-tenant evidence scope.',
+                                'Cross-tenant link write must fail.',:source,:user)
+                    """), {"org": org_b, "service": service_b, "peptide": peptide, "source": source, "user": user_a})
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO vendor_service_evidence_link_decisions (link_id,organization_id,reviewer_id,decision,rationale)
+                        VALUES (:link,:org,:user,'verified','Cross-tenant link decision must fail.')
+                    """), {"link": link_b, "org": org_a, "user": user_a})
+
+            connection.execute(text("UPDATE vendor_services SET capability_description='Owner-only service update.' WHERE id=:id"),
+                               {"id": service_a})
+            connection.execute(text("UPDATE vendor_service_evidence_links SET limitations='Owner-only evidence update.' WHERE id=:id"),
+                               {"id": link_a})
+            connection.execute(text("SELECT set_config('app.organization_id','',true)"))
+            assert set(connection.execute(text("SELECT id FROM vendor_services WHERE id IN (:a,:b,:public)"),
+                                          {"a": service_a, "b": service_b, "public": service_public}).scalars()) == {service_public}
+            assert set(connection.execute(text("SELECT id FROM vendor_service_evidence_links WHERE id IN (:a,:b,:public)"),
+                                          {"a": link_a, "b": link_b, "public": link_public}).scalars()) == {link_public}
+            assert connection.execute(text("SELECT count(*) FROM vendor_service_decisions WHERE service_id IN (:a,:b)"),
+                                       {"a": service_a, "b": service_b}).scalar_one() == 0
+            assert connection.execute(text("SELECT count(*) FROM vendor_service_evidence_link_decisions WHERE link_id IN (:a,:b)"),
+                                       {"a": link_a, "b": link_b}).scalar_one() == 0
+
+        connection.exec_driver_sql("RESET ROLE")
+        for table in ("vendor_services", "vendor_service_evidence_links"):
+            connection.exec_driver_sql(f"REVOKE SELECT, INSERT, UPDATE ON {table} FROM toolkit_vendor_service_rls_test")
+        for table in ("vendor_service_decisions", "vendor_service_evidence_link_decisions"):
+            connection.exec_driver_sql(f"REVOKE SELECT, INSERT ON {table} FROM toolkit_vendor_service_rls_test")
+        for table in ("vendors", "vendor_sites", "peptides", "analytical_methods"):
+            connection.exec_driver_sql(f"REVOKE SELECT ON {table} FROM toolkit_vendor_service_rls_test")
+        connection.exec_driver_sql("REVOKE USAGE ON SCHEMA public FROM toolkit_vendor_service_rls_test")
+        connection.exec_driver_sql("DROP ROLE toolkit_vendor_service_rls_test")

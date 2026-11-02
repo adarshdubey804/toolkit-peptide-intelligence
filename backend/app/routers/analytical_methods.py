@@ -3,7 +3,7 @@ from uuid import UUID
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, field_validator
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -749,6 +749,13 @@ class PeptideTestApplicabilitySubmission(BaseModel):
     source_name: str = Field(min_length=2, max_length=120)
     source_identifier: str = Field(min_length=1, max_length=200)
     source_url: HttpUrl
+
+    @field_validator("source_url")
+    @classmethod
+    def require_https_source(cls, value: HttpUrl) -> HttpUrl:
+        if value.scheme != "https":
+            raise ValueError("Source URL must use HTTPS.")
+        return value
 
 
 class PeptideTestApplicabilityDecision(BaseModel):

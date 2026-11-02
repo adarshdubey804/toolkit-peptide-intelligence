@@ -1,3 +1,6 @@
+from app.main import app
+
+
 def test_curation_revision_routes_are_registered_and_revision_scoped():
     paths = app.openapi()["paths"]
     assert "/api/v1/curation/claims/{claim_id}/revisions" in paths

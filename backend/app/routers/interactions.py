@@ -9,6 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..db import get_db
+from ..rate_limit_dependencies import authenticated_write_rate_limit
 from .auth import get_current_user
 
 router = APIRouter(prefix="/api/v1/interactions", tags=["molecular interaction intelligence"])
@@ -102,7 +103,7 @@ def list_interactions(
             "notice": "Verified curation describes the source and analysis record; computational scores are not measured binding affinities."}
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("interaction_write"))])
 def submit_interaction(
     payload: InteractionSubmission,
     current_user: Annotated[dict, Depends(get_current_user)],
@@ -185,7 +186,7 @@ def interaction_review_queue(
     return {"items": [dict(row) for row in rows], "count": len(rows)}
 
 
-@router.post("/{assessment_id}/decisions", status_code=201)
+@router.post("/{assessment_id}/decisions", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("interaction_write"))])
 def decide_interaction(
     assessment_id: UUID,
     payload: InteractionDecision,

@@ -4,7 +4,7 @@ from uuid import UUID
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, field_validator
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -33,6 +33,13 @@ class VendorCandidateIdentitySource(BaseModel):
     source_url: HttpUrl
     evidence_scope: str = Field(min_length=5, max_length=1000)
 
+    @field_validator("source_url")
+    @classmethod
+    def identity_source_must_use_https(cls, value):
+        if value.scheme != "https":
+            raise ValueError("Identity evidence sources must use HTTPS.")
+        return value
+
 
 class VendorCandidateImport(BaseModel):
     legal_name: str = Field(min_length=2, max_length=300)
@@ -44,6 +51,13 @@ class VendorCandidateImport(BaseModel):
     source_url: HttpUrl
     evidence_scope: str = Field(min_length=5, max_length=1000)
     identity_source: VendorCandidateIdentitySource | None = None
+
+    @field_validator("source_url")
+    @classmethod
+    def service_source_must_use_https(cls, value):
+        if value.scheme != "https":
+            raise ValueError("Service evidence sources must use HTTPS.")
+        return value
 
 
 class VendorCandidateBatch(BaseModel):

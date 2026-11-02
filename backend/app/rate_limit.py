@@ -34,6 +34,17 @@ def enforce_rate_limit(
     if limit < 1 or window_seconds < 1:
         raise ValueError("Rate limit and window must be positive.")
 
+    # Rate-limit writes commit independently so the shared bucket is durable even
+    # when the protected endpoint later fails. Preserve transaction-local auth
+    # context across that commit; otherwise downstream RLS-protected queries
+    # silently lose their organization and user scope.
+    organization_context = db.execute(
+        text("SELECT current_setting('app.organization_id', true)")
+    ).scalar_one_or_none()
+    user_context = db.execute(
+        text("SELECT current_setting('app.user_id', true)")
+    ).scalar_one_or_none()
+
     identity_digest = hmac.new(settings.app_secret_key.encode("utf-8"), identity.encode("utf-8"), sha256).hexdigest()
     bucket_key = f"{scope}:{identity_digest}"
     db.execute(
@@ -84,6 +95,20 @@ def enforce_rate_limit(
         """))
 
     db.commit()
+
+    # SET LOCAL state is cleared by commit. Re-establish only values that were
+    # present before rate limiting; public discovery dependencies have no user
+    # context and therefore do not acquire one here.
+    if organization_context is not None:
+        db.execute(
+            text("SELECT set_config('app.organization_id', :organization_id, true)"),
+            {"organization_id": organization_context},
+        )
+    if user_context is not None:
+        db.execute(
+            text("SELECT set_config('app.user_id', :user_id, true)"),
+            {"user_id": user_context},
+        )
 
     if count > limit:
         retry_after = max(1, ceil((window_start + timedelta(seconds=window_seconds) - now).total_seconds()))

@@ -9,6 +9,7 @@ from ..config import settings
 from .auth import get_current_user
 from ..db import get_db
 from ..rate_limit import enforce_rate_limit
+from ..rate_limit_dependencies import authenticated_write_rate_limit
 
 router = APIRouter(prefix="/api/v1/agents", tags=["research agents"])
 
@@ -275,7 +276,7 @@ def list_agent_sessions(
     return {"items": [dict(row) for row in rows], "count": len(rows)}
 
 
-@router.post("/sessions", status_code=201)
+@router.post("/sessions", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("agent_session_write"))])
 def create_agent_session(
     payload: AgentSessionCreate,
     current_user: Annotated[dict, Depends(get_current_user)],
@@ -362,7 +363,7 @@ async def send_agent_message(
     return {"session_id": str(session_id), "agent": agent, "response": output}
 
 
-@router.patch("/sessions/{session_id}/archive")
+@router.patch("/sessions/{session_id}/archive", dependencies=[Depends(authenticated_write_rate_limit("agent_session_write"))])
 def archive_agent_session(
     session_id: UUID,
     current_user: Annotated[dict, Depends(get_current_user)],

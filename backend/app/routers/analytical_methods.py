@@ -272,7 +272,7 @@ def list_verified_applicability(
 ):
     """List source-backed, curator-verified method applicability for exact peptide records."""
     rows = db.execute(text("""
-        SELECT a.id, a.peptide_id, p.preferred_name AS peptide_name,
+        SELECT a.id, a.peptide_id, a.chemical_form_id, p.preferred_name AS peptide_name,
                a.method_id, m.method_name, m.method_category,
                m.method_classification, m.validation_status,
                a.test_purpose, a.material_form, a.sample_matrix,

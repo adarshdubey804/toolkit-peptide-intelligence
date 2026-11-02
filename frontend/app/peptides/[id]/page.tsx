@@ -9,6 +9,30 @@ type Profile = {
   aliases: { alias: string }[];
   sequences: { sequence: string; sequence_type: string; modifications: unknown[] }[];
   chemical_properties: { chemical_form?: string; molecular_formula?: string; average_molecular_mass?: number; monoisotopic_mass?: number; property_origin: string; method_or_tool?: string }[];
+  chemical_forms: {
+    id: string;
+    peptide_sequence_id?: string | null;
+    form_name: string;
+    form_type: string;
+    normalized_sequence?: string | null;
+    residue_encoding: unknown;
+    stereochemistry: unknown;
+    noncanonical_residues: unknown;
+    terminal_chemistry: unknown;
+    post_translational_modifications: unknown;
+    cyclization: unknown;
+    conjugation: unknown;
+    salt_and_counterions: unknown;
+    chemical_formula?: string | null;
+    average_molecular_mass?: number | null;
+    monoisotopic_mass?: number | null;
+    canonical_smiles?: string | null;
+    inchi?: string | null;
+    inchikey?: string | null;
+    identity_fingerprint?: string | null;
+    canonicalization_method?: string | null;
+    canonicalization_version?: string | null;
+  }[];
   structures: { structure_type: string; external_identifier?: string; method_or_prediction_tool?: string }[];
   evidence_claims: { id: string; claim_text: string; claim_domain: string; evidence_type: string; confidence_label: string; limitations?: string; doi?: string; pmid?: string; publication_title?: string; publication_url?: string }[];
 };
@@ -53,6 +77,43 @@ export default function PeptideProfilePage() {
     <div className="mt-8 grid gap-4 lg:grid-cols-2">
       <Section title="Aliases">{profile.aliases.length ? <ul className="flex flex-wrap gap-2">{profile.aliases.map((item) => <li key={item.alias} className="rounded-full border border-slate-700 px-3 py-1 text-sm">{item.alias}</li>)}</ul> : <p className="muted text-sm">No reviewed aliases recorded.</p>}</Section>
       <Section title="Sequence and modifications">{profile.sequences.length ? profile.sequences.map((item,index)=><div key={index} className="mb-3"><p className="text-xs text-slate-400">{item.sequence_type}</p><p className="mt-1 break-all font-mono text-sm">{item.sequence}</p><p className="muted mt-1 text-xs">Modifications: {item.modifications?.length ? JSON.stringify(item.modifications) : "None recorded"}</p></div>) : <p className="muted text-sm">No reviewed sequence data.</p>}</Section>
+      <Section title="Reviewed chemical forms">
+        {profile.chemical_forms?.length ? <div className="space-y-5">
+          {profile.chemical_forms.map((form) => <article key={form.id} className="border-b border-slate-800 pb-4 last:border-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="font-medium">{form.form_name}</h3>
+              <span className="rounded-full border border-slate-700 px-2 py-1 text-xs text-slate-300">{form.form_type.replaceAll("_", " ")}</span>
+            </div>
+            {form.normalized_sequence && <p className="mt-3 break-all font-mono text-sm">{form.normalized_sequence}</p>}
+            <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
+              <dt className="muted">Chemical formula</dt><dd>{form.chemical_formula || "Not reported"}</dd>
+              <dt className="muted">Average mass</dt><dd>{form.average_molecular_mass ?? "Not reported"}</dd>
+              <dt className="muted">Monoisotopic mass</dt><dd>{form.monoisotopic_mass ?? "Not reported"}</dd>
+              <dt className="muted">InChIKey</dt><dd className="break-all font-mono text-xs">{form.inchikey || "Not reported"}</dd>
+              <dt className="muted">Canonicalization</dt><dd>{form.canonicalization_method ? `${form.canonicalization_method} · v${form.canonicalization_version || "unspecified"}` : "Not canonicalized"}</dd>
+            </dl>
+            <details className="mt-3 text-xs">
+              <summary className="cursor-pointer text-emerald-300">Chemical-form annotations</summary>
+              <div className="mt-3 grid gap-3">
+                {([
+                  ["Residue encoding", form.residue_encoding],
+                  ["Stereochemistry", form.stereochemistry],
+                  ["Noncanonical residues", form.noncanonical_residues],
+                  ["Terminal chemistry", form.terminal_chemistry],
+                  ["Post-translational modifications", form.post_translational_modifications],
+                  ["Cyclization", form.cyclization],
+                  ["Conjugation", form.conjugation],
+                  ["Salts and counterions", form.salt_and_counterions],
+                ] as [string, unknown][]).map(([label, value]) => <div key={label}>
+                  <p className="muted">{label}</p>
+                  <pre className="mt-1 whitespace-pre-wrap break-words text-slate-300">{JSON.stringify(value, null, 2)}</pre>
+                </div>)}
+              </div>
+            </details>
+          </article>)}
+          <p className="muted text-xs">Fingerprints and canonicalization labels are technical identifiers only. They do not independently establish chemical equivalence between materials.</p>
+        </div> : <p className="muted text-sm">No curator-verified chemical forms are currently recorded.</p>}
+      </Section>
       <Section title="Chemical properties">{profile.chemical_properties.length ? profile.chemical_properties.map((item,index)=><dl key={index} className="grid grid-cols-2 gap-3 text-sm"><dt className="muted">Chemical form</dt><dd>{item.chemical_form || "Not reported"}</dd><dt className="muted">Formula</dt><dd>{item.molecular_formula || "Not reported"}</dd><dt className="muted">Average mass</dt><dd>{item.average_molecular_mass ?? "Not reported"}</dd><dt className="muted">Monoisotopic mass</dt><dd>{item.monoisotopic_mass ?? "Not reported"}</dd><dt className="muted">Origin</dt><dd>{item.property_origin}</dd><dt className="muted">Method/tool</dt><dd>{item.method_or_tool || "Not reported"}</dd></dl>) : <p className="muted text-sm">No reviewed chemical properties.</p>}</Section>
       <Section title="Structure references">{profile.structures.length ? profile.structures.map((item,index)=><div key={index} className="mb-2 text-sm"><p>{item.structure_type}</p><p className="muted text-xs">{item.external_identifier || "No external identifier"} · {item.method_or_prediction_tool || "Method not reported"}</p></div>) : <p className="muted text-sm">No reviewed structure records.</p>}</Section>
     </div>

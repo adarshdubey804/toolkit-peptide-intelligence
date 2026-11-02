@@ -16,6 +16,9 @@ type VendorSubmissionOption = { id: string; legal_name: string; review_status: s
 type VendorSiteReview = { id: string; vendor_id: string; legal_name: string; site_name: string; address: string; country_code: string; site_scope: string; source_name: string; source_identifier: string; source_url: string };
 type StarterCandidate = { legal_name: string; website_url: string; country_code: string; vendor_type: string; source_name: string; source_identifier: string; source_url: string; evidence_scope: string; identity_source?: {source_name:string;source_identifier:string;source_url:string;evidence_scope:string} };
 type StarterImportResult = {created_count:number;skipped_count:number;created:{id:string;legal_name:string;review_status:string;verification_status:string}[];skipped:{legal_name:string;reason:string}[]};
+type FacilityCandidate = {site_name:string;address:string;country_code:string;site_scope:string;source_name:string;source_identifier:string;source_url:string};
+type FacilityManifest = {groups:{vendor_name:string;candidates:FacilityCandidate[]}[]};
+type FacilityImportResult = {created_count:number;skipped_count:number;created:{id:string;site_name:string;review_status:string}[];skipped:{site_name:string;reason:string}[]};
 
 export default function VendorsPage() {
   const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -49,6 +52,9 @@ export default function VendorsPage() {
   const [busy, setBusy] = useState(false);
   const [starterManifest, setStarterManifest] = useState<{candidates:StarterCandidate[]}|null>(null);
   const [starterImportResult, setStarterImportResult] = useState<StarterImportResult|null>(null);
+  const [facilityManifest, setFacilityManifest] = useState<FacilityManifest|null>(null);
+  const [facilityVendorId, setFacilityVendorId] = useState("");
+  const [facilityImportResult, setFacilityImportResult] = useState<FacilityImportResult|null>(null);
   const field = "w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-sm text-slate-100";
   const label = "mb-2 block text-xs text-slate-300";
 
@@ -109,6 +115,37 @@ export default function VendorsPage() {
       if(["organization_admin","curator","reviewer"].includes(role))await loadReviews();
     }catch(e){setError(e instanceof Error?e.message:"Vendor candidate import failed.");}
     finally{setBusy(false);}
+  }
+
+  async function previewFacilityBatch() {
+    setBusy(true);setError("");setMessage("");
+    try {
+      const response=await fetch("/vendor-facility-candidates/starter_batch_2026-11.json",{cache:"no-store"});
+      if(!response.ok)throw new Error("Facility candidate manifest could not be loaded.");
+      const data=await response.json();
+      if(!Array.isArray(data.groups)||data.groups.length===0)throw new Error("Facility candidate manifest is empty or invalid.");
+      setFacilityManifest(data);setFacilityImportResult(null);setFacilityVendorId("");
+      setMessage("Official facility candidates are ready for preview.");
+    } catch(e) { setError(e instanceof Error?e.message:"Facility candidate preview failed."); }
+    finally { setBusy(false); }
+  }
+
+  async function importFacilityBatch() {
+    if(!token||!facilityManifest||!facilityVendorId)return;
+    const vendor=organizationVendors.find(v=>v.id===facilityVendorId);
+    const group=facilityManifest.groups.find(g=>g.vendor_name===vendor?.legal_name);
+    if(!group){setError("The selected verified vendor does not match the facility manifest.");return;}
+    setBusy(true);setError("");setMessage("");
+    try {
+      const response=await fetch(API+"/api/v1/vendors/"+facilityVendorId+"/import-site-candidates",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify({candidates:group.candidates})});
+      const data=await response.json();
+      if(!response.ok)throw new Error(data.detail||"Facility candidate import failed.");
+      setFacilityImportResult(data);
+      setMessage(data.created_count+" facility candidate(s) submitted for review; "+data.skipped_count+" duplicate(s) skipped.");
+      await loadOrganizationOptions();
+      if(["organization_admin","curator","reviewer"].includes(role))await loadSiteReviews();
+    } catch(e) { setError(e instanceof Error?e.message:"Facility candidate import failed."); }
+    finally { setBusy(false); }
   }
 
   async function submitVendor(e: FormEvent) {
@@ -386,7 +423,14 @@ export default function VendorsPage() {
       {starterImportResult&&<div className="mt-5 rounded-xl border border-slate-700 p-4"><p className="text-sm font-semibold">Import result: {starterImportResult.created_count} created · {starterImportResult.skipped_count} skipped</p>{starterImportResult.created.length>0&&<p className="muted mt-2 text-xs">Created as in-review / unverified: {starterImportResult.created.map(x=>x.legal_name).join(", ")}</p>}{starterImportResult.skipped.length>0&&<ul className="muted mt-2 list-disc pl-5 text-xs">{starterImportResult.skipped.map(x=><li key={x.legal_name}>{x.legal_name}: {x.reason}</li>)}</ul>}</div>}
     </section><section className="mt-10 grid gap-6 lg:grid-cols-2"><div className="panel p-6"><h2 className="text-xl font-semibold">Submit provider record</h2><p className="muted mt-2 text-xs">Signed in as {role}. Records remain in review until an authorized curator verifies them.</p><form onSubmit={submitVendor} className="mt-5 space-y-3">{([["legal_name","Legal name"],["website_url","Official website URL"],["country_code","Country code (ISO 2-letter)"],["source_name","Evidence source name"],["source_identifier","Source record identifier"],["source_url","Original source URL"],["evidence_scope","What does this source support?"]] as const).map(([key,title])=><label key={key} className="block"><span className={label}>{title}</span><input className={field} required value={form[key]} onChange={e=>setForm(prev=>({...prev,[key]:e.target.value}))}/></label>)}<label className="block"><span className={label}>Provider type</span><select className={field} value={form.vendor_type} onChange={e=>setForm(prev=>({...prev,vendor_type:e.target.value}))}><option value="analytical_laboratory">Analytical laboratory</option><option value="peptide_manufacturer">Peptide manufacturer</option><option value="cdmo">CDMO</option><option value="cro">CRO</option><option value="research_reagent_supplier">Research reagent supplier</option><option value="other">Other</option></select></label><button disabled={busy} className="rounded-full bg-emerald-400 px-5 py-3 text-sm font-semibold text-slate-950">Submit for review</button></form></div>
     <div className="panel p-6"><div className="flex items-center justify-between gap-3"><h2 className="text-xl font-semibold">Vendor review queue</h2><button onClick={()=>void loadReviews()} className="text-xs text-emerald-300">Refresh</button></div>{reviews.length===0?<p className="muted mt-4 text-sm">Load the queue to inspect records submitted by your organization. Reviewer permissions required.</p>:<div className="mt-4 space-y-4">{reviews.map(v=><article key={v.id} className="rounded-xl border border-slate-700 p-4"><h3 className="font-semibold">{v.legal_name}</h3><p className="muted mt-1 text-xs">{v.vendor_type} · {v.country_code}</p>{v.sources.map((s,i)=><a key={i} className="mt-2 block break-all text-xs text-emerald-300 underline" href={s.source_url} target="_blank" rel="noreferrer">{s.source_name}: {s.source_identifier} ↗</a>)}{["organization_admin","curator","reviewer"].includes(role)&&<><textarea className={field+" mt-3"} rows={2} value={rationale[v.id]||""} onChange={e=>setRationale(prev=>({...prev,[v.id]:e.target.value}))} placeholder="Review rationale (minimum 20 characters)"/><div className="mt-3 flex flex-wrap gap-2">{(["verified","rejected","needs_changes"] as const).map(d=><button key={d} onClick={()=>void decide(v,d)} className="rounded-full border border-slate-600 px-3 py-2 text-xs">{d.replace("_"," ")}</button>)}</div></>}</article>)}</div>}</div></section>
-    <section className="mt-8 grid gap-6 lg:grid-cols-2">
+    <section className="panel mt-8 p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-semibold">Official facility candidate batch</h2><p className="muted mt-2 text-sm">Preview nine facility records from Bachem and CordenPharma official pages. Import requires a verified parent vendor.</p></div><button disabled={busy} onClick={()=>void previewFacilityBatch()} className="rounded-full border border-slate-600 px-4 py-2 text-sm">Preview facilities</button></div>
+      {facilityManifest&&<div className="mt-4 space-y-3">{facilityManifest.groups.map(group=><article key={group.vendor_name} className="rounded-xl border border-slate-700 p-4"><h3 className="font-semibold">{group.vendor_name} · {group.candidates.length} sites</h3>{group.candidates.map(site=><div key={site.site_name} className="mt-3 border-t border-slate-700 pt-3"><p className="text-sm font-medium">{site.site_name}</p><p className="muted mt-1 text-xs">{site.address} · {site.country_code}</p><p className="muted mt-1 text-xs">{site.site_scope}</p><a href={site.source_url} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs text-emerald-300 underline">{site.source_name} ↗</a></div>)}</article>)}</div>}
+      {facilityManifest&&<div className="mt-4 flex flex-wrap items-end gap-3"><label className="min-w-64 flex-1"><span className={label}>Verified parent vendor</span><select className={field} value={facilityVendorId} onChange={e=>{setFacilityVendorId(e.target.value);setFacilityImportResult(null);}}><option value="">Select a verified vendor</option>{organizationVendors.filter(v=>v.review_status==="verified"&&v.verification_status==="verified"&&facilityManifest.groups.some(g=>g.vendor_name===v.legal_name)).map(v=><option key={v.id} value={v.id}>{v.legal_name}</option>)}</select></label><button disabled={busy||!facilityVendorId} onClick={()=>void importFacilityBatch()} className="rounded-full bg-emerald-400 px-5 py-3 text-sm font-semibold text-slate-950">Import selected facilities</button></div>}
+      {facilityManifest&&organizationVendors.filter(v=>v.review_status==="verified"&&v.verification_status==="verified"&&facilityManifest.groups.some(g=>g.vendor_name===v.legal_name)).length===0&&<p className="muted mt-3 text-xs">No matching verified vendor is available. Complete vendor identity review first.</p>}
+      {facilityImportResult&&<div className="mt-4 rounded-xl border border-slate-700 p-4"><p className="text-sm font-semibold">{facilityImportResult.created_count} facility candidates created · {facilityImportResult.skipped_count} skipped</p><p className="muted mt-2 text-xs">All created facilities remain pending independent review.</p></div>}
+    </section>
+<section className="mt-8 grid gap-6 lg:grid-cols-2">
       <div className="panel p-6">
         <h2 className="text-xl font-semibold">Register a vendor facility</h2>
         <p className="muted mt-2 text-xs">Facilities are separate records. Add the exact site address and the activities supported by the source; parent vendor approval does not automatically verify a facility.</p>

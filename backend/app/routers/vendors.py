@@ -83,6 +83,27 @@ class VendorSiteSubmission(BaseModel):
     source_url: HttpUrl
 
 
+class VendorSiteCandidate(BaseModel):
+    site_name: str = Field(min_length=2, max_length=200)
+    address: str = Field(min_length=5, max_length=1000)
+    country_code: str = Field(min_length=2, max_length=2)
+    site_scope: str = Field(min_length=10, max_length=2000)
+    source_name: str = Field(min_length=2, max_length=120)
+    source_identifier: str = Field(min_length=1, max_length=200)
+    source_url: HttpUrl
+
+    @field_validator("source_url")
+    @classmethod
+    def facility_source_must_use_https(cls, value):
+        if value.scheme != "https":
+            raise ValueError("Facility evidence sources must use HTTPS.")
+        return value
+
+
+class VendorSiteCandidateBatch(BaseModel):
+    candidates: list[VendorSiteCandidate] = Field(min_length=1, max_length=25)
+
+
 class VendorSiteDecision(BaseModel):
     decision: Literal["verified", "rejected", "needs_changes"]
     rationale: str = Field(min_length=20, max_length=4000)
@@ -972,6 +993,109 @@ def submit_vendor_site(
            "vendor": str(vendor_id), "source": str(source_id)})
     db.commit()
     return dict(site)
+
+
+@router.post("/{vendor_id}/import-site-candidates", status_code=201)
+def import_vendor_site_candidates(
+    vendor_id: UUID,
+    payload: VendorSiteCandidateBatch,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """Batch-intake source-backed facility claims for a verified vendor; all remain pending review."""
+    organization_id, role = _membership(current_user, db)
+    if role not in SUBMIT_ROLES:
+        raise HTTPException(status_code=403, detail="Your role cannot import facility candidates.")
+    vendor = db.execute(text("""
+        SELECT id, website_url FROM vendors
+        WHERE id=:vendor AND organization_id=:org
+          AND review_status='verified' AND verification_status='verified'
+        FOR UPDATE
+    """), {"vendor": vendor_id, "org": organization_id}).mappings().first()
+    if not vendor:
+        raise HTTPException(status_code=404, detail="Verified vendor was not found in this organization.")
+
+    db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(CAST(:vendor AS text), 0))"),
+        {"vendor": vendor_id},
+    )
+    created = []
+    skipped = []
+    seen_sites = set()
+    for candidate in payload.candidates:
+        source_url = _candidate_source_url(str(vendor["website_url"]), str(candidate.source_url))
+        normalized_name = " ".join(candidate.site_name.lower().split())
+        normalized_address = " ".join(candidate.address.lower().split())
+        identity = (normalized_name, normalized_address)
+        if identity in seen_sites:
+            skipped.append({"site_name": candidate.site_name, "reason": "duplicate_in_batch"})
+            continue
+        seen_sites.add(identity)
+
+        existing = db.execute(text("""
+            SELECT id FROM vendor_sites
+            WHERE vendor_id=:vendor
+              AND lower(trim(coalesce(site_name,'')))=:site_name
+              AND lower(trim(coalesce(address,'')))=:address
+            LIMIT 1
+        """), {
+            "vendor": vendor_id,
+            "site_name": candidate.site_name.strip().lower(),
+            "address": candidate.address.strip().lower(),
+        }).mappings().first()
+        if existing:
+            skipped.append({"site_name": candidate.site_name, "reason": "facility_already_recorded"})
+            continue
+
+        source_id = _source_record(
+            db, candidate.source_name.strip(), candidate.source_identifier.strip(), source_url
+        )
+        site = db.execute(text("""
+            INSERT INTO vendor_sites (
+                vendor_id, site_name, address, country_code, site_scope,
+                organization_id, review_status, submitted_by
+            )
+            VALUES (:vendor, :name, :address, :country, :scope, :org, 'in_review', :submitter)
+            RETURNING id, vendor_id, site_name, address, country_code, site_scope, review_status
+        """), {
+            "vendor": vendor_id,
+            "name": candidate.site_name.strip(),
+            "address": candidate.address.strip(),
+            "country": candidate.country_code.upper(),
+            "scope": candidate.site_scope.strip(),
+            "org": organization_id,
+            "submitter": current_user["id"],
+        }).mappings().one()
+        db.execute(text("""
+            INSERT INTO vendor_site_sources (site_id, source_record_id, evidence_scope)
+            VALUES (:site, :source, :scope)
+        """), {
+            "site": site["id"], "source": source_id, "scope": candidate.site_scope.strip(),
+        })
+        db.execute(text("""
+            INSERT INTO audit_events (
+                actor_user_id, organization_id, action, entity_type, entity_id, event_metadata
+            )
+            VALUES (
+                :actor, :org, 'vendor_site_candidate_imported', 'vendor_site', :id,
+                jsonb_build_object('vendor_id', :vendor, 'source_record_id', :source,
+                                   'intake_status', 'unverified_facility_candidate')
+            )
+        """), {
+            "actor": current_user["id"], "org": organization_id, "id": site["id"],
+            "vendor": str(vendor_id), "source": str(source_id),
+        })
+        created.append(dict(site))
+
+    db.commit()
+    return {
+        "created": created,
+        "created_count": len(created),
+        "skipped": skipped,
+        "skipped_count": len(skipped),
+        "review_status": "in_review",
+        "public_visibility": "not_listed_until_independent_facility_review",
+    }
 
 
 @router.get("/sites/reviews")

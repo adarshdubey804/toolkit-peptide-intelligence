@@ -1,0 +1,95 @@
+{
+  "groups": [
+    {
+      "vendor_name": "Bachem",
+      "candidates": [
+        {
+          "site_name": "Bachem Bubendorf",
+          "address": "Hauptstrasse 144, 4416 Bubendorf, Switzerland",
+          "country_code": "CH",
+          "site_scope": "Official site page identifies this as Bachem's headquarters and largest GMP hub for peptide and oligonucleotide manufacturing, process development, analytics and global supply.",
+          "source_name": "Official facility page",
+          "source_identifier": "official-facility:bachem-bubendorf",
+          "source_url": "https://www.bachem.com/about-bachem/our-locations/bubendorf/"
+        },
+        {
+          "site_name": "Bachem Torrance",
+          "address": "3132 Kashiwa St, Torrance, CA 90505, United States",
+          "country_code": "US",
+          "site_scope": "Official site page describes peptide NCE development, SPPS development, small-to-medium-scale manufacturing, process development and advanced API analytics.",
+          "source_name": "Official facility page",
+          "source_identifier": "official-facility:bachem-torrance",
+          "source_url": "https://www.bachem.com/about-bachem/our-locations/torrance/"
+        },
+        {
+          "site_name": "Bachem Vista",
+          "address": "1271 Avenida Chelsea, Vista, CA 92081, United States",
+          "country_code": "US",
+          "site_scope": "Official site page describes peptide NCE development, commercial API and intermediate manufacturing, medium-to-large-scale SPPS and advanced analytics.",
+          "source_name": "Official facility page",
+          "source_identifier": "official-facility:bachem-vista",
+          "source_url": "https://www.bachem.com/about-bachem/our-locations/vista/"
+        },
+        {
+          "site_name": "Bachem Vionnaz",
+          "address": "Route du Simplon 22, 1895 Vionnaz, Switzerland",
+          "country_code": "CH",
+          "site_scope": "Official site page describes a high-capacity GMP site for small molecules and peptides, including liquid-phase peptide synthesis, amino-acid derivatives and analytical development.",
+          "source_name": "Official facility page",
+          "source_identifier": "official-facility:bachem-vionnaz",
+          "source_url": "https://www.bachem.com/about-bachem/our-locations/vionnaz/"
+        },
+        {
+          "site_name": "Bachem St. Helens",
+          "address": "1 Sullivan's Way, Saint Helens WA9 5GL, United Kingdom",
+          "country_code": "GB",
+          "site_scope": "Official site page describes custom and catalogue peptide production via SPPS, research chemicals and analytical capabilities.",
+          "source_name": "Official facility page",
+          "source_identifier": "official-facility:bachem-st-helens",
+          "source_url": "https://www.bachem.com/about-bachem/our-locations/st-helens/"
+        }
+      ]
+    },
+    {
+      "vendor_name": "CordenPharma",
+      "candidates": [
+        {
+          "site_name": "CordenPharma Colorado",
+          "address": "2075 55th Street, Boulder, CO 80301, United States",
+          "country_code": "US",
+          "site_scope": "Official facilities network page lists the Peptides technology platform at this site, including research and development and GMP manufacturing capabilities.",
+          "source_name": "Official facilities network page",
+          "source_identifier": "official-facility:cordenpharma-colorado",
+          "source_url": "https://cordenpharma.com/how-we-deliver/facilities-network/"
+        },
+        {
+          "site_name": "CordenPharma Frankfurt",
+          "address": "Gebäude C26, Alt-Fechenheim 34, 60386 Frankfurt am Main, Germany",
+          "country_code": "DE",
+          "site_scope": "Official facilities network page lists the Peptides technology platform at this site, with research and development, preclinical and early clinical peptide production capabilities.",
+          "source_name": "Official facilities network page",
+          "source_identifier": "official-facility:cordenpharma-frankfurt",
+          "source_url": "https://cordenpharma.com/how-we-deliver/facilities-network/"
+        },
+        {
+          "site_name": "CordenPharma Shanghai",
+          "address": "No. 399, Yingong Road, Fengxian Sub-zone, Shanghai Chemical Industry Park, Shanghai, China",
+          "country_code": "CN",
+          "site_scope": "Official facilities network page lists the Peptides technology platform at this site and describes research, GMP manufacturing and clinical-stage API capabilities.",
+          "source_name": "Official facilities network page",
+          "source_identifier": "official-facility:cordenpharma-shanghai",
+          "source_url": "https://cordenpharma.com/how-we-deliver/facilities-network/"
+        },
+        {
+          "site_name": "CordenPharma South Carolina",
+          "address": "1024 Dittman Court, North Augusta, SC 29842, United States",
+          "country_code": "US",
+          "site_scope": "Official facilities network page lists the Peptides technology platform at this site and describes GMP manufacturing and commercial API capabilities.",
+          "source_name": "Official facilities network page",
+          "source_identifier": "official-facility:cordenpharma-south-carolina",
+          "source_url": "https://cordenpharma.com/how-we-deliver/facilities-network/"
+        }
+      ]
+    }
+  ]
+}

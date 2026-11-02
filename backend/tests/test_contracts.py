@@ -1058,3 +1058,14 @@ def test_vendor_candidate_import_route_is_registered():
     paths = app.openapi()["paths"]
     assert "/api/v1/vendors/import-candidates" in paths
     assert "post" in paths["/api/v1/vendors/import-candidates"]
+
+
+
+def test_vendor_candidate_sources_must_match_official_company_domain():
+    from fastapi import HTTPException
+    from app.routers.vendors import _candidate_source_url
+
+    assert _candidate_source_url("https://www.example.org", "https://example.org/services") == "https://example.org/services"
+    assert _candidate_source_url("https://example.org", "https://labs.example.org/profile") == "https://labs.example.org/profile"
+    with pytest.raises(HTTPException):
+        _candidate_source_url("https://example.org", "https://unrelated.example.net/services")

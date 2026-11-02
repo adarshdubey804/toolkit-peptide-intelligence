@@ -1161,3 +1161,11 @@ def test_analytical_test_catalogue_review_routes_are_registered():
     assert "get" in paths["/api/v1/analytical-methods/test-catalogue/reviews"]
     assert "/api/v1/analytical-methods/test-catalogue/{test_id}/decisions" in paths
     assert "post" in paths["/api/v1/analytical-methods/test-catalogue/{test_id}/decisions"]
+
+
+def test_analytical_test_catalogue_review_routes_are_registered():
+    paths = app.openapi()["paths"]
+    assert "/api/v1/analytical-methods/test-catalogue/reviews" in paths
+    assert "get" in paths["/api/v1/analytical-methods/test-catalogue/reviews"]
+    assert "/api/v1/analytical-methods/test-catalogue/{test_id}/decisions" in paths
+    assert "post" in paths["/api/v1/analytical-methods/test-catalogue/{test_id}/decisions"]

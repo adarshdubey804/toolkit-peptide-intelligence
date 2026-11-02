@@ -190,7 +190,7 @@ CREATE TRIGGER trg_vendor_material_batch_scope
     FOR EACH ROW EXECUTE FUNCTION enforce_vendor_material_batch_scope();
 
 CREATE OR REPLACE FUNCTION enforce_batch_test_result_scope()
-RETURNS trigger AS $
+RETURNS trigger AS $$
 DECLARE
     v_batch_org UUID;
     v_previous_batch UUID;
@@ -212,7 +212,7 @@ BEGIN
     END IF;
     RETURN NEW;
 END;
-$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql;
 
 CREATE TRIGGER trg_batch_test_result_scope
     BEFORE INSERT OR UPDATE OF batch_id, organization_id, test_id, supersedes_result_id
@@ -220,7 +220,7 @@ CREATE TRIGGER trg_batch_test_result_scope
     FOR EACH ROW EXECUTE FUNCTION enforce_batch_test_result_scope();
 
 CREATE OR REPLACE FUNCTION enforce_batch_test_result_decision_scope()
-RETURNS trigger AS $
+RETURNS trigger AS $$
 DECLARE
     v_result_org UUID;
 BEGIN
@@ -231,7 +231,7 @@ BEGIN
     END IF;
     RETURN NEW;
 END;
-$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql;
 
 CREATE TRIGGER trg_batch_test_result_decision_scope
     BEFORE INSERT OR UPDATE OF result_id, organization_id

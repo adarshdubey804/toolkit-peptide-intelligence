@@ -1,7 +1,7 @@
 # Database Architecture Audit
 
 **Audit date:** 2026-11-02  
-**Scope:** Repository schema and application access patterns on `main`, migrations 001–036, and relevant backend routers.  
+**Scope:** Repository schema and application access patterns on `main`, migrations 001–037, and relevant backend routers.  
 **Important limitation:** This is a repository-level architecture review. It does not establish the live PostgreSQL database's current schema, data quality, query plans, backup state, or deployment configuration. Those require access to the deployed database and environment.
 
 ## Executive assessment
@@ -96,7 +96,7 @@ The schema contains useful foreign keys, CHECK constraints, and indexes, but the
 
 ### P2 — Audit and operational controls remain in progress
 
-PR #40 is intended to add the hash-chained audit history and organization-admin read/verification API. It must pass CI and be merged before it is treated as part of `main`. Even after merge, independent external hash anchoring, production DB role separation, backup/restore testing, and privileged-operator threat controls remain outstanding.
+PR #40 has been merged: migration 037 adds per-organization SHA-256 audit chains, append-only UPDATE/DELETE protection, and organization-admin event listing/integrity verification. Migration 036 adds shared PostgreSQL rate limits for login, registration, agent execution, and public research discovery. Remaining controls include independent external hash anchoring, rate limits for other sensitive write/enrichment routes, trusted proxy identity configuration, production DB role separation, backup/restore testing, and privileged-operator threat controls.
 
 ## Target ownership model
 
@@ -112,7 +112,7 @@ A record should not become globally visible merely because a reviewer changed it
 
 ## Recommended implementation sequence
 
-1. **Finish PR #40 audit trail** after CI passes; verify migration 037 against a real PostgreSQL test database and verify rollback/backup strategy.
+1. **Validate merged migrations 036–037 in the target deployment environment**; verify shared rate-limit behavior, audit-chain append/immutability/integrity, and rollback/backup strategy against the actual PostgreSQL version and role permissions.
 2. **Create a schema inventory and ownership matrix** for every table: global, organization-owned, derived/cache, append-only history, or operational.
 3. **Resolve tenant ownership** for formulation, process knowledge, curation, and other organization-contributed records. Add cross-tenant integration tests before any RLS rollout.
 4. **Design canonical peptide identity** with test fixtures covering linear peptides, D-amino acids, noncanonical residues, terminal modifications, cyclization, conjugates, salts, and sequence aliases.
@@ -131,7 +131,7 @@ A record should not become globally visible merely because a reviewer changed it
 - Scientific decisions refer to immutable record revisions.
 - Source locators and provenance can reconstruct why a claim was accepted.
 - Migration tests pass on clean PostgreSQL and upgrade paths.
-- No production readiness claim is made until deployed DB, backups, restore, monitoring, secrets, TLS, and role separation are verified.
+- No production readiness claim is made until deployed DB, backups, restore, monitoring, secrets, TLS, rate limiting, and role separation are verified.
 
 ## Audit conclusion
 

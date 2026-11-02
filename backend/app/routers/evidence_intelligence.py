@@ -7,6 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from ..db import get_db
+from ..rate_limit_dependencies import authenticated_write_rate_limit
 from .auth import get_current_user
 
 router=APIRouter(prefix="/api/v1/evidence-intelligence",tags=["evidence intelligence"])
@@ -88,7 +89,7 @@ def claims(user:Annotated[dict,Depends(get_current_user)],db:Annotated[Session,D
     return {"items":[dict(x) for x in rows],"count":len(rows),"notice":"Evidence level and methodological risk are distinct; no composite evidence score is calculated."}
 
 
-@router.post("/citation-locators", status_code=201)
+@router.post("/citation-locators", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("evidence_write"))])
 def add_citation_locator(
     payload: CitationLocatorInput,
     user: Annotated[dict, Depends(get_current_user)],
@@ -198,7 +199,7 @@ def citation_locators_for_claim(
     return {"items": [dict(row) for row in rows], "count": len(rows)}
 
 
-@router.post("/appraisals",status_code=201)
+@router.post("/appraisals",status_code=201, dependencies=[Depends(authenticated_write_rate_limit("evidence_write"))])
 def appraise(payload:Appraisal,user:Annotated[dict,Depends(get_current_user)],db:Annotated[Session,Depends(get_db)]):
     org=reviewer(user,db)
     found=db.execute(text("SELECT ec.id FROM evidence_claims ec WHERE ec.id=:id AND EXISTS (SELECT 1 FROM curation_reviews cr WHERE cr.entity_type='evidence_claim' AND cr.entity_id=ec.id AND cr.owner_organization_id=:org)"),{"id":payload.claim_id,"org":org}).scalar_one_or_none()
@@ -218,7 +219,7 @@ def get_appraisals(claim_id:UUID,user:Annotated[dict,Depends(get_current_user)],
     rows=db.execute(text("SELECT ea.* FROM evidence_appraisals ea JOIN evidence_claims ec ON ec.id=ea.claim_id JOIN peptides p ON p.id=ec.peptide_id WHERE ea.claim_id=:claim AND ea.organization_id=:org ORDER BY ea.created_at DESC"),{"claim":claim_id,"org":org}).mappings().all()
     return {"items":[dict(x) for x in rows],"count":len(rows)}
 
-@router.post("/duplicate-candidates",status_code=201)
+@router.post("/duplicate-candidates",status_code=201, dependencies=[Depends(authenticated_write_rate_limit("evidence_write"))])
 def add_duplicate(payload:DuplicatePair,user:Annotated[dict,Depends(get_current_user)],db:Annotated[Session,Depends(get_db)]):
     org=reviewer(user,db)
     if payload.publication_a==payload.publication_b: raise HTTPException(422,"Choose two different publication records.")
@@ -247,7 +248,7 @@ def duplicate_queue(user:Annotated[dict,Depends(get_current_user)],db:Annotated[
     """),{"org":org,"status":status,"limit":limit}).mappings().all()
     return {"items":[dict(x) for x in rows],"count":len(rows)}
 
-@router.post("/duplicate-candidates/{candidate_id}/decision")
+@router.post("/duplicate-candidates/{candidate_id}/decision", dependencies=[Depends(authenticated_write_rate_limit("evidence_write"))])
 def decide_duplicate(candidate_id:UUID,payload:DuplicateDecision,user:Annotated[dict,Depends(get_current_user)],db:Annotated[Session,Depends(get_db)]):
     org=reviewer(user,db)
     candidate=db.execute(text("SELECT id,status FROM publication_duplicate_candidates WHERE id=:id AND organization_id=:org FOR UPDATE"),{"id":candidate_id,"org":org}).mappings().first()
@@ -265,7 +266,7 @@ class AppraisalDecision(BaseModel):
     rationale:str=Field(min_length=20,max_length=4000)
 
 
-@router.post("/appraisals/{appraisal_id}/decision")
+@router.post("/appraisals/{appraisal_id}/decision", dependencies=[Depends(authenticated_write_rate_limit("evidence_write"))])
 def decide_appraisal(appraisal_id:UUID,payload:AppraisalDecision,user:Annotated[dict,Depends(get_current_user)],db:Annotated[Session,Depends(get_db)]):
     org=reviewer(user,db)
     appraisal=db.execute(text("""

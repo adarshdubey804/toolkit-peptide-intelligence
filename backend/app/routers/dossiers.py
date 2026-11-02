@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from .auth import get_current_user
 from ..db import get_db
+from ..rate_limit_dependencies import authenticated_write_rate_limit
 from ..services.peptide_identity import (
     CANONICALIZATION_METHOD,
     CANONICALIZATION_VERSION,
@@ -127,7 +128,7 @@ def _member_role(user: dict, db: Session) -> str:
     return role
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("dossier_write"))])
 def create_peptide_dossier(
     payload: PeptideDossierCreate,
     current_user: Annotated[dict, Depends(get_current_user)],

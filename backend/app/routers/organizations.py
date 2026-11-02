@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from .auth import get_current_user
 from ..db import get_db
+from ..rate_limit_dependencies import authenticated_write_rate_limit
 
 router = APIRouter(prefix="/api/v1/organizations", tags=["organization workspaces"])
 
@@ -85,7 +86,7 @@ def list_members(current_user: Annotated[dict, Depends(get_current_user)], db: A
     return {"organization_id": str(organization_id), "members": [dict(row) for row in rows]}
 
 
-@router.post("/members", status_code=201)
+@router.post("/members", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("organization_admin_write"))])
 def add_existing_member(
     payload: MemberAdd,
     current_user: Annotated[dict, Depends(get_current_user)],
@@ -156,7 +157,7 @@ def add_existing_member(
     }
 
 
-@router.patch("/members/{user_id}/role")
+@router.patch("/members/{user_id}/role", dependencies=[Depends(authenticated_write_rate_limit("organization_admin_write"))])
 def update_member_role(
     user_id: UUID,
     payload: RoleUpdate,
@@ -185,7 +186,7 @@ def update_member_role(
     return {"user_id": str(result["user_id"]), "role": result["role"]}
 
 
-@router.post("/projects", status_code=201)
+@router.post("/projects", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("organization_admin_write"))])
 def create_project(
     payload: ProjectCreate,
     current_user: Annotated[dict, Depends(get_current_user)],

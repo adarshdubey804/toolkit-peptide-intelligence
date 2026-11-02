@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..db import get_db
+from ..rate_limit_dependencies import authenticated_write_rate_limit
 from .auth import get_current_user
 
 router = APIRouter(prefix="/api/v1/vendor-materials", tags=["vendor material and batch traceability"])
@@ -189,7 +190,7 @@ def public_material_offerings(
     }
 
 
-@router.post("/offerings", status_code=201)
+@router.post("/offerings", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("vendor_material_write"))])
 def submit_material_offering(
     payload: OfferingSubmission,
     current_user: Annotated[dict, Depends(get_current_user)],
@@ -306,7 +307,7 @@ def list_organization_batches(
             "scope": "Physical lot records are visible only to the owning organization."}
 
 
-@router.post("/offerings/{offering_id}/batches", status_code=201)
+@router.post("/offerings/{offering_id}/batches", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("vendor_material_write"))])
 def submit_material_batch(
     offering_id: UUID,
     payload: BatchSubmission,
@@ -352,7 +353,7 @@ def submit_material_batch(
     return {**dict(row), "note": "Supplier-stated availability is not live inventory; this lot remains in review."}
 
 
-@router.post("/batches/{batch_id}/test-results", status_code=201)
+@router.post("/batches/{batch_id}/test-results", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("vendor_material_write"))])
 def submit_batch_test_result(
     batch_id: UUID,
     payload: BatchTestResultSubmission,
@@ -463,7 +464,7 @@ def material_review_queue(
             "scope": "Organization-scoped queue. Submitters cannot review their own records."}
 
 
-@router.post("/reviews/{record_type}/{record_id}/decisions", status_code=201)
+@router.post("/reviews/{record_type}/{record_id}/decisions", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("vendor_material_write"))])
 def decide_material_record(
     record_type: Literal["offering", "batch", "test_result"],
     record_id: UUID,

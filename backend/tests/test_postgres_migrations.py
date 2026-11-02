@@ -101,6 +101,29 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
         """)).scalar_one()
         assert not fingerprint_is_unique, "Fingerprints must not imply chemical equivalence before collision validation"
 
+
+        owner_columns = connection.execute(text("""
+            SELECT table_name, column_name
+            FROM information_schema.columns
+            WHERE table_schema='public'
+              AND (table_name, column_name) IN (
+                ('curation_reviews','owner_organization_id'),
+                ('curation_decisions','owner_organization_id'),
+                ('analytical_methods','owner_organization_id'),
+                ('formulation_profiles','owner_organization_id'),
+                ('process_knowledge_profiles','owner_organization_id'),
+                ('molecular_interaction_assessments','owner_organization_id')
+              )
+        """)).fetchall()
+        assert len(owner_columns) == 6, "All standalone organization submissions and review decisions must retain explicit owner IDs"
+
+        interaction_visibility = connection.execute(text("""
+            SELECT count(*) FROM information_schema.columns
+            WHERE table_schema='public' AND table_name='molecular_interaction_assessments'
+              AND column_name='visibility_scope'
+        """)).scalar_one()
+        assert interaction_visibility == 1, "Interaction submissions need explicit public/organization/restricted visibility"
+
         audit_trigger_exists = connection.execute(text("""
             SELECT EXISTS (
                 SELECT 1 FROM pg_trigger

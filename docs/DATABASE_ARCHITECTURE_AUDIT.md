@@ -1,7 +1,7 @@
 # Database Architecture Audit
 
 **Audit date:** 2026-11-02  
-**Scope:** Repository schema and application access patterns on `main`, migrations 001–037, and relevant backend routers.  
+**Scope:** Repository schema and application access patterns on `main`, migrations 001–041, and relevant backend routers.  
 **Important limitation:** This is a repository-level architecture review. It does not establish the live PostgreSQL database's current schema, data quality, query plans, backup state, or deployment configuration. Those require access to the deployed database and environment.
 
 ## Executive assessment
@@ -27,17 +27,25 @@ It is not yet ready to be treated as a complete, production-grade scientific dat
 
 ### P0 — Tenant ownership is not consistently explicit
 
-The schema mixes global reference data with organization-submitted content, but the ownership/promotion contract is not consistently represented in the row itself.
+The schema deliberately separates shared scientific master data from organization-submitted records. Migrations 038–041 introduce explicit `owner_organization_id` and visibility scopes for curation reviews/decisions, analytical methods, formulation profiles, process-knowledge profiles, and molecular-interaction assessments. The associated submission, review, evidence-claim, dossier, and enrichment access paths are being aligned to those stored owners rather than deriving tenant scope from a submitter's current memberships.
 
-Examples:
-- `peptides`, `publications`, `targets`, `pathways`, and source registry records are naturally candidates for shared global master data.
-- Vendor records gain an `organization_id` in later migrations.
-- Formulation and process-knowledge parent records identify submitters, while review decisions carry an organization ID. Some review queries infer organization ownership by joining the submitter to current active membership.
-- Curation reviews similarly rely on submitter membership for organization scoping.
+The remaining ownership work is operational and defensive: ambiguous legacy rows must be resolved through a controlled process, every new submission path must set its owner, and cross-tenant negative tests must cover every router. A verified record is not automatically public where its visibility scope remains organization-private.
 
-This can make ownership depend on a user's current membership. If a submitter is suspended, leaves an organization, or changes organization, records can become difficult to discover or their ownership can become ambiguous.
+**Required design:** Keep immutable owner IDs on organization submissions and explicit visibility/publication state. Child records inherit access only through an explicitly owned parent. Shared master data such as peptides, publications, targets, pathways, and source records must not receive arbitrary tenant ownership. Public promotion must be a separate, reviewed transition.
 
-**Required design:** Every contributed record must have an explicit immutable `owner_organization_id` (or an explicit global/system owner), plus an explicit visibility/publication state. Membership should authorize access to the owner organization; it should not be the only stored evidence of ownership. Public promotion should be a separate, reviewed transition. Avoid adding `organization_id` indiscriminately to shared master tables.
+
+**Current ownership model after migrations 038–041:**
+
+| Data class | Ownership and visibility rule |
+|---|---|
+| Curation submissions | Review request stores owner organization; decisions inherit the review owner. |
+| Analytical methods, formulations, process knowledge | Parent record stores owner organization and visibility scope; verified organization submissions remain private until separately promoted. |
+| Molecular interaction assessments | Parent record stores owner organization and public/organization/restricted visibility; verified status alone does not publish it. |
+| Applicability and laboratory capability claims | Organization ID plus explicit visibility scope; verified status alone does not publish them. |
+| Vendor services/certifications and regulatory versions/events | Ownership is inherited through the organization-owned vendor or regulatory guidance parent; child-to-parent scope must be enforced. |
+| Shared scientific master data | Global/system-owned; public access follows verified publication rules, not submitter membership. |
+
+Legacy records with ambiguous owners remain NULL/restricted and must be resolved manually. Do not assign them to whichever organization the submitter currently has selected.
 
 ### P0 — Tenant isolation is application-enforced, not visibly database-enforced
 

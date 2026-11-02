@@ -58,9 +58,8 @@ async def discover_peptide_evidence(
         WHERE p.id = :peptide_id
           AND (p.review_status = 'verified' OR EXISTS (
               SELECT 1 FROM curation_reviews cr
-              JOIN organization_memberships om ON om.user_id = cr.submitted_by
               WHERE cr.entity_type = 'peptide' AND cr.entity_id = p.id
-                AND om.organization_id = :organization_id AND om.membership_status = 'active'
+                AND cr.owner_organization_id = :organization_id
           ))
     """), {"peptide_id": peptide_id, "organization_id": organization_id}).mappings().first()
     if peptide is None:
@@ -347,9 +346,8 @@ async def run_persistent_enrichment(
         WHERE p.id=:peptide AND (
           p.review_status='verified' OR EXISTS (
             SELECT 1 FROM curation_reviews cr
-            JOIN organization_memberships om ON om.user_id=cr.submitted_by
             WHERE cr.entity_type='peptide' AND cr.entity_id=p.id
-              AND om.organization_id=:org AND om.membership_status='active'
+              AND cr.owner_organization_id=:org
           ))
     """), {"peptide": peptide_id, "org": organization_id}).mappings().first()
     if not peptide:

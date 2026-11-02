@@ -208,11 +208,12 @@ def decide_review(
     new_status = "draft" if payload.decision == "needs_changes" else payload.decision
     decision = db.execute(text("""
         INSERT INTO curation_decisions
-            (review_id, decision, rationale, reviewer_id, previous_status, new_status)
-        VALUES (:review_id, :decision, :rationale, :reviewer, :previous_status, :new_status)
+            (review_id, owner_organization_id, decision, rationale, reviewer_id, previous_status, new_status)
+        VALUES (:review_id, :org, :decision, :rationale, :reviewer, :previous_status, :new_status)
         RETURNING id, review_id, decision, rationale, reviewer_id, decided_at, previous_status, new_status
     """), {"review_id": review_id, "decision": payload.decision, "rationale": payload.rationale.strip(),
-           "reviewer": current_user["id"], "previous_status": review["review_status"], "new_status": new_status}).mappings().one()
+           "reviewer": current_user["id"], "previous_status": review["review_status"], "new_status": new_status,
+           "org": organization_id}).mappings().one()
 
     db.execute(text("""
         UPDATE curation_reviews

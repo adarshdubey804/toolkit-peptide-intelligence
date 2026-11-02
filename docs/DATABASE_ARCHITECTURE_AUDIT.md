@@ -49,7 +49,7 @@ Legacy records with ambiguous owners remain NULL/restricted and must be resolved
 
 ### P0 — Tenant isolation is application-enforced, not visibly database-enforced
 
-The inspected migrations contain organization membership and organization-scoped query patterns, but migrations 044–049 now enable transaction-scoped RLS for vendor materials, analytical methods, formulations, process knowledge, molecular interactions, evidence appraisals and publication duplicate review; broader tenant isolation and worker coverage remain pending.
+The inspected migrations contain organization membership and organization-scoped query patterns, but migrations 044–051 now enable transaction-scoped RLS for vendor materials, analytical methods, formulations, process knowledge, molecular interactions, evidence appraisals, publication duplicate review, curation workflows and user-private agent sessions; broader tenant isolation and worker coverage remain pending.
 
 A missed organization predicate in one endpoint can therefore expose another tenant's data.
 

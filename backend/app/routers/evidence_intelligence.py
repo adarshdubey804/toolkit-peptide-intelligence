@@ -2,8 +2,9 @@ import json
 from typing import Annotated, Literal
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from ..db import get_db
 from .auth import get_current_user
@@ -29,6 +30,24 @@ class Appraisal(BaseModel):
     limitations:str=Field(min_length=20,max_length=4000)
     appraisal_rationale:str=Field(min_length=20,max_length=4000)
 
+
+class CitationLocatorInput(BaseModel):
+    claim_source_id: UUID
+    source_record_version_id: UUID | None = None
+    locator_type: Literal["page", "figure", "table", "section", "supplementary_file", "accession", "url_fragment", "timestamp", "other"]
+    locator_value: str = Field(min_length=1, max_length=1000)
+    quoted_text_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    locator_notes: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("locator_value")
+    @classmethod
+    def normalize_locator_value(cls, value):
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Citation locator value cannot be blank.")
+        return normalized
+
+
 class DuplicatePair(BaseModel):
     publication_a:UUID
     publication_b:UUID
@@ -46,6 +65,20 @@ def claims(user:Annotated[dict,Depends(get_current_user)],db:Annotated[Session,D
       SELECT ec.id,ec.peptide_id,p.preferred_name,ec.claim_text,ec.claim_domain,ec.evidence_type,
       ec.confidence_label,ec.limitations,ec.review_status,
       COALESCE(jsonb_agg(DISTINCT jsonb_build_object('source_name',sr.source_name,'identifier',sr.source_identifier,'url',sr.source_url,'relationship',cs.relationship)) FILTER(WHERE sr.id IS NOT NULL),'[]'::jsonb) sources,
+      COALESCE((
+        SELECT jsonb_agg(jsonb_build_object(
+          'claim_source_id', locator_cs.id,
+          'locator_type', locator.locator_type,
+          'locator_value', locator.locator_value,
+          'source_version_hash', version.content_hash,
+          'source_version_captured_at', version.captured_at,
+          'quoted_text_hash', locator.quoted_text_hash
+        ) ORDER BY locator.created_at)
+        FROM claim_sources locator_cs
+        JOIN claim_source_locators locator ON locator.claim_source_id=locator_cs.id
+        LEFT JOIN source_record_versions version ON version.id=locator.source_record_version_id
+        WHERE locator_cs.claim_id=ec.id
+      ),'[]'::jsonb) citation_locators,
       (SELECT count(*) FROM evidence_appraisals ea WHERE ea.claim_id=ec.id) appraisal_count
       FROM evidence_claims ec JOIN peptides p ON p.id=ec.peptide_id
       LEFT JOIN claim_sources cs ON cs.claim_id=ec.id LEFT JOIN source_records sr ON sr.id=cs.source_record_id
@@ -53,6 +86,117 @@ def claims(user:Annotated[dict,Depends(get_current_user)],db:Annotated[Session,D
       GROUP BY ec.id,p.preferred_name ORDER BY ec.created_at DESC LIMIT :limit
     """),{"org":org,"q":q,"term":f"%{q}%" if q else None,"limit":limit}).mappings().all()
     return {"items":[dict(x) for x in rows],"count":len(rows),"notice":"Evidence level and methodological risk are distinct; no composite evidence score is calculated."}
+
+
+@router.post("/citation-locators", status_code=201)
+def add_citation_locator(
+    payload: CitationLocatorInput,
+    user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """Attach an append-only, source-version-aware locator to an organization-owned claim source."""
+    org = reviewer(user, db)
+    claim_source = db.execute(text("""
+        SELECT cs.id, cs.source_record_id
+        FROM claim_sources cs
+        JOIN evidence_claims ec ON ec.id=cs.claim_id
+        WHERE cs.id=:source_id
+          AND EXISTS (
+              SELECT 1 FROM curation_reviews cr
+              WHERE cr.entity_type='evidence_claim'
+                AND cr.entity_id=ec.id
+                AND cr.owner_organization_id=:org
+          )
+    """), {"source_id": payload.claim_source_id, "org": org}).mappings().first()
+    if not claim_source:
+        raise HTTPException(404, "Claim source not found in this organization.")
+
+    if payload.source_record_version_id:
+        version_matches = db.execute(text("""
+            SELECT 1 FROM source_record_versions version
+            WHERE version.id=:version_id
+              AND version.source_record_id=:source_record_id
+        """), {
+            "version_id": payload.source_record_version_id,
+            "source_record_id": claim_source["source_record_id"],
+        }).scalar_one_or_none()
+        if not version_matches:
+            raise HTTPException(422, "The selected source version does not belong to this claim source.")
+
+    try:
+        row = db.execute(text("""
+            INSERT INTO claim_source_locators (
+                claim_source_id, source_record_version_id, locator_type,
+                locator_value, quoted_text_hash, locator_notes
+            ) VALUES (
+                :claim_source_id, :version_id, :locator_type,
+                :locator_value, :quoted_hash, :notes
+            )
+            RETURNING id, claim_source_id, source_record_version_id, locator_type,
+                      locator_value, quoted_text_hash, locator_notes, created_at
+        """), {
+            "claim_source_id": payload.claim_source_id,
+            "version_id": payload.source_record_version_id,
+            "locator_type": payload.locator_type,
+            "locator_value": payload.locator_value,
+            "quoted_hash": payload.quoted_text_hash,
+            "notes": payload.locator_notes,
+        }).mappings().one()
+        db.execute(text("""
+            INSERT INTO audit_events (
+                actor_user_id, organization_id, action, entity_type, entity_id, event_metadata
+            ) VALUES (
+                :actor, :org, 'claim_source_locator_created', 'claim_source_locator', :id,
+                jsonb_build_object('claim_source_id', :claim_source_id,
+                                   'locator_type', :locator_type)
+            )
+        """), {
+            "actor": user["id"], "org": org, "id": row["id"],
+            "claim_source_id": payload.claim_source_id,
+            "locator_type": payload.locator_type,
+        })
+        db.commit()
+        return dict(row)
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(422, "The citation locator conflicts with the source provenance record.") from exc
+
+
+@router.get("/claims/{claim_id}/citation-locators")
+def citation_locators_for_claim(
+    claim_id: UUID,
+    user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    org = reviewer(user, db)
+    found = db.execute(text("""
+        SELECT ec.id FROM evidence_claims ec
+        WHERE ec.id=:claim_id
+          AND EXISTS (
+              SELECT 1 FROM curation_reviews cr
+              WHERE cr.entity_type='evidence_claim'
+                AND cr.entity_id=ec.id
+                AND cr.owner_organization_id=:org
+          )
+    """), {"claim_id": claim_id, "org": org}).scalar_one_or_none()
+    if not found:
+        raise HTTPException(404, "Claim not found in this organization.")
+    rows = db.execute(text("""
+        SELECT locator.id, locator.claim_source_id, locator.source_record_version_id,
+               locator.locator_type, locator.locator_value, locator.quoted_text_hash,
+               locator.locator_notes, locator.created_at,
+               source.source_name, source.source_identifier,
+               version.content_hash AS source_version_hash,
+               version.captured_at AS source_version_captured_at
+        FROM claim_sources claim_source
+        JOIN claim_source_locators locator ON locator.claim_source_id=claim_source.id
+        LEFT JOIN source_records source ON source.id=claim_source.source_record_id
+        LEFT JOIN source_record_versions version ON version.id=locator.source_record_version_id
+        WHERE claim_source.claim_id=:claim_id
+        ORDER BY locator.created_at, locator.id
+    """), {"claim_id": claim_id}).mappings().all()
+    return {"items": [dict(row) for row in rows], "count": len(rows)}
+
 
 @router.post("/appraisals",status_code=201)
 def appraise(payload:Appraisal,user:Annotated[dict,Depends(get_current_user)],db:Annotated[Session,Depends(get_db)]):

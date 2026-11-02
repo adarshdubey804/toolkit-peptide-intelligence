@@ -27,6 +27,13 @@ class VendorSubmission(BaseModel):
     evidence_scope: str = Field(min_length=5, max_length=1000)
 
 
+class VendorCandidateIdentitySource(BaseModel):
+    source_name: str = Field(min_length=2, max_length=120)
+    source_identifier: str = Field(min_length=1, max_length=200)
+    source_url: HttpUrl
+    evidence_scope: str = Field(min_length=5, max_length=1000)
+
+
 class VendorCandidateImport(BaseModel):
     legal_name: str = Field(min_length=2, max_length=300)
     website_url: HttpUrl
@@ -36,6 +43,7 @@ class VendorCandidateImport(BaseModel):
     source_identifier: str = Field(min_length=1, max_length=200)
     source_url: HttpUrl
     evidence_scope: str = Field(min_length=5, max_length=1000)
+    identity_source: VendorCandidateIdentitySource | None = None
 
 
 class VendorCandidateBatch(BaseModel):
@@ -1054,6 +1062,22 @@ def verified_vendor_capabilities(
             "actor": current_user["id"], "org": organization_id, "id": vendor["id"],
             "type": candidate.vendor_type, "source": str(source_id),
         })
+        if candidate.identity_source:
+            identity_source_id = _source_record(
+                db,
+                candidate.identity_source.source_name.strip(),
+                candidate.identity_source.source_identifier.strip(),
+                _source_host(str(candidate.identity_source.source_url)),
+            )
+            db.execute(text("""
+                INSERT INTO vendor_sources (vendor_id, source_record_id, evidence_scope)
+                VALUES (:vendor, :source, :scope) ON CONFLICT DO NOTHING
+            """), {
+                "vendor": vendor["id"],
+                "source": identity_source_id,
+                "scope": candidate.identity_source.evidence_scope.strip(),
+            })
+
         created.append(dict(vendor))
 
     db.commit()

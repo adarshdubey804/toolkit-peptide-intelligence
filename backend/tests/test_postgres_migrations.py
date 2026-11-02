@@ -204,6 +204,37 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
         """)).scalar_one()
         assert batch_form_required == "NO", "A vendor offering must identify its exact chemical form"
 
+        rls_tables = (
+            "vendor_material_offerings",
+            "vendor_material_batches",
+            "batch_analytical_test_results",
+            "batch_analytical_test_result_decisions",
+        )
+        for table_name in rls_tables:
+            rls_state = connection.execute(text("""
+                SELECT relrowsecurity, relforcerowsecurity
+                FROM pg_class WHERE oid=to_regclass(:table_name)
+            """), {"table_name": f"public.{table_name}"}).one()
+            assert tuple(rls_state) == (True, True), f"RLS and FORCE RLS must be enabled for {table_name}"
+
+        required_policies = connection.execute(text("""
+            SELECT count(*) FROM pg_policies
+            WHERE schemaname='public' AND policyname IN (
+                'vendor_material_offerings_select_scope',
+                'vendor_material_offerings_insert_scope',
+                'vendor_material_offerings_update_scope',
+                'vendor_material_batches_select_scope',
+                'vendor_material_batches_insert_scope',
+                'vendor_material_batches_update_scope',
+                'batch_analytical_test_results_select_scope',
+                'batch_analytical_test_results_insert_scope',
+                'batch_analytical_test_results_update_scope',
+                'batch_analytical_test_result_decisions_select_scope',
+                'batch_analytical_test_result_decisions_insert_scope'
+            )
+        """)).scalar_one()
+        assert required_policies == 11, "All vendor material traceability access paths need explicit RLS policies"
+
 @pytest.mark.skipif(
     os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",
     reason="PostgreSQL audit-chain integration test is enabled in CI only.",
@@ -257,3 +288,153 @@ def test_audit_chain_appends_sequentially_and_rejects_mutation():
                     """), {"event_id": second["id"]})
 
             fixture.rollback()
+
+@pytest.mark.skipif(
+    os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",
+    reason="PostgreSQL transaction-local tenant context test is enabled in CI only.",
+)
+def test_organization_context_is_transaction_local_and_clears_on_commit():
+    organization_id = str(uuid4())
+    with engine.connect() as connection:
+        with connection.begin():
+            bound = connection.execute(text("""
+                SELECT set_config('app.organization_id', :organization_id, true)
+            """), {"organization_id": organization_id}).scalar_one()
+            assert bound == organization_id
+            current = connection.execute(text(
+                "SELECT current_setting('app.organization_id', true)"
+            )).scalar_one()
+            assert current == organization_id
+
+        with connection.begin():
+            current = connection.execute(text(
+                "SELECT current_setting('app.organization_id', true)"
+            )).scalar_one_or_none()
+            assert current in (None, ""), "Transaction-local organization context must not leak through the connection pool"
+
+
+
+@pytest.mark.skipif(
+    os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",
+    reason="PostgreSQL row-level-security integration test is enabled in CI only.",
+)
+def test_vendor_material_offering_rls_enforces_organization_and_public_scope():
+    with engine.begin() as connection:
+        connection.execute(text("SELECT pg_advisory_xact_lock(731904221067)"))
+        apply_development_migrations(connection)
+
+        organization_a = connection.execute(text("""
+            INSERT INTO organizations (name, organization_type)
+            VALUES (:name, 'research_team') RETURNING id
+        """), {"name": "rls-org-a-" + str(uuid4())}).scalar_one()
+        organization_b = connection.execute(text("""
+            INSERT INTO organizations (name, organization_type)
+            VALUES (:name, 'research_team') RETURNING id
+        """), {"name": "rls-org-b-" + str(uuid4())}).scalar_one()
+        submitter_a = connection.execute(text("""
+            INSERT INTO user_profiles (display_name, role)
+            VALUES ('RLS submitter A', 'researcher') RETURNING id
+        """)).scalar_one()
+        submitter_b = connection.execute(text("""
+            INSERT INTO user_profiles (display_name, role)
+            VALUES ('RLS submitter B', 'researcher') RETURNING id
+        """)).scalar_one()
+
+        vendor_a = connection.execute(text("""
+            INSERT INTO vendors (
+                legal_name, vendor_type, organization_id, review_status,
+                verification_status, submitted_by
+            ) VALUES (:name, 'other', :org, 'verified', 'verified', :submitter)
+            RETURNING id
+        """), {"name": "RLS vendor A " + str(uuid4()), "org": organization_a,
+               "submitter": submitter_a}).scalar_one()
+        vendor_b = connection.execute(text("""
+            INSERT INTO vendors (
+                legal_name, vendor_type, organization_id, review_status,
+                verification_status, submitted_by
+            ) VALUES (:name, 'other', :org, 'verified', 'verified', :submitter)
+            RETURNING id
+        """), {"name": "RLS vendor B " + str(uuid4()), "org": organization_b,
+               "submitter": submitter_b}).scalar_one()
+
+        peptide_a = connection.execute(text("""
+            INSERT INTO peptides (preferred_name, review_status)
+            VALUES (:name, 'verified') RETURNING id
+        """), {"name": "RLS peptide A " + str(uuid4())}).scalar_one()
+        peptide_b = connection.execute(text("""
+            INSERT INTO peptides (preferred_name, review_status)
+            VALUES (:name, 'verified') RETURNING id
+        """), {"name": "RLS peptide B " + str(uuid4())}).scalar_one()
+        form_a = connection.execute(text("""
+            INSERT INTO peptide_chemical_forms (peptide_id, form_name, form_type, review_status)
+            VALUES (:peptide, 'RLS form A', 'linear_peptide', 'verified') RETURNING id
+        """), {"peptide": peptide_a}).scalar_one()
+        form_b = connection.execute(text("""
+            INSERT INTO peptide_chemical_forms (peptide_id, form_name, form_type, review_status)
+            VALUES (:peptide, 'RLS form B', 'linear_peptide', 'verified') RETURNING id
+        """), {"peptide": peptide_b}).scalar_one()
+        source_id = connection.execute(text("""
+            INSERT INTO source_records (source_name, source_identifier, source_url, retrieved_at, raw_metadata)
+            VALUES ('RLS test source', :identifier, 'https://example.org/rls-test', now(), '{}'::jsonb)
+            RETURNING id
+        """), {"identifier": str(uuid4())}).scalar_one()
+
+        own_a = connection.execute(text("""
+            INSERT INTO vendor_material_offerings (
+                organization_id, vendor_id, peptide_id, chemical_form_id, product_name,
+                source_id, review_status, submitted_by, visibility_scope
+            ) VALUES (:org, :vendor, :peptide, :form, 'Private offering A',
+                      :source, 'in_review', :submitter, 'restricted')
+            RETURNING id
+        """), {"org": organization_a, "vendor": vendor_a, "peptide": peptide_a,
+               "form": form_a, "source": source_id, "submitter": submitter_a}).scalar_one()
+        own_b = connection.execute(text("""
+            INSERT INTO vendor_material_offerings (
+                organization_id, vendor_id, peptide_id, chemical_form_id, product_name,
+                source_id, review_status, submitted_by, visibility_scope
+            ) VALUES (:org, :vendor, :peptide, :form, 'Private offering B',
+                      :source, 'in_review', :submitter, 'restricted')
+            RETURNING id
+        """), {"org": organization_b, "vendor": vendor_b, "peptide": peptide_b,
+               "form": form_b, "source": source_id, "submitter": submitter_b}).scalar_one()
+        public_b = connection.execute(text("""
+            INSERT INTO vendor_material_offerings (
+                organization_id, vendor_id, peptide_id, chemical_form_id, product_name,
+                source_id, review_status, submitted_by, visibility_scope
+            ) VALUES (:org, :vendor, :peptide, :form, 'Public verified offering B',
+                      :source, 'verified', :submitter, 'public')
+            RETURNING id
+        """), {"org": organization_b, "vendor": vendor_b, "peptide": peptide_b,
+               "form": form_b, "source": source_id, "submitter": submitter_b}).scalar_one()
+
+        connection.exec_driver_sql("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='toolkit_rls_test') THEN
+                    CREATE ROLE toolkit_rls_test NOLOGIN NOBYPASSRLS;
+                END IF;
+            END $$;
+        """)
+        connection.exec_driver_sql("GRANT USAGE ON SCHEMA public TO toolkit_rls_test")
+        connection.exec_driver_sql("GRANT SELECT ON vendor_material_offerings TO toolkit_rls_test")
+
+        with connection.begin_nested():
+            connection.exec_driver_sql("SET LOCAL ROLE toolkit_rls_test")
+            connection.execute(text("""
+                SELECT set_config('app.organization_id', :org, true)
+            """), {"org": str(organization_a)})
+            visible_a = set(connection.execute(text(
+                "SELECT id FROM vendor_material_offerings"
+            )).scalars().all())
+            assert visible_a == {own_a, public_b}
+
+            connection.execute(text("""
+                SELECT set_config('app.organization_id', '', true)
+            """))
+            visible_public = set(connection.execute(text(
+                "SELECT id FROM vendor_material_offerings"
+            )).scalars().all())
+            assert visible_public == {public_b}
+        connection.exec_driver_sql("RESET ROLE")
+        connection.exec_driver_sql("REVOKE SELECT ON vendor_material_offerings FROM toolkit_rls_test")
+        connection.exec_driver_sql("REVOKE USAGE ON SCHEMA public FROM toolkit_rls_test")
+        connection.exec_driver_sql("DROP ROLE toolkit_rls_test")

@@ -136,8 +136,6 @@ def login(payload: LoginRequest, request: Request, db: Annotated[Session, Depend
         limit=settings.login_rate_limit_per_window,
         window_seconds=settings.rate_limit_window_seconds,
     )
-    if False:
-        raise HTTPException(status_code=503, detail="Authentication is not configured with a sufficiently long application secret.")
     user = _load_user(db, payload.email.strip().lower(), payload.organization_id)
     # A stale or revoked browser preference must not lock a legitimate user out;
     # fall back only to one of the account's own active memberships.

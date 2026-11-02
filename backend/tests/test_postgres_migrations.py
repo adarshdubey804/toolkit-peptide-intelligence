@@ -60,6 +60,7 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             "vendor_material_batches",
             "batch_analytical_test_results",
             "batch_analytical_test_result_decisions",
+            "claim_source_locators",
             "analytical_methods",
             "analytical_method_sources",
             "analytical_method_decisions",
@@ -543,3 +544,75 @@ def test_vendor_material_offering_rls_enforces_organization_and_public_scope():
         connection.exec_driver_sql("REVOKE SELECT ON vendor_material_offerings FROM toolkit_rls_test")
         connection.exec_driver_sql("REVOKE USAGE ON SCHEMA public FROM toolkit_rls_test")
         connection.exec_driver_sql("DROP ROLE toolkit_rls_test")
+
+
+
+@pytest.mark.skipif(
+    os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",
+    reason="PostgreSQL citation-locator integrity test is enabled in CI only.",
+)
+def test_claim_source_locator_binds_exact_source_version_and_is_append_only():
+    with engine.begin() as connection:
+        connection.execute(text("SELECT pg_advisory_xact_lock(731904221067)"))
+        apply_development_migrations(connection)
+
+        source_a = connection.execute(text("""
+            INSERT INTO source_records (source_name, source_identifier, source_url, raw_metadata)
+            VALUES ('Locator test source A', :identifier, 'https://example.org/a', '{}'::jsonb)
+            RETURNING id
+        """), {"identifier": str(uuid4())}).scalar_one()
+        source_b = connection.execute(text("""
+            INSERT INTO source_records (source_name, source_identifier, source_url, raw_metadata)
+            VALUES ('Locator test source B', :identifier, 'https://example.org/b', '{}'::jsonb)
+            RETURNING id
+        """), {"identifier": str(uuid4())}).scalar_one()
+        version_a = connection.execute(text("""
+            INSERT INTO source_record_versions (source_record_id, content_hash, raw_payload)
+            VALUES (:source, :hash, CAST(:payload AS jsonb)) RETURNING id
+        """), {"source": source_a, "hash": "a" * 64, "payload": '{"release":"A"}'}).scalar_one()
+        version_b = connection.execute(text("""
+            INSERT INTO source_record_versions (source_record_id, content_hash, raw_payload)
+            VALUES (:source, :hash, CAST(:payload AS jsonb)) RETURNING id
+        """), {"source": source_b, "hash": "b" * 64, "payload": '{"release":"B"}'}).scalar_one()
+        peptide_id = connection.execute(text("""
+            INSERT INTO peptides (preferred_name, review_status)
+            VALUES (:name, 'in_review') RETURNING id
+        """), {"name": "Locator test peptide " + str(uuid4())}).scalar_one()
+        claim_id = connection.execute(text("""
+            INSERT INTO evidence_claims (peptide_id, claim_text, claim_domain)
+            VALUES (:peptide, 'A source-backed test claim.', 'mechanism') RETURNING id
+        """), {"peptide": peptide_id}).scalar_one()
+        claim_source_id = connection.execute(text("""
+            INSERT INTO claim_sources (claim_id, source_record_id, supporting_excerpt, relationship)
+            VALUES (:claim, :source, 'Permitted short excerpt.', 'supports') RETURNING id
+        """), {"claim": claim_id, "source": source_a}).scalar_one()
+
+        locator_id = connection.execute(text("""
+            INSERT INTO claim_source_locators (
+                claim_source_id, source_record_version_id, locator_type,
+                locator_value, quoted_text_hash
+            ) VALUES (:claim_source, :version, 'figure', 'Figure 2',
+                      :quoted_hash) RETURNING id
+        """), {"claim_source": claim_source_id, "version": version_a,
+               "quoted_hash": "c" * 64}).scalar_one()
+
+        with pytest.raises(Exception):
+            with connection.begin_nested():
+                connection.execute(text("""
+                    INSERT INTO claim_source_locators (
+                        claim_source_id, source_record_version_id, locator_type, locator_value
+                    ) VALUES (:claim_source, :version, 'page', 'Page 4')
+                """), {"claim_source": claim_source_id, "version": version_b})
+
+        with pytest.raises(Exception):
+            with connection.begin_nested():
+                connection.execute(text("""
+                    UPDATE claim_source_locators SET locator_value='Page 9'
+                    WHERE id=:locator
+                """), {"locator": locator_id})
+
+        with pytest.raises(Exception):
+            with connection.begin_nested():
+                connection.execute(text("""
+                    DELETE FROM claim_source_locators WHERE id=:locator
+                """), {"locator": locator_id})

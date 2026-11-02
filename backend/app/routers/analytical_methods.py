@@ -3,7 +3,7 @@ from uuid import UUID
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, field_validator
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -733,4 +733,200 @@ def decide_analytical_test_catalogue_entry(
     return {
         **dict(decision),
         "scope": "Organization-scoped editorial review only. The shared catalogue entry remains draft until a separate global curation process is implemented."
+    }
+
+
+class PeptideTestApplicabilitySubmission(BaseModel):
+    peptide_id: UUID
+    test_id: UUID
+    applicability_status: Literal["applicable", "not_applicable", "conditional", "undetermined"]
+    material_form: str | None = Field(default=None, max_length=300)
+    sample_matrix: str | None = Field(default=None, max_length=500)
+    intended_use_context: str | None = Field(default=None, max_length=1000)
+    rationale: str = Field(min_length=20, max_length=3000)
+    evidence_scope: str = Field(min_length=5, max_length=1000)
+    limitations: str = Field(min_length=10, max_length=2000)
+    source_name: str = Field(min_length=2, max_length=120)
+    source_identifier: str = Field(min_length=1, max_length=200)
+    source_url: HttpUrl
+
+    @field_validator("source_url")
+    @classmethod
+    def require_https_source(cls, value: HttpUrl) -> HttpUrl:
+        if value.scheme != "https":
+            raise ValueError("Source URL must use HTTPS.")
+        return value
+
+
+class PeptideTestApplicabilityDecision(BaseModel):
+    decision: Literal["verified", "rejected", "needs_changes"]
+    rationale: str = Field(min_length=20, max_length=4000)
+
+
+@router.get("/test-catalogue/applicability")
+def list_verified_peptide_test_applicability(
+    db: Annotated[Session, Depends(get_db)],
+    peptide_id: UUID | None = None,
+    test_id: UUID | None = None,
+    applicability_status: Literal["applicable", "not_applicable", "conditional", "undetermined"] | None = None,
+    limit: int = Query(default=100, ge=1, le=250),
+):
+    """Return only independently reviewed applicability records for globally verified peptide/test identities."""
+    rows = db.execute(text("""
+        SELECT a.id, a.peptide_id, p.preferred_name AS peptide_name,
+               a.test_id, t.catalogue_code, t.test_name, t.quality_attribute,
+               a.applicability_status, a.material_form, a.sample_matrix,
+               a.intended_use_context, a.rationale, a.evidence_scope, a.limitations,
+               sr.source_name, sr.source_identifier, sr.source_url, a.reviewed_at
+        FROM peptide_test_applicability a
+        JOIN peptides p ON p.id=a.peptide_id AND p.review_status='verified'
+        JOIN analytical_test_catalogue t ON t.id=a.test_id AND t.review_status='verified'
+        JOIN source_records sr ON sr.id=a.source_id
+        WHERE a.review_status='verified'
+          AND (:peptide IS NULL OR a.peptide_id=:peptide)
+          AND (:test IS NULL OR a.test_id=:test)
+          AND (:status IS NULL OR a.applicability_status=:status)
+        ORDER BY p.preferred_name, t.quality_attribute, t.test_name
+        LIMIT :limit
+    """), {"peptide": peptide_id, "test": test_id,
+           "status": applicability_status, "limit": limit}).mappings().all()
+    return {
+        "items": [dict(row) for row in rows],
+        "count": len(rows),
+        "scope": "These are source-backed, curator-reviewed applicability assessments for exact peptide and test records. They are not universal test panels, validated procedures, acceptance criteria or clinical recommendations."
+    }
+
+
+@router.post("/test-catalogue/applicability", status_code=201)
+def submit_peptide_test_applicability(
+    payload: PeptideTestApplicabilitySubmission,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    organization_id, role = _membership(current_user, db)
+    if role not in SUBMIT_ROLES:
+        raise HTTPException(status_code=403, detail="Your role cannot submit peptide test applicability.")
+    peptide = db.execute(text("""
+        SELECT id FROM peptides WHERE id=:id AND review_status='verified'
+    """), {"id": payload.peptide_id}).scalar_one_or_none()
+    if not peptide:
+        raise HTTPException(status_code=404, detail="Verified peptide identity not found.")
+    test = db.execute(text("""
+        SELECT id, review_status FROM analytical_test_catalogue WHERE id=:id
+    """), {"id": payload.test_id}).mappings().first()
+    if not test:
+        raise HTTPException(status_code=404, detail="Analytical test catalogue entry not found.")
+    source_id = _source_record(db, payload.source_name, payload.source_identifier, str(payload.source_url))
+    row = db.execute(text("""
+        INSERT INTO peptide_test_applicability (
+            organization_id, peptide_id, test_id, applicability_status,
+            material_form, sample_matrix, intended_use_context, rationale,
+            evidence_scope, limitations, source_id, review_status, submitted_by
+        ) VALUES (
+            :org, :peptide, :test, :status, :material, :matrix, :context,
+            :rationale, :scope, :limitations, :source, 'in_review', :submitter
+        )
+        RETURNING id, peptide_id, test_id, applicability_status, review_status, created_at
+    """), {
+        "org": organization_id, "peptide": payload.peptide_id, "test": payload.test_id,
+        "status": payload.applicability_status, "material": payload.material_form,
+        "matrix": payload.sample_matrix, "context": payload.intended_use_context,
+        "rationale": payload.rationale.strip(), "scope": payload.evidence_scope.strip(),
+        "limitations": payload.limitations.strip(), "source": source_id,
+        "submitter": current_user["id"],
+    }).mappings().one()
+    db.execute(text("""
+        INSERT INTO audit_events (actor_user_id, organization_id, action, entity_type, entity_id, event_metadata)
+        VALUES (:actor, :org, 'peptide_test_applicability_submitted',
+                'peptide_test_applicability', :id,
+                jsonb_build_object('peptide_id', :peptide, 'test_id', :test,
+                                   'applicability_status', :status, 'source_record_id', :source))
+    """), {"actor": current_user["id"], "org": organization_id, "id": row["id"],
+           "peptide": str(payload.peptide_id), "test": str(payload.test_id),
+           "status": payload.applicability_status, "source": str(source_id)})
+    db.commit()
+    return {
+        **dict(row),
+        "test_catalogue_status": test["review_status"],
+        "note": "The assessment remains private until independently reviewed. Public discovery additionally requires the shared peptide and test catalogue records to be globally verified."
+    }
+
+
+@router.get("/test-catalogue/applicability/reviews")
+def peptide_test_applicability_review_queue(
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    limit: int = Query(default=100, ge=1, le=200),
+):
+    organization_id, role = _membership(current_user, db)
+    if role not in REVIEW_ROLES:
+        raise HTTPException(status_code=403, detail="Curator or reviewer permission is required.")
+    rows = db.execute(text("""
+        SELECT a.id, a.peptide_id, p.preferred_name AS peptide_name,
+               a.test_id, t.catalogue_code, t.test_name, t.quality_attribute,
+               t.review_status AS test_catalogue_status,
+               a.applicability_status, a.material_form, a.sample_matrix,
+               a.intended_use_context, a.rationale, a.evidence_scope, a.limitations,
+               a.submitted_by, sr.source_name, sr.source_identifier, sr.source_url,
+               a.created_at
+        FROM peptide_test_applicability a
+        JOIN peptides p ON p.id=a.peptide_id
+        JOIN analytical_test_catalogue t ON t.id=a.test_id
+        JOIN source_records sr ON sr.id=a.source_id
+        WHERE a.organization_id=:org AND a.review_status='in_review'
+        ORDER BY a.created_at, a.id
+        LIMIT :limit
+    """), {"org": organization_id, "limit": limit}).mappings().all()
+    return {
+        "items": [dict(row) for row in rows],
+        "count": len(rows),
+        "scope": "Organization-scoped review. A verified applicability assessment does not globally verify its peptide identity or test catalogue definition."
+    }
+
+
+@router.post("/test-catalogue/applicability/{applicability_id}/decisions", status_code=201)
+def decide_peptide_test_applicability(
+    applicability_id: UUID,
+    payload: PeptideTestApplicabilityDecision,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    organization_id, role = _membership(current_user, db)
+    if role not in REVIEW_ROLES:
+        raise HTTPException(status_code=403, detail="Curator or reviewer permission is required.")
+    claim = db.execute(text("""
+        SELECT id, submitted_by FROM peptide_test_applicability
+        WHERE id=:id AND organization_id=:org AND review_status='in_review'
+        FOR UPDATE
+    """), {"id": applicability_id, "org": organization_id}).mappings().first()
+    if not claim:
+        raise HTTPException(status_code=404, detail="Peptide test applicability review not found in this organization.")
+    if str(claim["submitted_by"]) == current_user["id"]:
+        raise HTTPException(status_code=409, detail="A submitter cannot review their own applicability assessment.")
+    db.execute(text("""
+        INSERT INTO peptide_test_applicability_decisions
+            (applicability_id, organization_id, reviewer_id, decision, rationale)
+        VALUES (:claim, :org, :reviewer, :decision, :rationale)
+    """), {"claim": applicability_id, "org": organization_id,
+           "reviewer": current_user["id"], "decision": payload.decision,
+           "rationale": payload.rationale.strip()})
+    new_status = "verified" if payload.decision == "verified" else ("rejected" if payload.decision == "rejected" else "draft")
+    db.execute(text("""
+        UPDATE peptide_test_applicability
+        SET review_status=:status, reviewed_by=:reviewer, reviewed_at=now()
+        WHERE id=:claim
+    """), {"status": new_status, "reviewer": current_user["id"], "claim": applicability_id})
+    db.execute(text("""
+        INSERT INTO audit_events (actor_user_id, organization_id, action, entity_type, entity_id, event_metadata)
+        VALUES (:actor, :org, 'peptide_test_applicability_decided',
+                'peptide_test_applicability', :id,
+                jsonb_build_object('decision', :decision))
+    """), {"actor": current_user["id"], "org": organization_id,
+           "id": applicability_id, "decision": payload.decision})
+    db.commit()
+    return {
+        "applicability_id": str(applicability_id),
+        "review_status": new_status,
+        "decision": payload.decision,
+        "note": "This organization-specific decision does not globally verify the peptide or test definition."
     }

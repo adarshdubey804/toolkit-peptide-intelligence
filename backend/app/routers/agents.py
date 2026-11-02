@@ -8,7 +8,6 @@ from .research import research_assistant_brief
 from ..config import settings
 from .auth import get_current_user
 from ..db import get_db
-from ..rate_limit import enforce_rate_limit  # retained for legacy test patch points
 from ..rate_limit_dependencies import authenticated_write_rate_limit
 
 router = APIRouter(prefix="/api/v1/agents", tags=["research agents"])

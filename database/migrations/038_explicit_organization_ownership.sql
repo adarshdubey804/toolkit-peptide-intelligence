@@ -76,7 +76,7 @@ WHERE a.organization_id IS NULL
 -- of active/suspended status. Ambiguous rows remain unassigned and are hidden
 -- from organization-scoped review queues until manually resolved.
 WITH sole_membership AS (
-    SELECT user_id, min(organization_id) AS organization_id
+    SELECT user_id, min(organization_id::text)::uuid AS organization_id
     FROM organization_memberships
     GROUP BY user_id
     HAVING count(DISTINCT organization_id) = 1

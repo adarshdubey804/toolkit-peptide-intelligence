@@ -90,6 +90,7 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             "regulatory_source_observations",
             "regulatory_source_poll_runs",
             "claim_source_locators",
+            "evidence_claim_revisions",
             "analytical_methods",
             "analytical_method_sources",
             "analytical_method_decisions",
@@ -1269,10 +1270,18 @@ def test_curation_reviews_and_decisions_are_organization_scoped():
         user_b = connection.execute(text("INSERT INTO user_profiles (display_name,role) VALUES ('Curation B','researcher') RETURNING id")).scalar_one()
 
         def review(org, user):
+            peptide_id = connection.execute(text("""
+                INSERT INTO peptides (preferred_name, review_status)
+                VALUES (:name, 'in_review') RETURNING id
+            """), {"name": "Curation test peptide " + str(uuid4())}).scalar_one()
+            claim_id = connection.execute(text("""
+                INSERT INTO evidence_claims (peptide_id, claim_text, claim_domain)
+                VALUES (:peptide, 'Curation test evidence claim.', 'mechanism') RETURNING id
+            """), {"peptide": peptide_id}).scalar_one()
             return connection.execute(text("""
                 INSERT INTO curation_reviews (entity_type,entity_id,review_status,submitted_by,owner_organization_id)
                 VALUES ('evidence_claim',:entity,'in_review',:user,:org) RETURNING id
-            """), {"entity": uuid4(), "user": user, "org": org}).scalar_one()
+            """), {"entity": claim_id, "user": user, "org": org}).scalar_one()
 
         review_a = review(org_a, user_a)
         review_b = review(org_b, user_b)
@@ -1300,6 +1309,7 @@ def test_curation_reviews_and_decisions_are_organization_scoped():
         connection.exec_driver_sql("GRANT USAGE ON SCHEMA public TO toolkit_curation_rls_test")
         connection.exec_driver_sql("GRANT SELECT, INSERT, UPDATE ON curation_reviews TO toolkit_curation_rls_test")
         connection.exec_driver_sql("GRANT SELECT, INSERT ON curation_decisions TO toolkit_curation_rls_test")
+        connection.exec_driver_sql("GRANT SELECT ON evidence_claim_revisions TO toolkit_curation_rls_test")
 
         with connection.begin_nested():
             connection.exec_driver_sql("SET LOCAL ROLE toolkit_curation_rls_test")
@@ -1330,6 +1340,7 @@ def test_curation_reviews_and_decisions_are_organization_scoped():
         connection.exec_driver_sql("RESET ROLE")
         connection.exec_driver_sql("REVOKE SELECT, INSERT, UPDATE ON curation_reviews FROM toolkit_curation_rls_test")
         connection.exec_driver_sql("REVOKE SELECT, INSERT ON curation_decisions FROM toolkit_curation_rls_test")
+        connection.exec_driver_sql("REVOKE SELECT ON evidence_claim_revisions FROM toolkit_curation_rls_test")
         connection.exec_driver_sql("REVOKE USAGE ON SCHEMA public FROM toolkit_curation_rls_test")
         connection.exec_driver_sql("DROP ROLE toolkit_curation_rls_test")
 

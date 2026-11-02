@@ -6,6 +6,10 @@ class Settings(BaseSettings):
     app_env: str = "development"
     app_secret_key: str
     frontend_origin: str = "http://localhost:3000"
+    rate_limit_window_seconds: int = 60
+    login_rate_limit_per_window: int = 10
+    registration_rate_limit_per_window: int = 5
+    agent_rate_limit_per_window: int = 10
     ncbi_email: str | None = None
     ncbi_api_key: str | None = None
     ai_synthesis_enabled: bool = False

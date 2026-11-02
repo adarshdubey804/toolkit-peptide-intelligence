@@ -3239,3 +3239,118 @@ def test_rate_limit_commit_preserves_authenticated_context_for_following_rls_wri
             connection.exec_driver_sql("REVOKE SELECT,UPDATE ON api_rate_limit_maintenance FROM toolkit_rate_context_rls_test")
             connection.exec_driver_sql("REVOKE USAGE ON SCHEMA public FROM toolkit_rate_context_rls_test")
             connection.exec_driver_sql("DROP ROLE IF EXISTS toolkit_rate_context_rls_test")
+
+
+@pytest.mark.skipif(os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",
+                    reason="PostgreSQL regulatory source registry scheduler-role test is enabled in CI only.")
+def test_regulatory_source_registry_is_tenant_scoped_and_scheduler_is_column_limited():
+    with engine.begin() as connection:
+        connection.execute(text("SELECT pg_advisory_xact_lock(731904221067)"))
+        apply_development_migrations(connection)
+        org_a = connection.execute(
+            text("INSERT INTO organizations (name,organization_type) VALUES (:n,'research_team') RETURNING id"),
+            {"n": "reg-source-registry-a-" + str(uuid4())},
+        ).scalar_one()
+        org_b = connection.execute(
+            text("INSERT INTO organizations (name,organization_type) VALUES (:n,'research_team') RETURNING id"),
+            {"n": "reg-source-registry-b-" + str(uuid4())},
+        ).scalar_one()
+        user_a = connection.execute(
+            text("INSERT INTO user_profiles (display_name,role) VALUES ('Registry A','researcher') RETURNING id")
+        ).scalar_one()
+        user_b = connection.execute(
+            text("INSERT INTO user_profiles (display_name,role) VALUES ('Registry B','researcher') RETURNING id")
+        ).scalar_one()
+
+        connection.execute(text("SELECT set_config('app.organization_id',:org,true)"), {"org": str(org_a)})
+        source_a = connection.execute(text("""
+            INSERT INTO regulatory_source_registry
+            (organization_id,authority,jurisdiction,source_name,source_type,feed_url,official_domain,description,created_by)
+            VALUES (:org,'Authority A','Global','Registry source A','rss','https://example.org/a','example.org','Source A',:user)
+            RETURNING id
+        """), {"org": org_a, "user": user_a}).scalar_one()
+        connection.execute(text("SELECT set_config('app.organization_id',:org,true)"), {"org": str(org_b)})
+        source_b = connection.execute(text("""
+            INSERT INTO regulatory_source_registry
+            (organization_id,authority,jurisdiction,source_name,source_type,feed_url,official_domain,description,created_by)
+            VALUES (:org,'Authority B','Global','Registry source B','rss','https://example.org/b','example.org','Source B',:user)
+            RETURNING id
+        """), {"org": org_b, "user": user_b}).scalar_one()
+        connection.execute(text("SELECT set_config('app.organization_id','',true)"))
+        connection.execute(text("SELECT set_config('app.user_id','',true)"))
+
+        user_role = "toolkit_reg_source_user_test"
+        connection.exec_driver_sql(f"DROP ROLE IF EXISTS {user_role}")
+        connection.exec_driver_sql(f"CREATE ROLE {user_role} NOLOGIN NOBYPASSRLS")
+        connection.exec_driver_sql("GRANT USAGE ON SCHEMA public TO toolkit_reg_source_user_test")
+        connection.exec_driver_sql("GRANT SELECT, INSERT, UPDATE ON regulatory_source_registry TO toolkit_reg_source_user_test")
+
+        with connection.begin_nested():
+            connection.exec_driver_sql("SET LOCAL ROLE toolkit_reg_source_user_test")
+            connection.execute(text("SELECT set_config('app.organization_id',:org,true)"), {"org": str(org_a)})
+            assert set(connection.execute(text(
+                "SELECT id FROM regulatory_source_registry WHERE id IN (:a,:b)"
+            ), {"a": source_a, "b": source_b}).scalars()) == {source_a}
+            assert connection.execute(text("SELECT id FROM regulatory_source_registry WHERE id=:id"),
+                                      {"id": source_b}).scalar_one_or_none() is None
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO regulatory_source_registry
+                        (organization_id,authority,jurisdiction,source_name,source_type,feed_url,official_domain,description,created_by)
+                        VALUES (:org,'Cross tenant','Global','Cross tenant','rss','https://example.org/cross','example.org','Must fail',:user)
+                    """), {"org": org_b, "user": user_a})
+            connection.exec_driver_sql("RESET ROLE")
+
+        with connection.begin_nested():
+            connection.exec_driver_sql("SET LOCAL ROLE toolkit_regulatory_scheduler")
+            assert set(connection.execute(text(
+                "SELECT id FROM regulatory_source_registry WHERE id IN (:a,:b)"
+            ), {"a": source_a, "b": source_b}).scalars()) == {source_a, source_b}
+            connection.execute(text("""
+                UPDATE regulatory_source_registry SET next_poll_at=now()+interval '1 hour'
+                WHERE id=:source
+            """), {"source": source_b})
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        UPDATE regulatory_source_registry SET authority='Unauthorized edit' WHERE id=:source
+                    """), {"source": source_b})
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO regulatory_source_registry
+                        (organization_id,authority,jurisdiction,source_name,source_type,feed_url,official_domain,description,created_by)
+                        VALUES (:org,'No insert','Global','No insert','rss','https://example.org/no','example.org','Must fail',:user)
+                    """), {"org": org_a, "user": user_a})
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("DELETE FROM regulatory_source_registry WHERE id=:source"),
+                                       {"source": source_b})
+
+            connection.execute(text("SELECT set_config('app.organization_id',:org,true)"), {"org": str(org_a)})
+            run_a = connection.execute(text("""
+                INSERT INTO regulatory_source_poll_runs
+                (organization_id,source_id,trigger_type,status,finished_at)
+                VALUES (:org,:source,'scheduled','success',now()) RETURNING id
+            """), {"org": org_a, "source": source_a}).scalar_one()
+            connection.execute(text("""
+                INSERT INTO audit_events(actor_user_id,organization_id,action,entity_type,entity_id,event_metadata)
+                VALUES (NULL,:org,'scheduler_role_test','regulatory_source',:source,'{}'::jsonb)
+            """), {"org": org_a, "source": source_a})
+            assert connection.execute(text("SELECT count(*) FROM audit_chain_heads")).scalar_one() == 1
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO regulatory_source_poll_runs
+                        (organization_id,source_id,trigger_type,status,finished_at)
+                        VALUES (:org,:source,'scheduled','success',now())
+                    """), {"org": org_b, "source": source_b})
+            connection.execute(text("SELECT set_config('app.organization_id','',true)"))
+            assert connection.execute(text("SELECT count(*) FROM regulatory_source_poll_runs")).scalar_one() == 0
+            assert connection.execute(text("SELECT count(*) FROM audit_chain_heads")).scalar_one() == 0
+
+        connection.exec_driver_sql("RESET ROLE")
+        connection.exec_driver_sql("REVOKE SELECT, INSERT, UPDATE ON regulatory_source_registry FROM toolkit_reg_source_user_test")
+        connection.exec_driver_sql("REVOKE USAGE ON SCHEMA public FROM toolkit_reg_source_user_test")
+        connection.exec_driver_sql("DROP ROLE toolkit_reg_source_user_test")

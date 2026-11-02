@@ -12,7 +12,7 @@ from urllib.parse import urlsplit
 import httpx
 from sqlalchemy import text
 
-from ..db import SessionLocal
+from ..db import SchedulerSessionLocal
 from ..routers.regulatory import APPROVED_REGULATORY_DOMAINS, _parse_rss_items
 
 MAX_SOURCES_PER_RUN = 25
@@ -49,7 +49,9 @@ async def _fetch_feed(url: str) -> list[dict]:
 async def poll_due_sources(limit: int = MAX_SOURCES_PER_RUN) -> dict:
     if limit < 1 or limit > 100:
         raise ValueError("limit must be between 1 and 100")
-    db = SessionLocal()
+    if SchedulerSessionLocal is None:
+        raise RuntimeError("SCHEDULER_DATABASE_URL must use a login granted toolkit_regulatory_scheduler membership.")
+    db = SchedulerSessionLocal()
     processed = 0
     succeeded = 0
     failed = 0

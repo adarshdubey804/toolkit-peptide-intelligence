@@ -4,6 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     database_url: str
+    scheduler_database_url: str | None = None
     app_env: str = "development"
     app_secret_key: str
     frontend_origin: str = "http://localhost:3000"

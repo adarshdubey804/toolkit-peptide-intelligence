@@ -49,7 +49,7 @@ def claims(user:Annotated[dict,Depends(get_current_user)],db:Annotated[Session,D
       (SELECT count(*) FROM evidence_appraisals ea WHERE ea.claim_id=ec.id) appraisal_count
       FROM evidence_claims ec JOIN peptides p ON p.id=ec.peptide_id
       LEFT JOIN claim_sources cs ON cs.claim_id=ec.id LEFT JOIN source_records sr ON sr.id=cs.source_record_id
-      WHERE EXISTS (SELECT 1 FROM curation_reviews cr JOIN organization_memberships om ON om.user_id=cr.submitted_by WHERE cr.entity_type='evidence_claim' AND cr.entity_id=ec.id AND om.organization_id=:org AND om.membership_status='active') AND (:q IS NULL OR ec.claim_text ILIKE :term OR p.preferred_name ILIKE :term)
+      WHERE EXISTS (SELECT 1 FROM curation_reviews cr WHERE cr.entity_type='evidence_claim' AND cr.entity_id=ec.id AND cr.organization_id=:org) AND (:q IS NULL OR ec.claim_text ILIKE :term OR p.preferred_name ILIKE :term)
       GROUP BY ec.id,p.preferred_name ORDER BY ec.created_at DESC LIMIT :limit
     """),{"org":org,"q":q,"term":f"%{q}%" if q else None,"limit":limit}).mappings().all()
     return {"items":[dict(x) for x in rows],"count":len(rows),"notice":"Evidence level and methodological risk are distinct; no composite evidence score is calculated."}

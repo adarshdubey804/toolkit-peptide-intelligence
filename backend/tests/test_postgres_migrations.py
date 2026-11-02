@@ -79,6 +79,11 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             "curation_decisions",
             "agent_sessions",
             "agent_session_messages",
+            "regulatory_guidance_records",
+            "regulatory_guidance_decisions",
+            "regulatory_guidance_versions",
+            "regulatory_change_events",
+            "regulatory_change_decisions",
             "claim_source_locators",
             "analytical_methods",
             "analytical_method_sources",
@@ -379,6 +384,29 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             )
         """)).scalar_one()
         assert agent_policy_count == 5, "Agent sessions and messages need user-and-organization RLS policies"
+
+        regulatory_rls_tables = (
+            "regulatory_guidance_records", "regulatory_guidance_decisions",
+            "regulatory_guidance_versions", "regulatory_change_events",
+            "regulatory_change_decisions",
+        )
+        for table_name in regulatory_rls_tables:
+            state = connection.execute(text("""
+                SELECT relrowsecurity, relforcerowsecurity
+                FROM pg_class WHERE oid=to_regclass(:table_name)
+            """), {"table_name": f"public.{table_name}"}).one()
+            assert tuple(state) == (True, True), f"RLS and FORCE RLS must be enabled for {table_name}"
+        regulatory_policy_count = connection.execute(text("""
+            SELECT count(*) FROM pg_policies
+            WHERE schemaname='public' AND policyname IN (
+                'regulatory_guidance_records_select_scope','regulatory_guidance_records_insert_scope','regulatory_guidance_records_update_scope',
+                'regulatory_guidance_decisions_select_scope','regulatory_guidance_decisions_insert_scope',
+                'regulatory_guidance_versions_select_scope','regulatory_guidance_versions_insert_scope','regulatory_guidance_versions_update_scope',
+                'regulatory_change_events_select_scope','regulatory_change_events_insert_scope','regulatory_change_events_update_scope',
+                'regulatory_change_decisions_select_scope','regulatory_change_decisions_insert_scope'
+            )
+        """)).scalar_one()
+        assert regulatory_policy_count == 13, "Regulatory guidance and change-history access paths need explicit RLS policies"
 
 @pytest.mark.skipif(
     os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",

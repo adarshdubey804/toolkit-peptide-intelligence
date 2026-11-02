@@ -171,10 +171,11 @@ def create_peptide_dossier(
 
         review_id = db.execute(text("""
             INSERT INTO curation_reviews
-                (entity_type, entity_id, source_record_id, review_status, priority, submitted_by)
-            VALUES ('peptide', :peptide_id, :source_id, 'in_review', 'normal', :submitter)
+                (entity_type, entity_id, source_record_id, review_status, priority, submitted_by, owner_organization_id)
+            VALUES ('peptide', :peptide_id, :source_id, 'in_review', 'normal', :submitter, :org)
             RETURNING id
-        """), {"peptide_id": peptide_id, "source_id": source_id, "submitter": current_user["id"]}).scalar_one()
+        """), {"peptide_id": peptide_id, "source_id": source_id, "submitter": current_user["id"],
+                   "org": current_user["organization_id"]}).scalar_one()
 
         db.execute(text("""
             INSERT INTO audit_events (actor_user_id, organization_id, action, entity_type, entity_id, event_metadata)

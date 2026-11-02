@@ -89,6 +89,7 @@ export default function VendorMaterialsPage() {
       const data=await request("/api/v1/auth/login","POST",{email,password,organization_id:getPreferredOrganizationId()},"");
       setPreferredOrganizationId(data.user.organization_id);setToken(data.access_token);setRole(data.user.role);setPassword("");
       await loadOptions(data.access_token);
+      if(["organization_admin","curator","reviewer"].includes(data.user.role)) await loadReviews(data.access_token);
       setMessage("Signed in. Organization-scoped material records are loaded.");
     } catch(err) {setError(err instanceof Error?err.message:"Sign in failed.");}
     finally {setBusy(false);}

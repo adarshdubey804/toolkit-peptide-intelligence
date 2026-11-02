@@ -87,6 +87,7 @@ def verify_audit_integrity(
                    (
                        previous_hash IS DISTINCT FROM COALESCE(prior_hash, repeat('0', 64))
                        OR chain_sequence <> COALESCE(prior_sequence + 1, 1)
+                       OR chain_scope IS DISTINCT FROM :chain_scope
                        OR event_hash IS DISTINCT FROM audit_event_sha256(
                            id, actor_user_id, organization_id, action, entity_type,
                            entity_id, event_metadata, occurred_at, chain_scope,

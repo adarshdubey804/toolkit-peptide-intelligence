@@ -9,8 +9,8 @@
   },
   "dependencies": {
     "next": "15.5.28",
-    "react": "19.0.1",
-    "react-dom": "19.0.1"
+    "react": "19.0.9",
+    "react-dom": "19.0.9"
   },
   "devDependencies": {
     "@types/node": "^22",
@@ -19,5 +19,8 @@
     "typescript": "^5",
     "tailwindcss": "^4",
     "@tailwindcss/postcss": "^4"
+  },
+  "overrides": {
+    "postcss": "8.5.32"
   }
 }

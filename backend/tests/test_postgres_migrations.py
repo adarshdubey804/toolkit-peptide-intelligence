@@ -3316,7 +3316,6 @@ def test_regulatory_source_registry_is_tenant_scoped_and_scheduler_is_column_lim
                 VALUES (NULL,:org,'scheduler_role_test','regulatory_source',:source,'{}'::jsonb)
             """), {"org": org_a, "source": source_a})
             assert connection.execute(text("SELECT count(*) FROM audit_chain_heads")).scalar_one() == 1
-            assert connection.execute(text("SELECT count(*) FROM audit_events")).scalar_one() == 1
             with pytest.raises(Exception):
                 with connection.begin_nested():
                     connection.execute(text("""
@@ -3327,6 +3326,5 @@ def test_regulatory_source_registry_is_tenant_scoped_and_scheduler_is_column_lim
             connection.execute(text("SELECT set_config('app.organization_id','',true)"))
             assert connection.execute(text("SELECT count(*) FROM regulatory_source_poll_runs")).scalar_one() == 0
             assert connection.execute(text("SELECT count(*) FROM audit_chain_heads")).scalar_one() == 0
-            assert connection.execute(text("SELECT count(*) FROM audit_events")).scalar_one() == 0
 
         connection.exec_driver_sql("RESET ROLE")

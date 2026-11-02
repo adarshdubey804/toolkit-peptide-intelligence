@@ -125,7 +125,7 @@ def list_formulations(
                WHERE fs.formulation_id=fp.id), '[]'::jsonb) AS sources
         FROM formulation_profiles fp
         LEFT JOIN peptides p ON p.id=fp.peptide_id
-        WHERE fp.review_status='verified' AND fp.visibility_scope='public'
+        WHERE fp.review_status='verified'
           AND (:q IS NULL OR fp.formulation_name ILIKE '%' || :q || '%' OR fp.intended_research_context ILIKE '%' || :q || '%')
           AND (:type IS NULL OR fp.formulation_type=:type)
           AND (:peptide_id IS NULL OR fp.peptide_id=:peptide_id)
@@ -151,20 +151,20 @@ def submit_formulation(
             raise HTTPException(status_code=409, detail="Formulation can only link to a curator-verified peptide.")
     profile = db.execute(text("""
         INSERT INTO formulation_profiles (
-            peptide_id, formulation_name, formulation_type, delivery_system,
+            organization_id, peptide_id, formulation_name, formulation_type, delivery_system,
             intended_research_context, formulation_rationale, physical_state,
             container_closure_context, storage_context, development_stage,
-            limitations, review_status, submitted_by, owner_organization_id, visibility_scope
+            limitations, review_status, submitted_by
         ) VALUES (
-            :peptide, :name, :type, :delivery, :context, :rationale, :physical,
-            :container, :storage, :stage, :limitations, 'in_review', :submitter, :org, 'organization'
+            :org, :peptide, :name, :type, :delivery, :context, :rationale, :physical,
+            :container, :storage, :stage, :limitations, 'in_review', :submitter
         ) RETURNING id, formulation_name, formulation_type, review_status
-    """), {"peptide": payload.peptide_id, "name": payload.formulation_name.strip(),
+    """), {"org": organization_id, "peptide": payload.peptide_id, "name": payload.formulation_name.strip(),
            "type": payload.formulation_type, "delivery": payload.delivery_system,
            "context": payload.intended_research_context.strip(), "rationale": payload.formulation_rationale.strip(),
            "physical": payload.physical_state, "container": payload.container_closure_context,
            "storage": payload.storage_context, "stage": payload.development_stage,
-           "limitations": payload.limitations.strip(), "submitter": current_user["id"], "org": organization_id}).mappings().one()
+           "limitations": payload.limitations.strip(), "submitter": current_user["id"]}).mappings().one()
     profile_id = profile["id"]
     for item in payload.sources:
         source_id = _source(db, item)
@@ -257,7 +257,7 @@ def formulation_review_queue(
         FROM formulation_profiles fp
         LEFT JOIN formulation_sources fs ON fs.formulation_id=fp.id
         LEFT JOIN source_records sr ON sr.id=fs.source_record_id
-        WHERE fp.review_status='in_review' AND fp.owner_organization_id=:org
+        WHERE fp.review_status='in_review' AND fp.organization_id=:org
         GROUP BY fp.id ORDER BY fp.created_at LIMIT :limit
     """), {"org": organization_id, "limit": limit}).mappings().all()
     return {"items": [dict(row) for row in rows], "count": len(rows)}
@@ -276,7 +276,7 @@ def decide_formulation(
     profile = db.execute(text("""
         SELECT fp.* FROM formulation_profiles fp
         WHERE fp.id=:id AND fp.review_status='in_review'
-          AND fp.owner_organization_id=:org
+          AND fp.organization_id=:org
         FOR UPDATE OF fp
     """), {"id": formulation_id, "org": organization_id}).mappings().first()
     if not profile:

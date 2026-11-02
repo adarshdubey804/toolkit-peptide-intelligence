@@ -119,6 +119,8 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
 )
 def test_audit_chain_appends_sequentially_and_rejects_mutation():
     with engine.begin() as connection:
+        connection.execute(text("SELECT pg_advisory_xact_lock(731904221067)"))
+        apply_development_migrations(connection)
         with connection.begin_nested() as fixture:
             organization_id = connection.execute(text("""
                 INSERT INTO organizations (name, organization_type)

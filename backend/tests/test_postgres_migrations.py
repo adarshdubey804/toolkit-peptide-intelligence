@@ -862,6 +862,6 @@ def test_formulation_and_process_rls_inherit_parent_visibility():
             "formulation_sources", "formulation_review_decisions", "process_knowledge_profiles",
             "process_knowledge_stages", "process_knowledge_sources", "process_knowledge_decisions",
         ):
-            connection.exec_driver_sql(f"REVOKE SELECT ON {table} FROM toolkit_knowledge_rls_test")
+            connection.exec_driver_sql(f"REVOKE SELECT, INSERT, UPDATE ON {table} FROM toolkit_knowledge_rls_test")
         connection.exec_driver_sql("REVOKE USAGE ON SCHEMA public FROM toolkit_knowledge_rls_test")
         connection.exec_driver_sql("DROP ROLE toolkit_knowledge_rls_test")

@@ -111,7 +111,7 @@ def list_verified_methods(
         FROM analytical_methods am
         LEFT JOIN analytical_method_sources ams ON ams.method_id=am.id
         LEFT JOIN source_records sr ON sr.id=ams.source_record_id
-        WHERE am.review_status='verified' AND am.visibility_scope='public'
+        WHERE am.review_status='verified'
           AND (:q IS NULL OR am.method_name ILIKE '%' || :q || '%' OR am.intended_purpose ILIKE '%' || :q || '%')
           AND (:category IS NULL OR am.method_category=:category)
         GROUP BY am.id
@@ -134,25 +134,25 @@ def submit_method(
     source_id = _source_record(db, payload.source_name, payload.source_identifier, str(payload.source_url))
     method = db.execute(text("""
         INSERT INTO analytical_methods (
-            method_name, method_category, scientific_principle, intended_purpose,
+            organization_id, method_name, method_category, scientific_principle, intended_purpose,
             applicable_materials, method_classification, instrument_platform,
             sample_requirements, method_scope, method_version, reference_standard,
             validation_status, acceptance_criteria_source, limitations, source_id,
-            review_status, submitted_by, owner_organization_id, visibility_scope
+            review_status, submitted_by
         ) VALUES (
-            :name, :category, :principle, :purpose, :materials, :classification,
+            :org, :name, :category, :principle, :purpose, :materials, :classification,
             :platform, :sample, :scope, :version, :standard, :validation,
-            :criteria, :limitations, :source, 'in_review', :submitter, :org, 'organization'
+            :criteria, :limitations, :source, 'in_review', :submitter
         ) RETURNING id, method_name, method_category, review_status, validation_status
     """), {
-        "name": payload.method_name.strip(), "category": payload.method_category,
+        "org": organization_id, "name": payload.method_name.strip(), "category": payload.method_category,
         "principle": payload.scientific_principle.strip(), "purpose": payload.intended_purpose.strip(),
         "materials": payload.applicable_materials, "classification": payload.method_classification,
         "platform": payload.instrument_platform, "sample": payload.sample_requirements,
         "scope": payload.method_scope, "version": payload.method_version,
         "standard": payload.reference_standard, "validation": payload.validation_status,
         "criteria": payload.acceptance_criteria_source, "limitations": payload.limitations.strip(),
-        "source": source_id, "submitter": current_user["id"], "org": organization_id,
+        "source": source_id, "submitter": current_user["id"],
     }).mappings().one()
     db.execute(text("""
         INSERT INTO analytical_method_sources (method_id, source_record_id, evidence_scope)
@@ -188,7 +188,7 @@ def method_review_queue(
         FROM analytical_methods am
         LEFT JOIN analytical_method_sources ams ON ams.method_id=am.id
         LEFT JOIN source_records sr ON sr.id=ams.source_record_id
-        WHERE am.review_status='in_review' AND am.owner_organization_id=:org
+        WHERE am.review_status='in_review' AND am.organization_id=:org
         GROUP BY am.id ORDER BY am.id LIMIT :limit
     """), {"org": organization_id, "limit": limit}).mappings().all()
     return {"items": [dict(row) for row in rows], "count": len(rows)}
@@ -207,7 +207,7 @@ def decide_method(
     method = db.execute(text("""
         SELECT am.* FROM analytical_methods am
         WHERE am.id=:id AND am.review_status='in_review'
-          AND am.owner_organization_id=:org
+          AND am.organization_id=:org
         FOR UPDATE OF am
     """), {"id": method_id, "org": organization_id}).mappings().first()
     if not method:
@@ -263,9 +263,9 @@ def list_verified_applicability(
                a.reviewed_at
         FROM peptide_method_applicability a
         JOIN peptides p ON p.id=a.peptide_id AND p.review_status='verified'
-        JOIN analytical_methods m ON m.id=a.method_id AND m.review_status='verified' AND m.visibility_scope='public'
+        JOIN analytical_methods m ON m.id=a.method_id AND m.review_status='verified'
         JOIN source_records sr ON sr.id=a.source_id
-        WHERE a.review_status='verified' AND a.visibility_scope='public'
+        WHERE a.review_status='verified'
           AND (:peptide IS NULL OR a.peptide_id=:peptide)
           AND (:method IS NULL OR a.method_id=:method)
         ORDER BY p.preferred_name, a.test_purpose
@@ -295,8 +295,7 @@ def submit_method_applicability(
     method = db.execute(text("""
         SELECT id FROM analytical_methods
         WHERE id=:id AND review_status='verified'
-          AND (visibility_scope='public' OR owner_organization_id=:org)
-    """), {"id": payload.method_id, "org": organization_id}).scalar_one_or_none()
+    """), {"id": payload.method_id}).scalar_one_or_none()
     if not method:
         raise HTTPException(status_code=404, detail="Verified analytical method not found.")
     source_id = _source_record(db, payload.source_name, payload.source_identifier, str(payload.source_url))
@@ -451,10 +450,10 @@ def list_verified_laboratory_capabilities(
         JOIN vendors v ON v.id=vs.vendor_id
           AND v.review_status='verified' AND v.verification_status='verified'
         JOIN vendor_sites s ON s.id=vs.site_id AND s.review_status='verified'
-        JOIN analytical_methods m ON m.id=lc.method_id AND m.review_status='verified' AND m.visibility_scope='public'
+        JOIN analytical_methods m ON m.id=lc.method_id AND m.review_status='verified'
         LEFT JOIN peptides p ON p.id=lc.peptide_id AND p.review_status='verified'
         JOIN source_records sr ON sr.id=lc.source_id
-        WHERE lc.review_status='verified' AND lc.visibility_scope='public'
+        WHERE lc.review_status='verified'
           AND (lc.peptide_id IS NULL OR p.id IS NOT NULL)
           AND (:method IS NULL OR lc.method_id=:method)
           AND (:peptide IS NULL OR lc.peptide_id=:peptide)
@@ -493,8 +492,7 @@ def submit_laboratory_capability(
         raise HTTPException(status_code=404, detail="Verified laboratory service at a verified facility was not found in this organization.")
     method = db.execute(text("""
         SELECT id FROM analytical_methods WHERE id=:id AND review_status='verified'
-          AND (visibility_scope='public' OR owner_organization_id=:org)
-    """), {"id": payload.method_id, "org": organization_id}).scalar_one_or_none()
+    """), {"id": payload.method_id}).scalar_one_or_none()
     if not method:
         raise HTTPException(status_code=404, detail="Verified analytical method not found.")
     if payload.peptide_id is not None:
@@ -780,7 +778,7 @@ def list_verified_peptide_test_applicability(
         JOIN peptides p ON p.id=a.peptide_id AND p.review_status='verified'
         JOIN analytical_test_catalogue t ON t.id=a.test_id AND t.review_status='verified'
         JOIN source_records sr ON sr.id=a.source_id
-        WHERE a.review_status='verified' AND a.visibility_scope='public'
+        WHERE a.review_status='verified'
           AND (:peptide IS NULL OR a.peptide_id=:peptide)
           AND (:test IS NULL OR a.test_id=:test)
           AND (:status IS NULL OR a.applicability_status=:status)

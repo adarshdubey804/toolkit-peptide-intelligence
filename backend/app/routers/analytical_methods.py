@@ -650,3 +650,87 @@ def list_analytical_test_catalogue(
         "count": len(rows),
         "scope": "The initial seeded entries are draft reference candidates. They are not approved specifications, mandatory test panels, validated methods, acceptance criteria or evidence of a laboratory capability. Test selection is product-, material-, matrix- and jurisdiction-specific."
     }
+
+
+class AnalyticalTestCatalogueDecision(BaseModel):
+    decision: Literal["verified", "rejected", "needs_changes"]
+    rationale: str = Field(min_length=20, max_length=4000)
+
+
+@router.get("/test-catalogue/reviews")
+def analytical_test_catalogue_review_queue(
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    limit: int = Query(default=100, ge=1, le=200),
+):
+    """Return shared draft test definitions with this organization's latest review state."""
+    organization_id, role = _membership(current_user, db)
+    if role not in REVIEW_ROLES:
+        raise HTTPException(status_code=403, detail="Curator or reviewer permission is required.")
+    rows = db.execute(text("""
+        SELECT t.id, t.catalogue_code, t.test_name, t.quality_attribute,
+               t.test_intent, t.candidate_method_families, t.material_considerations,
+               t.interpretation_limitations, t.review_status,
+               latest.decision AS organization_review_status,
+               latest.rationale AS organization_review_rationale,
+               latest.decided_at AS organization_reviewed_at,
+               COALESCE(jsonb_agg(DISTINCT jsonb_build_object(
+                   'source_name', sr.source_name,
+                   'source_identifier', sr.source_identifier,
+                   'source_url', sr.source_url,
+                   'evidence_scope', ts.evidence_scope
+               )) FILTER (WHERE sr.id IS NOT NULL), '[]'::jsonb) AS sources
+        FROM analytical_test_catalogue t
+        LEFT JOIN analytical_test_catalogue_sources ts ON ts.test_id=t.id
+        LEFT JOIN source_records sr ON sr.id=ts.source_record_id
+        LEFT JOIN LATERAL (
+            SELECT d.decision, d.rationale, d.decided_at
+            FROM analytical_test_catalogue_decisions d
+            WHERE d.test_id=t.id AND d.organization_id=:org
+            ORDER BY d.decided_at DESC, d.id DESC LIMIT 1
+        ) latest ON TRUE
+        GROUP BY t.id, latest.decision, latest.rationale, latest.decided_at
+        ORDER BY t.quality_attribute, t.test_name
+        LIMIT :limit
+    """), {"org": organization_id, "limit": limit}).mappings().all()
+    return {
+        "items": [dict(row) for row in rows],
+        "count": len(rows),
+        "scope": "Review decisions apply only to this organization. They do not globally verify or alter the shared reference catalogue."
+    }
+
+
+@router.post("/test-catalogue/{test_id}/decisions", status_code=201)
+def decide_analytical_test_catalogue_entry(
+    test_id: UUID,
+    payload: AnalyticalTestCatalogueDecision,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    organization_id, role = _membership(current_user, db)
+    if role not in REVIEW_ROLES:
+        raise HTTPException(status_code=403, detail="Curator or reviewer permission is required.")
+    exists = db.execute(text("""
+        SELECT id FROM analytical_test_catalogue WHERE id=:id
+    """), {"id": test_id}).scalar_one_or_none()
+    if not exists:
+        raise HTTPException(status_code=404, detail="Analytical test catalogue entry not found.")
+    decision = db.execute(text("""
+        INSERT INTO analytical_test_catalogue_decisions
+            (test_id, organization_id, reviewer_id, decision, rationale)
+        VALUES (:test, :org, :reviewer, :decision, :rationale)
+        RETURNING id, test_id, decision, rationale, decided_at
+    """), {"test": test_id, "org": organization_id, "reviewer": current_user["id"],
+           "decision": payload.decision, "rationale": payload.rationale.strip()}).mappings().one()
+    db.execute(text("""
+        INSERT INTO audit_events (actor_user_id, organization_id, action, entity_type, entity_id, event_metadata)
+        VALUES (:actor, :org, 'analytical_test_catalogue_review_decided',
+                'analytical_test_catalogue', :id,
+                jsonb_build_object('decision', :decision))
+    """), {"actor": current_user["id"], "org": organization_id, "id": test_id,
+           "decision": payload.decision})
+    db.commit()
+    return {
+        **dict(decision),
+        "scope": "Organization-scoped editorial review only. The shared catalogue entry remains draft until a separate global curation process is implemented."
+    }

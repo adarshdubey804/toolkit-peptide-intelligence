@@ -27,7 +27,7 @@ These controls do not amount to a complete production security program.
 
 ### 2. Rate limiting and abuse controls
 
-The application does not currently provide a shared/distributed rate limiter. Before public deployment, enforce limits at the ingress/WAF and add account-aware limits for expensive operations.
+The application now provides shared PostgreSQL fixed-window limits for login, registration, direct and saved agent execution, and public research discovery. This is initial coverage, not a complete abuse-control layer: additional sensitive write/enrichment routes still need limits, and production must configure trusted proxy client identity and ingress/WAF controls.
 
 At minimum, apply stricter limits to:
 - POST /api/v1/auth/login

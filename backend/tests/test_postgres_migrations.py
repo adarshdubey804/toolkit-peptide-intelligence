@@ -2727,6 +2727,10 @@ def test_peptide_method_and_test_applicability_are_tenant_scoped():
         test_a = test_assessment(org_a,user_a,"organization","in_review","conditional")
         test_b = test_assessment(org_b,user_b,"organization","in_review","undetermined")
         test_public = test_assessment(org_a,user_a,"public","verified","applicable")
+        cross_method_source = source("cross-method")
+        cross_test_source = source("cross-test")
+        valid_method_source = source("valid-method")
+        valid_test_source = source("valid-test")
 
         method_decision_a = connection.execute(text("""
             INSERT INTO peptide_method_applicability_decisions (
@@ -2806,6 +2810,41 @@ def test_peptide_method_and_test_applicability_are_tenant_scoped():
                 test_decision_a
             }
 
+            valid_method_insert = connection.execute(text("""
+                INSERT INTO peptide_method_applicability (
+                    organization_id,peptide_id,chemical_form_id,method_id,test_purpose,
+                    applicability_rationale,evidence_scope,limitations,source_id,
+                    review_status,submitted_by
+                ) VALUES (
+                    :org,:peptide,:form,:method,'Valid owner-scoped method assessment',
+                    'The method has a source-backed rationale for this exact peptide form.',
+                    'Source-backed method applicability evidence.',
+                    'This is not a method validation or universal suitability statement.',
+                    :source,'in_review',:owner
+                ) RETURNING id
+            """), {
+                "org":org_a,"peptide":peptide,"form":form,"method":method,
+                "source":valid_method_source,"owner":user_a,
+            }).scalar_one()
+            assert valid_method_insert is not None
+
+            valid_test_insert = connection.execute(text("""
+                INSERT INTO peptide_test_applicability (
+                    organization_id,peptide_id,chemical_form_id,test_id,applicability_status,
+                    rationale,evidence_scope,limitations,source_id,review_status,submitted_by
+                ) VALUES (
+                    :org,:peptide,:form,:test,'applicable',
+                    'This owner-scoped assessment is limited to the stated peptide form.',
+                    'Source-backed test applicability evidence.',
+                    'This is not a universal test panel or validated procedure.',
+                    :source,'in_review',:owner
+                ) RETURNING id
+            """), {
+                "org":org_a,"peptide":peptide,"form":form,"test":test_id,
+                "source":valid_test_source,"owner":user_a,
+            }).scalar_one()
+            assert valid_test_insert is not None
+
             with pytest.raises(Exception):
                 with connection.begin_nested():
                     connection.execute(text("""
@@ -2821,7 +2860,7 @@ def test_peptide_method_and_test_applicability_are_tenant_scoped():
                         )
                     """), {
                         "org":org_b,"peptide":peptide,"method":method,
-                        "source":source("cross-method"),"owner":user_a,
+                        "source":cross_method_source,"owner":user_a,
                     })
 
             with pytest.raises(Exception):
@@ -2839,7 +2878,7 @@ def test_peptide_method_and_test_applicability_are_tenant_scoped():
                         )
                     """), {
                         "org":org_b,"peptide":peptide,"test":test_id,
-                        "source":source("cross-test"),"owner":user_a,
+                        "source":cross_test_source,"owner":user_a,
                     })
 
             with pytest.raises(Exception):

@@ -3233,4 +3233,9 @@ def test_rate_limit_commit_preserves_authenticated_context_for_following_rls_wri
             db.commit()
     finally:
         with engine.begin() as connection:
+            connection.exec_driver_sql("REVOKE SELECT,INSERT ON audit_events FROM toolkit_rate_context_rls_test")
+            connection.exec_driver_sql("REVOKE SELECT,INSERT,UPDATE ON audit_chain_heads FROM toolkit_rate_context_rls_test")
+            connection.exec_driver_sql("REVOKE SELECT,INSERT,UPDATE,DELETE ON api_rate_limit_buckets FROM toolkit_rate_context_rls_test")
+            connection.exec_driver_sql("REVOKE SELECT,UPDATE ON api_rate_limit_maintenance FROM toolkit_rate_context_rls_test")
+            connection.exec_driver_sql("REVOKE USAGE ON SCHEMA public FROM toolkit_rate_context_rls_test")
             connection.exec_driver_sql("DROP ROLE IF EXISTS toolkit_rate_context_rls_test")

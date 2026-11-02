@@ -138,3 +138,37 @@ A record should not become globally visible merely because a reviewer changed it
 **Direction: correct. Readiness: still developmental.**
 
 The strongest next move is not to add more tables indiscriminately. It is to formalize ownership, identity, revision, and provenance contracts across the existing modules, then validate them against a real PostgreSQL deployment and realistic scientific records.
+
+## Table ownership inventory (repository-level classification)
+
+The following is the intended classification inferred from the current schema and route behavior. It is a design recommendation, not proof that every existing row already obeys it.
+
+| Table group | Current examples | Target classification | Ownership contract to enforce |
+|---|---|---|---|
+| Scientific identity | `peptides`, `peptide_aliases`, `peptide_sequences`, `chemical_properties`, `structures` | Shared scientific master | Global after curation; retain source and revision provenance |
+| Scientific references | `targets`, `pathways`, `publications`, `research_studies`, `study_publications` | Shared scientific master | Global records with stable external identifiers and source links |
+| Claims and citations | `evidence_claims`, `claim_sources`, `external_entity_links` | Curated public master plus organization drafts | Explicit owner/visibility for drafts; published claims remain globally traceable |
+| Source registry | `source_records`, `source_record_versions` | Shared source registry | Global deduplication by source identity; preserve license and content hash |
+| Curation workflow | `curation_reviews`, `curation_decisions` | Organization-owned workflow | Persist organization owner on the review row; decisions inherit and verify same owner |
+| Enrichment workflow | `enrichment_candidates`, `enrichment_candidate_decisions`, ingestion runs | Organization or system-owned operational records | Explicit tenant/system owner and source ingestion scope |
+| Vendor intelligence | `vendors`, `vendor_sites`, `vendor_services`, `vendor_certifications`, source/decision/link tables | Organization contribution with curated-public promotion | Organization owner on submissions; explicit publication state; facility-specific evidence |
+| Analytical methods | `analytical_methods`, method sources and decisions | Shared method catalogue plus organization drafts | Explicit owner/visibility; method revision and validation scope |
+| Formulation knowledge | `formulation_profiles`, components, stability observations, sources, decisions | Organization-owned contribution; optional curated-public promotion | Explicit organization owner on profile; child rows inherit owner; decisions bind to profile revision |
+| Process knowledge | `process_knowledge_profiles`, stages, sources, decisions | Organization-owned contribution; optional curated-public promotion | Explicit organization owner on profile; child rows inherit owner; decisions bind to profile revision |
+| Molecular interactions | `molecular_interaction_assessments`, decisions | Organization contribution plus reviewed public assertions | Explicit organization owner or explicit global/system origin |
+| AI sessions | `agent_sessions`, `agent_session_messages` | Organization/user-private operational data | Enforce owner user and organization on every read/write |
+| Evidence appraisal | `evidence_appraisals`, duplicate candidates and decisions | Organization-owned review records | Explicit organization scope; preserve independent reviewer and immutable decisions |
+| Regulatory intelligence | guidance, versions, change events, source registry, observations, poll runs, decisions | Shared public source data plus system-owned ingestion state and organization review | Separate system ingestion from organization decisions; immutable source/version identity |
+| Analytical test catalogue | catalogue, sources, decisions, reference frameworks and links | Shared reference catalogue plus governed revisions | Public visibility only after review; reference framework version/effective dates |
+| Peptide test applicability | `peptide_test_applicability`, decisions | Organization contribution plus curated-public promotion | Explicit owner, revision-bound decision, source and method scope |
+| Platform security | rate-limit buckets, maintenance markers, audit events and chain heads | System operational records; audit events organization/global scoped | Restricted service ownership, retention, append-only policy and independent hash anchoring |
+
+### Ownership invariants to test
+
+- Every organization-owned row has a non-null organization owner that does not depend on the submitter's current membership.
+- A child row cannot reference a parent owned by another organization unless the relationship is explicitly a public-master reference.
+- A review decision's organization must match the reviewed record's owner.
+- Public catalogue queries return only records explicitly published as public, not merely records with a `verified` review status.
+- System ingestion records are not implicitly owned by whichever user happens to trigger a poll.
+- User suspension or removal does not orphan or silently reassign their organization's scientific contributions.
+- Every background worker sets and clears tenant context safely if PostgreSQL RLS is adopted.

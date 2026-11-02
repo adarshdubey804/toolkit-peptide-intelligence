@@ -197,6 +197,8 @@ def test_authenticated_user_binds_transaction_local_organization_context(monkeyp
     user = auth.get_current_user(token="valid-signed-token", db=FakeDatabase())
 
     assert user["organization_id"] == str(organization_id)
-    assert len(calls) == 2
+    assert len(calls) == 3
     assert "set_config('app.organization_id', :organization_id, true)" in calls[1][0]
     assert calls[1][1] == {"organization_id": str(organization_id)}
+    assert "set_config('app.user_id', :user_id, true)" in calls[2][0]
+    assert calls[2][1] == {"user_id": str(user_id)}

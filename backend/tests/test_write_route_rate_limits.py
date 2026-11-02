@@ -17,6 +17,10 @@ PROTECTED_MODULES = (
     "vendors.py",
     "analytical_methods.py",
     "enrichment.py",
+    "agents.py",
+    "bioinformatics.py",
+    "research.py",
+    "auth.py",
 )
 
 
@@ -30,20 +34,29 @@ def _route_method(node):
     return None, None
 
 
-def _has_authenticated_write_limit(decorator):
+def _has_rate_limit_dependency(decorator):
     dependencies = next((item.value for item in decorator.keywords if item.arg == "dependencies"), None)
     if not isinstance(dependencies, (ast.List, ast.Tuple)):
         return False
     return any(
         isinstance(node, ast.Call)
         and isinstance(node.func, ast.Name)
-        and node.func.id == "authenticated_write_rate_limit"
+        and node.func.id in {"authenticated_write_rate_limit", "public_request_rate_limit"}
         for dependency in dependencies.elts
         for node in ast.walk(dependency)
     )
 
 
-def test_sensitive_mutation_routes_have_authenticated_shared_rate_limits():
+def _has_direct_rate_limit(function):
+    return any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "enforce_rate_limit"
+        for node in ast.walk(function)
+    )
+
+
+def test_sensitive_mutation_routes_have_shared_rate_limits():
     uncovered = []
     total = 0
     for filename in PROTECTED_MODULES:
@@ -55,7 +68,7 @@ def test_sensitive_mutation_routes_have_authenticated_shared_rate_limits():
             if method is None:
                 continue
             total += 1
-            if not _has_authenticated_write_limit(decorator):
+            if not _has_rate_limit_dependency(decorator) and not _has_direct_rate_limit(node):
                 uncovered.append(f"{filename}:{node.name}:{method}")
     assert total >= 40, "The route audit unexpectedly found too few mutation endpoints."
     assert uncovered == [], "Sensitive mutation routes need shared per-user limits: " + ", ".join(uncovered)

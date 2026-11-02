@@ -82,7 +82,7 @@ def test_clinical_trials_normalization_preserves_source_and_evidence_state():
 
 def test_provenance_migration_is_present_and_applied_in_development_order():
     migrations = sorted(path.name for path in MIGRATIONS_DIR.glob("*.sql"))
-    assert migrations == ["001_initial_schema.sql", "002_provenance_curation.sql", "003_authentication.sql", "004_organization_workspaces.sql", "005_curation_workflow.sql", "006_enrichment_candidates.sql", "007_vendor_directory.sql", "008_analytical_method_intelligence.sql", "009_formulation_stability_intelligence.sql", "010_process_development_intelligence.sql", "011_molecular_interaction_intelligence.sql", "012_agent_sessions.sql", "013_evidence_intelligence.sql", "014_regulatory_guidance_intelligence.sql", "015_regulatory_change_monitoring.sql", "016_regulatory_observation_integrity.sql", "017_regulatory_source_registry.sql", "018_enrichment_ingestion_runs.sql", "019_regulatory_source_observations.sql", "020_regulatory_poll_scheduler.sql", "021_evidence_review_decisions.sql", "022_structured_evidence_extraction.sql", "023_extracted_evidence_field_review.sql", "024_peptide_analytical_method_applicability.sql", "025_vendor_certification_verification.sql", "026_vendor_service_review.sql", "027_vendor_service_evidence_links.sql", "028_vendor_facility_verification.sql", "029_vendor_service_facility_link.sql", "030_vendor_certification_submitter.sql", "031_laboratory_capability_claims.sql", "032_analytical_test_catalogue.sql", "033_analytical_test_catalogue_curation.sql", "034_peptide_test_applicability.sql", "035_analytical_reference_framework_crosswalk.sql", "036_shared_api_rate_limiting.sql", "037_tamper_evident_audit_trail.sql", "038_explicit_record_ownership.sql", "039_canonical_peptide_chemical_forms.sql"]
+    assert migrations == ["001_initial_schema.sql", "002_provenance_curation.sql", "003_authentication.sql", "004_organization_workspaces.sql", "005_curation_workflow.sql", "006_enrichment_candidates.sql", "007_vendor_directory.sql", "008_analytical_method_intelligence.sql", "009_formulation_stability_intelligence.sql", "010_process_development_intelligence.sql", "011_molecular_interaction_intelligence.sql", "012_agent_sessions.sql", "013_evidence_intelligence.sql", "014_regulatory_guidance_intelligence.sql", "015_regulatory_change_monitoring.sql", "016_regulatory_observation_integrity.sql", "017_regulatory_source_registry.sql", "018_enrichment_ingestion_runs.sql", "019_regulatory_source_observations.sql", "020_regulatory_poll_scheduler.sql", "021_evidence_review_decisions.sql", "022_structured_evidence_extraction.sql", "023_extracted_evidence_field_review.sql", "024_peptide_analytical_method_applicability.sql", "025_vendor_certification_verification.sql", "026_vendor_service_review.sql", "027_vendor_service_evidence_links.sql", "028_vendor_facility_verification.sql", "029_vendor_service_facility_link.sql", "030_vendor_certification_submitter.sql", "031_laboratory_capability_claims.sql", "032_analytical_test_catalogue.sql", "033_analytical_test_catalogue_curation.sql", "034_peptide_test_applicability.sql", "035_analytical_reference_framework_crosswalk.sql", "036_shared_api_rate_limiting.sql", "037_tamper_evident_audit_trail.sql", "038_explicit_record_ownership.sql", "039_canonical_peptide_chemical_forms.sql", "040_chemical_form_applicability_links.sql"]
     sql = (MIGRATIONS_DIR / "002_provenance_curation.sql").read_text(encoding="utf-8")
     assert "source_record_versions" in sql
     assert "external_entity_links" in sql
@@ -1341,3 +1341,96 @@ def test_peptide_profile_and_comparison_expose_reviewed_chemical_forms():
     assert "WHERE peptide_id=:id AND review_status='verified'" in source
     assert '"chemical_forms"' in source
     assert "canonicalization_version" in source
+
+
+
+def test_chemical_form_applicability_links_enforce_parent_peptide_consistency():
+    migration = (MIGRATIONS_DIR / "040_chemical_form_applicability_links.sql").read_text(encoding="utf-8")
+    for table in (
+        "peptide_method_applicability",
+        "peptide_test_applicability",
+        "laboratory_capability_claims",
+    ):
+        assert f"ALTER TABLE {table}" in migration
+        assert f"ON {table}" in migration
+        assert f"idx_{table}_form" in migration or table == "laboratory_capability_claims"
+    assert "chemical_form_id UUID" in migration
+    assert "REFERENCES peptide_chemical_forms(id) ON DELETE RESTRICT" in migration
+    assert "enforce_peptide_chemical_form_parent" in migration
+    assert "IS DISTINCT FROM v_form_peptide_id" in migration
+    assert "NULL preserves legacy" in migration
+
+
+
+def test_applicability_payloads_accept_optional_chemical_form_scope():
+    from uuid import uuid4
+    from app.routers.analytical_methods import (
+        ApplicabilitySubmission,
+        PeptideTestApplicabilitySubmission,
+        LaboratoryCapabilitySubmission,
+    )
+
+    form_id = uuid4()
+    method_payload = ApplicabilitySubmission(
+        peptide_id=uuid4(), chemical_form_id=form_id, method_id=uuid4(),
+        test_purpose="Assess identity for this specified form",
+        applicability_rationale="The evidence specifically addresses the selected chemical form.",
+        evidence_scope="Published characterization data for this form.",
+        limitations="The source does not establish validation or acceptance criteria.",
+        source_name="Peer-reviewed publication", source_identifier="doi:10.example/method",
+        source_url="https://doi.org/10.example/method",
+    )
+    test_payload = PeptideTestApplicabilitySubmission(
+        peptide_id=uuid4(), chemical_form_id=form_id, test_id=uuid4(),
+        applicability_status="conditional",
+        rationale="The source supports conditional applicability for the selected form.",
+        evidence_scope="Evidence for the stated form and test context.",
+        limitations="This does not establish a validated procedure or acceptance criteria.",
+        source_name="Peer-reviewed publication", source_identifier="doi:10.example/test",
+        source_url="https://doi.org/10.example/test",
+    )
+    lab_payload = LaboratoryCapabilitySubmission(
+        service_id=uuid4(), method_id=uuid4(), peptide_id=uuid4(),
+        chemical_form_id=form_id, test_purpose="Test capability for the selected form",
+        sample_matrix="Aqueous sample", evidence_scope="Facility capability source evidence.",
+        limitations="Does not establish current capacity or validation.",
+        source_name="Laboratory source", source_identifier="facility-capability-1",
+        source_url="https://example.org/capability",
+    )
+    assert method_payload.chemical_form_id == form_id
+    assert test_payload.chemical_form_id == form_id
+    assert lab_payload.chemical_form_id == form_id
+
+
+def test_chemical_form_scope_helper_rejects_missing_or_mismatched_parent():
+    from uuid import uuid4
+    from fastapi import HTTPException
+    from app.routers.analytical_methods import _validate_chemical_form_scope
+
+    peptide_id, other_peptide_id, form_id = uuid4(), uuid4(), uuid4()
+
+    class FakeResult:
+        def __init__(self, value):
+            self.value = value
+
+        def scalar_one_or_none(self):
+            return self.value
+
+    class FakeDatabase:
+        def __init__(self, value):
+            self.value = value
+
+        def execute(self, statement, parameters):
+            assert parameters["form_id"] == form_id
+            return FakeResult(self.value)
+
+    _validate_chemical_form_scope(FakeDatabase(peptide_id), peptide_id, form_id)
+    with pytest.raises(HTTPException) as mismatch:
+        _validate_chemical_form_scope(FakeDatabase(other_peptide_id), peptide_id, form_id)
+    assert mismatch.value.status_code == 422
+    with pytest.raises(HTTPException) as missing:
+        _validate_chemical_form_scope(FakeDatabase(None), peptide_id, form_id)
+    assert missing.value.status_code == 404
+    with pytest.raises(HTTPException) as no_parent:
+        _validate_chemical_form_scope(FakeDatabase(peptide_id), None, form_id)
+    assert no_parent.value.status_code == 422

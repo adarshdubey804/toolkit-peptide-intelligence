@@ -87,7 +87,7 @@ export default function LaboratoryCapabilitiesPage() {
     try {
       const response=await fetch(API+"/api/v1/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,password,organization_id:getPreferredOrganizationId()})});
       const data=await response.json();if(!response.ok)throw new Error(data.detail||"Sign in failed.");
-      const accessToken=data.access_token;setToken(accessToken);setRole(data.user.role);setPassword("");
+      setPreferredOrganizationId(data.user.organization_id);const accessToken=data.access_token;setToken(accessToken);setRole(data.user.role);setPassword("");
       await loadOptions(accessToken);setNotice("Signed in as "+data.user.role+".");
       if(["organization_admin","curator","reviewer"].includes(data.user.role))await loadReviews(accessToken);
     }catch(e){setError(e instanceof Error?e.message:"Sign in failed.");}

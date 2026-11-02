@@ -187,6 +187,13 @@ def get_current_user(token: Annotated[str | None, Depends(oauth2_scheme)], db: A
     """), {"user_id": user_id, "organization_id": organization_id}).mappings().first()
     if not user or not user["is_active"]:
         raise unauthorized
+    # Transaction-local context is consumed by the limited PostgreSQL RLS pilot.
+    # SET LOCAL semantics ensure it is cleared automatically on commit/rollback
+    # before a pooled connection can serve another request.
+    db.execute(
+        text("SELECT set_config('app.organization_id', :organization_id, true)"),
+        {"organization_id": str(organization_id)},
+    )
     return _user_response(user)
 
 

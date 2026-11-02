@@ -1843,3 +1843,89 @@ def test_vendor_identity_sites_and_certifications_follow_owner_and_public_verifi
             connection.exec_driver_sql(f"REVOKE SELECT, INSERT ON {table} FROM toolkit_vendor_directory_rls_test")
         connection.exec_driver_sql("REVOKE USAGE ON SCHEMA public FROM toolkit_vendor_directory_rls_test")
         connection.exec_driver_sql("DROP ROLE toolkit_vendor_directory_rls_test")
+
+
+@pytest.mark.skipif(
+    os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",
+    reason="PostgreSQL extraction source provenance integration test is enabled in CI only.",
+)
+def test_extracted_evidence_is_linked_to_immutable_normalized_source_version():
+    with engine.begin() as connection:
+        connection.execute(text("SELECT pg_advisory_xact_lock(731904221067)"))
+        apply_development_migrations(connection)
+        org = connection.execute(text("""
+            INSERT INTO organizations (name, organization_type)
+            VALUES (:name, 'research_team') RETURNING id
+        """), {"name": "extraction-source-" + str(uuid4())}).scalar_one()
+        user = connection.execute(text("""
+            INSERT INTO user_profiles (display_name, role)
+            VALUES ('Extraction source reviewer', 'researcher') RETURNING id
+        """)).scalar_one()
+        run = connection.execute(text("""
+            INSERT INTO evidence_extraction_runs (
+                organization_id, requested_by, question, model_name, status, source_count, record_count
+            ) VALUES (:org,:user,'Source provenance integration fixture question.',
+                      'test-model','completed',1,1) RETURNING id
+        """), {"org": org, "user": user}).scalar_one()
+        source_a = connection.execute(text("""
+            INSERT INTO source_records (
+                source_name, source_identifier, source_url, retrieved_at, content_hash
+            ) VALUES ('Test provider', :identifier, 'https://example.org/record',
+                      now(), :hash) RETURNING id
+        """), {"identifier": str(uuid4()), "hash": "a" * 64}).scalar_one()
+        source_b = connection.execute(text("""
+            INSERT INTO source_records (
+                source_name, source_identifier, source_url, retrieved_at, content_hash
+            ) VALUES ('Test provider', :identifier, 'https://example.org/other',
+                      now(), :hash) RETURNING id
+        """), {"identifier": str(uuid4()), "hash": "b" * 64}).scalar_one()
+        version_a = connection.execute(text("""
+            INSERT INTO source_record_versions (
+                source_record_id, content_hash, raw_payload, payload_kind
+            ) VALUES (:source,:hash,CAST(:payload AS jsonb),'normalized_provider_record')
+            RETURNING id
+        """), {"source": source_a, "hash": "c" * 64,
+               "payload": '{"pmid":"123","title":"Normalized provider record"}'}).scalar_one()
+        version_b = connection.execute(text("""
+            INSERT INTO source_record_versions (
+                source_record_id, content_hash, raw_payload, payload_kind
+            ) VALUES (:source,:hash,CAST(:payload AS jsonb),'normalized_provider_record')
+            RETURNING id
+        """), {"source": source_b, "hash": "d" * 64,
+               "payload": '{"pmid":"456","title":"Other record"}'}).scalar_one()
+        record = connection.execute(text("""
+            INSERT INTO extracted_evidence_records (
+                organization_id, run_id, source_citation_id, source_name,
+                source_identifier, source_url, source_title, extraction,
+                extraction_model, source_record_id, source_record_version_id
+            ) VALUES (
+                :org,:run,'pubmed:123','Test provider','123','https://example.org/record',
+                'Normalized provider record','{}'::jsonb,'test-model',:source,:version
+            ) RETURNING id,source_record_id,source_record_version_id
+        """), {"org": org, "run": run, "source": source_a, "version": version_a}).mappings().one()
+        assert record["source_record_id"] == source_a
+        assert record["source_record_version_id"] == version_a
+
+        with pytest.raises(Exception):
+            with connection.begin_nested():
+                connection.execute(text("""
+                    INSERT INTO extracted_evidence_records (
+                        organization_id, run_id, source_citation_id, source_name,
+                        source_identifier, source_url, source_title, extraction,
+                        extraction_model, source_record_id, source_record_version_id
+                    ) VALUES (
+                        :org,:run,'pubmed:other','Test provider','other','https://example.org/other',
+                        'Mismatched version','{}'::jsonb,'test-model',:source,:version
+                    )
+                """), {"org": org, "run": run, "source": source_a, "version": version_b})
+
+        with pytest.raises(Exception):
+            with connection.begin_nested():
+                connection.execute(text("""
+                    UPDATE source_record_versions SET raw_payload='{}'::jsonb WHERE id=:version
+                """), {"version": version_a})
+        with pytest.raises(Exception):
+            with connection.begin_nested():
+                connection.execute(text("""
+                    DELETE FROM source_record_versions WHERE id=:version
+                """), {"version": version_a})

@@ -79,6 +79,70 @@
         "source_url": "https://www.sgs.com/en-in/news/2026/01/sgs-inaugurates-new-global-headquarters-in-baar-switzerland",
         "evidence_scope": "Official SGS announcement states its global headquarters was inaugurated in Baar, Switzerland, on 29 January 2026. Country code records the corporate headquarters country; the cited India service page separately lists a Mumbai contact but does not prove peptide-specific testing at that site."
       }
+    },
+    {
+      "legal_name": "CordenPharma",
+      "website_url": "https://cordenpharma.com/",
+      "country_code": "CH",
+      "vendor_type": "cdmo",
+      "source_name": "Official company website",
+      "source_identifier": "official-service-page:cordenpharma-peptide-platform",
+      "source_url": "https://cordenpharma.com/",
+      "evidence_scope": "Official company website describes CordenPharma as a CDMO with peptide API development and manufacturing capabilities. Candidate-level evidence only; the company operates multiple facilities and no individual site's scope, capacity, accreditation or certification is inferred.",
+      "identity_source": {
+        "source_name": "Official facilities network page",
+        "source_identifier": "official-headquarters:cordenpharma-basel",
+        "source_url": "https://cordenpharma.com/how-we-deliver/facilities-network/",
+        "evidence_scope": "Official facilities page identifies Basel, Switzerland as CordenPharma's global headquarters. Country code records the corporate headquarters country; peptide operations must be verified separately at each facility."
+      }
+    },
+    {
+      "legal_name": "PolyPeptide Group AG",
+      "website_url": "https://www.polypeptide.com/",
+      "country_code": "CH",
+      "vendor_type": "cdmo",
+      "source_name": "Official company profile",
+      "source_identifier": "official-company-profile:polypeptide-cdmo",
+      "source_url": "https://www.polypeptide.com/company/about-us/profile/",
+      "evidence_scope": "Official company profile describes PolyPeptide as a specialized CDMO for peptide-based APIs and a global manufacturing network. Candidate-level evidence only; individual sites, certifications, capacity and service applicability require separate verification.",
+      "identity_source": {
+        "source_name": "Official 2025 annual report",
+        "source_identifier": "official-annual-report-2025:polypeptide-registered-office",
+        "source_url": "https://report.polypeptide.com/ar/25/group-structure-and-shareholders",
+        "evidence_scope": "Official 2025 annual report identifies PolyPeptide Group AG headquarters and registered office in Baar, Switzerland. Country code records the parent company's registered-office country, not the country of all operating facilities."
+      }
+    },
+    {
+      "legal_name": "JPT Peptide Technologies GmbH",
+      "website_url": "https://www.jpt.com/",
+      "country_code": "DE",
+      "vendor_type": "peptide_manufacturer",
+      "source_name": "Official peptide synthesis service page",
+      "source_identifier": "official-service-page:jpt-peptide-synthesis",
+      "source_url": "https://www.jpt.com/products-services/peptide-synthesis/",
+      "evidence_scope": "Official service page describes custom peptide synthesis, peptide libraries, peptide analysis and Berlin-based manufacturing. Candidate-level evidence only; no certification or site-specific approval is inferred.",
+      "identity_source": {
+        "source_name": "Official company imprint",
+        "source_identifier": "official-imprint:jpt-peptide-technologies",
+        "source_url": "https://www.jpt.com/support-contact/corporate/imprint/",
+        "evidence_scope": "Official imprint identifies JPT Peptide Technologies GmbH at Hermann-Dorner-Allee 23, Berlin, Germany. Country code records the registered company's country; manufacturing and testing claims remain subject to separate facility review."
+      }
+    },
+    {
+      "legal_name": "BCN Peptides",
+      "website_url": "https://www.bcnpeptides.com/",
+      "country_code": "ES",
+      "vendor_type": "cdmo",
+      "source_name": "Official company website",
+      "source_identifier": "official-service-page:bcnpeptides-peptide-manufacturing",
+      "source_url": "https://www.bcnpeptides.com/",
+      "evidence_scope": "Official website describes peptide API commercial supply, custom synthesis of new chemical entities and GMP peptide offerings. Candidate-level evidence only; no particular facility certification, inspection status or project-specific suitability is inferred.",
+      "identity_source": {
+        "source_name": "Official company profile",
+        "source_identifier": "official-company-profile:bcnpeptides-barcelona",
+        "source_url": "https://www.bcnpeptides.com/about/",
+        "evidence_scope": "Official company profile identifies BCN Peptides as a CDMO based in Barcelona, Spain and lists its company address. Country code records the corporate reference country; facility and service claims require separate review."
+      }
     }
   ]
 }

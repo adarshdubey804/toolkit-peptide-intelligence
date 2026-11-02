@@ -1267,3 +1267,10 @@ def test_authenticated_user_is_scoped_to_the_organization_in_the_jwt():
     assert db.parameters["organization_id"] == token_organization_id
     assert db.parameters["organization_id"] != other_organization_id
     assert user["organization_id"] == str(token_organization_id)
+
+
+def test_static_peptide_compare_route_precedes_dynamic_uuid_profile_route():
+    routes = [route.path for route in app.routes if getattr(route, "path", None)]
+    compare_path = "/api/v1/peptides/compare"
+    profile_path = "/api/v1/peptides/{peptide_id}"
+    assert routes.index(compare_path) < routes.index(profile_path)

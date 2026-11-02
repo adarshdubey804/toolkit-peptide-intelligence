@@ -8,7 +8,6 @@ from .research import research_assistant_brief
 from ..config import settings
 from .auth import get_current_user
 from ..db import get_db
-from ..rate_limit import enforce_rate_limit
 from ..rate_limit_dependencies import authenticated_write_rate_limit
 
 router = APIRouter(prefix="/api/v1/agents", tags=["research agents"])
@@ -168,18 +167,13 @@ def list_agents():
             "notice": "These are bounded research workflows. They retrieve source records and provide review plans; they do not autonomously validate scientific claims."}
 
 
-@router.post("/{agent_id}/run")
+@router.post("/{agent_id}/run", dependencies=[Depends(authenticated_write_rate_limit("agent_execution", settings.agent_rate_limit_per_window))])
 async def run_agent(
     agent_id: str,
     request: AgentRunRequest,
     current_user: Annotated[dict, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ):
-    enforce_rate_limit(
-        db, scope="agent_execution", identity=str(current_user["id"]),
-        limit=settings.agent_rate_limit_per_window,
-        window_seconds=settings.rate_limit_window_seconds,
-    )
     agent = next((item for item in AGENTS if item["id"] == agent_id), None)
     if agent is None:
         raise HTTPException(status_code=404, detail="Research agent not found.")
@@ -318,7 +312,7 @@ def get_agent_session(
     return {"session": dict(session), "messages": [dict(message) for message in messages]}
 
 
-@router.post("/sessions/{session_id}/messages", status_code=201)
+@router.post("/sessions/{session_id}/messages", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("agent_execution", settings.agent_rate_limit_per_window))])
 async def send_agent_message(
     session_id: UUID,
     payload: AgentMessageCreate,

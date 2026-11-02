@@ -48,6 +48,7 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             "peptide_test_applicability_decisions",
             "analytical_reference_frameworks",
             "analytical_test_framework_links",
+            "api_rate_limit_buckets",
         )
         for table_name in required_tables:
             exists = connection.execute(

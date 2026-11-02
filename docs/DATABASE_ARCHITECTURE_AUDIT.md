@@ -47,9 +47,9 @@ The remaining ownership work is operational and defensive: ambiguous legacy rows
 
 Legacy records with ambiguous owners remain NULL/restricted and must be resolved manually. Do not assign them to whichever organization the submitter currently has selected.
 
-### P0 — Tenant isolation is application-enforced, not visibly database-enforced
+### P0 — Tenant isolation is partially database-enforced, not yet comprehensive
 
-The inspected migrations contain organization membership and organization-scoped query patterns, but migrations 044–052 now enable transaction-scoped RLS for vendor materials, analytical methods, formulations, process knowledge, molecular interactions, evidence appraisals, publication duplicate review, curation workflows, user-private agent sessions and regulatory guidance history. Regulatory source observations and poll-run history are organization-scoped; verified vendor identity, facility and certification records now have public-read/owner-write RLS; vendor services and lab capability claims remain for a subsequent migration. The cross-tenant source registry remains a documented worker-control-plane exception until a dedicated worker role is introduced.
+The RLS rollout now covers vendor materials and batch evidence; analytical methods and their review workflow; formulations and process knowledge; molecular interaction assessments; evidence appraisal and curation workflows; user-private agent sessions; regulatory guidance and source-poll artifacts; vendor identity, facilities, certifications and service/evidence links; laboratory capability claims; and peptide-method and peptide-test applicability assessments. These policies use transaction-local organization context and distinguish owner-private contributions from explicitly public, verified records. The rollout is still partial: other tenant-owned tables, route-level authorization paths, privileged operators and background workers require separate review. The cross-tenant source registry remains a documented worker-control-plane exception until a dedicated worker role is introduced.
 
 A missed organization predicate in one endpoint can therefore expose another tenant's data.
 

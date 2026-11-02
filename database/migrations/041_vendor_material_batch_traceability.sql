@@ -190,23 +190,53 @@ CREATE TRIGGER trg_vendor_material_batch_scope
     FOR EACH ROW EXECUTE FUNCTION enforce_vendor_material_batch_scope();
 
 CREATE OR REPLACE FUNCTION enforce_batch_test_result_scope()
-RETURNS trigger AS $$
+RETURNS trigger AS $
 DECLARE
     v_batch_org UUID;
+    v_previous_batch UUID;
+    v_previous_test UUID;
 BEGIN
     SELECT organization_id INTO v_batch_org
     FROM vendor_material_batches WHERE id = NEW.batch_id;
     IF v_batch_org IS NULL OR v_batch_org IS DISTINCT FROM NEW.organization_id THEN
         RAISE EXCEPTION 'Batch analytical result organization must match its batch record';
     END IF;
+
+    IF NEW.supersedes_result_id IS NOT NULL THEN
+        SELECT batch_id, test_id INTO v_previous_batch, v_previous_test
+        FROM batch_analytical_test_results WHERE id = NEW.supersedes_result_id;
+        IF v_previous_batch IS DISTINCT FROM NEW.batch_id
+           OR v_previous_test IS DISTINCT FROM NEW.test_id THEN
+            RAISE EXCEPTION 'A superseding batch result must refer to the same batch and analytical test';
+        END IF;
+    END IF;
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$ LANGUAGE plpgsql;
 
 CREATE TRIGGER trg_batch_test_result_scope
-    BEFORE INSERT OR UPDATE OF batch_id, organization_id
+    BEFORE INSERT OR UPDATE OF batch_id, organization_id, test_id, supersedes_result_id
     ON batch_analytical_test_results
     FOR EACH ROW EXECUTE FUNCTION enforce_batch_test_result_scope();
+
+CREATE OR REPLACE FUNCTION enforce_batch_test_result_decision_scope()
+RETURNS trigger AS $
+DECLARE
+    v_result_org UUID;
+BEGIN
+    SELECT organization_id INTO v_result_org
+    FROM batch_analytical_test_results WHERE id = NEW.result_id;
+    IF v_result_org IS NULL OR v_result_org IS DISTINCT FROM NEW.organization_id THEN
+        RAISE EXCEPTION 'Batch analytical result decision organization must match its result';
+    END IF;
+    RETURN NEW;
+END;
+$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_batch_test_result_decision_scope
+    BEFORE INSERT OR UPDATE OF result_id, organization_id
+    ON batch_analytical_test_result_decisions
+    FOR EACH ROW EXECUTE FUNCTION enforce_batch_test_result_decision_scope();
 
 CREATE OR REPLACE FUNCTION prevent_batch_evidence_mutation()
 RETURNS trigger AS $$

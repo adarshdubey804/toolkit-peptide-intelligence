@@ -1,4 +1,5 @@
 import os
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import text
@@ -110,3 +111,56 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             WHERE schemaname='public' AND tablename='peptide_test_applicability'
         """)).scalar_one()
         assert applicability_indexes >= 2, "Peptide test applicability needs organization and peptide/test lookup indexes"
+
+
+@pytest.mark.skipif(
+    os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",
+    reason="PostgreSQL audit-chain integration test is enabled in CI only.",
+)
+def test_audit_chain_appends_sequentially_and_rejects_mutation():
+    with engine.begin() as connection:
+        with connection.begin_nested() as fixture:
+            organization_id = connection.execute(text("""
+                INSERT INTO organizations (name, organization_type)
+                VALUES (:name, 'research_team')
+                RETURNING id
+            """), {"name": "audit-chain-test-" + str(uuid4())}).scalar_one()
+
+            first = connection.execute(text("""
+                INSERT INTO audit_events (organization_id, action, entity_type)
+                VALUES (:organization_id, 'audit_test_first', 'test')
+                RETURNING id, chain_sequence, previous_hash, event_hash
+            """), {"organization_id": organization_id}).mappings().one()
+            second = connection.execute(text("""
+                INSERT INTO audit_events (organization_id, action, entity_type)
+                VALUES (:organization_id, 'audit_test_second', 'test')
+                RETURNING id, chain_sequence, previous_hash, event_hash
+            """), {"organization_id": organization_id}).mappings().one()
+
+            assert first["chain_sequence"] == 1
+            assert first["previous_hash"] == "0" * 64
+            assert second["chain_sequence"] == 2
+            assert second["previous_hash"] == first["event_hash"]
+
+            head = connection.execute(text("""
+                SELECT last_sequence, last_hash
+                FROM audit_chain_heads
+                WHERE chain_scope = :scope
+            """), {"scope": str(organization_id)}).mappings().one()
+            assert head["last_sequence"] == 2
+            assert head["last_hash"] == second["event_hash"]
+
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        UPDATE audit_events SET action='tampered'
+                        WHERE id=:event_id
+                    """), {"event_id": first["id"]})
+
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        DELETE FROM audit_events WHERE id=:event_id
+                    """), {"event_id": second["id"]})
+
+            fixture.rollback()

@@ -231,6 +231,18 @@ def switch_organization(
         raise HTTPException(status_code=404, detail="Active organization membership not found.")
 
     user = dict(membership)
+    db.execute(text("""
+        INSERT INTO audit_events
+            (actor_user_id, organization_id, action, entity_type, entity_id, event_metadata)
+        VALUES
+            (:actor, :organization_id, 'organization_context_switched', 'organization',
+             :organization_id, jsonb_build_object('previous_organization_id', :previous_organization_id))
+    """), {
+        "actor": current_user["id"],
+        "organization_id": payload.organization_id,
+        "previous_organization_id": current_user["organization_id"],
+    })
+    db.commit()
     token = _create_access_token(
         str(user["id"]), str(user["organization_id"]), user["role"]
     )

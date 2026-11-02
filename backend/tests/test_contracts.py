@@ -1333,3 +1333,11 @@ def test_canonical_peptide_identity_schema_preserves_raw_notation_and_versioning
     ):
         assert expected in migration
     assert "UNIQUE(identity_fingerprint)" not in migration
+
+
+def test_peptide_profile_and_comparison_expose_reviewed_chemical_forms():
+    source = Path(__import__("app.routers.peptides", fromlist=["__file__"]).__file__).read_text(encoding="utf-8")
+    assert "FROM peptide_chemical_forms" in source
+    assert "WHERE peptide_id=:id AND review_status='verified'" in source
+    assert '"chemical_forms"' in source
+    assert "canonicalization_version" in source

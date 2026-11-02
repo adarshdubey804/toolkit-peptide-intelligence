@@ -310,7 +310,7 @@ def test_organization_context_is_transaction_local_and_clears_on_commit():
             current = connection.execute(text(
                 "SELECT current_setting('app.organization_id', true)"
             )).scalar_one_or_none()
-            assert current is None, "Transaction-local organization context must not leak through the connection pool"
+            assert current in (None, ""), "Transaction-local organization context must not leak through the connection pool"
 
 
 

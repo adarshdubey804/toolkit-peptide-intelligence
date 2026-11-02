@@ -1310,6 +1310,8 @@ def test_authenticated_user_is_scoped_to_the_organization_in_the_jwt():
     assert db.calls[0][1]["organization_id"] != other_organization_id
     assert "set_config('app.organization_id', :organization_id, true)" in db.calls[1][0]
     assert db.calls[1][1]["organization_id"] == str(token_organization_id)
+    assert "set_config('app.user_id', :user_id, true)" in db.calls[2][0]
+    assert db.calls[2][1]["user_id"] == str(token_user_id)
     assert user["organization_id"] == str(token_organization_id)
 
 

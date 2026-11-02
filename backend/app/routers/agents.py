@@ -1,9 +1,12 @@
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from .research import research_assistant_brief
+from .auth import get_current_user
 
 router = APIRouter(prefix="/api/v1/agents", tags=["research agents"])
 
@@ -163,7 +166,11 @@ def list_agents():
 
 
 @router.post("/{agent_id}/run")
-async def run_agent(agent_id: str, request: AgentRunRequest):
+async def run_agent(
+    agent_id: str,
+    request: AgentRunRequest,
+    current_user: Annotated[dict, Depends(get_current_user)],
+):
     agent = next((item for item in AGENTS if item["id"] == agent_id), None)
     if agent is None:
         raise HTTPException(status_code=404, detail="Research agent not found.")
@@ -184,15 +191,13 @@ async def run_agent(agent_id: str, request: AgentRunRequest):
     }
 
 
-from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends, Query
+from fastapi import Query
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from .auth import get_current_user
 
 
 class AgentSessionCreate(BaseModel):

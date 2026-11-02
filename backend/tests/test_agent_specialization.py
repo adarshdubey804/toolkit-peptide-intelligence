@@ -33,7 +33,10 @@ def test_agent_run_uses_specialized_query_and_source_scope(monkeypatch):
 
     monkeypatch.setattr(agents, "research_assistant_brief", fake_research_brief)
     request = agents.AgentRunRequest(question="How is peptide purity evaluated?", limit=3)
-    response = asyncio.run(agents.run_agent("analytical", request))
+    response = asyncio.run(agents.run_agent(
+        "analytical", request,
+        {"id": "user-1", "organization_id": "org-1", "role": "researcher"},
+    ))
 
     assert captured["limit"] == 3
     assert captured["source_scope"] == ["pubmed"]
@@ -41,3 +44,11 @@ def test_agent_run_uses_specialized_query_and_source_scope(monkeypatch):
     assert response["mode"] == "specialized_source_grounded_workflow"
     assert response["retrieval_plan"]["sources_requested"] == ["pubmed"]
     assert len(response["agent_output"]["recommended_review"]) == 4
+
+
+def test_direct_agent_execution_requires_bearer_authentication():
+    from app.main import app
+
+    operation = app.openapi()["paths"]["/api/v1/agents/{agent_id}/run"]["post"]
+    assert operation.get("security")
+    assert any("OAuth2PasswordBearer" in requirement for requirement in operation["security"])

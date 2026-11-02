@@ -36,7 +36,7 @@ Public policies permit anonymous reads only for records explicitly marked public
 
 ### 2. Rate limiting and abuse controls
 
-The application now provides shared PostgreSQL fixed-window limits for login, registration, direct and saved agent execution, and public research discovery. This is initial coverage, not a complete abuse-control layer: additional sensitive write/enrichment routes still need limits, and production must configure trusted proxy client identity and ingress/WAF controls.
+The application now provides shared PostgreSQL fixed-window limits for login, registration, direct and saved agent execution, and public research discovery. The limiter preserves any authenticated transaction-local organization/user context across its bucket commit so subsequent RLS-protected endpoint writes remain correctly scoped. This is initial coverage, not a complete abuse-control layer: additional sensitive write/enrichment routes still need limits, and production must configure trusted proxy client identity and ingress/WAF controls.
 
 At minimum, apply stricter limits to:
 - POST /api/v1/auth/login

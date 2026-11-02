@@ -44,6 +44,7 @@ class MethodSubmission(BaseModel):
 class ApplicabilitySubmission(BaseModel):
     peptide_id: UUID
     method_id: UUID
+    test_definition_id: UUID | None = None
     test_purpose: str = Field(min_length=5, max_length=500)
     material_form: str | None = Field(default=None, max_length=300)
     sample_matrix: str | None = Field(default=None, max_length=500)
@@ -254,12 +255,15 @@ def list_verified_applicability(
     db: Annotated[Session, Depends(get_db)],
     peptide_id: UUID | None = None,
     method_id: UUID | None = None,
+    test_definition_id: UUID | None = None,
     limit: int = Query(default=100, ge=1, le=250),
 ):
     """List source-backed, curator-verified method applicability for exact peptide records."""
     rows = db.execute(text("""
         SELECT a.id, a.peptide_id, p.preferred_name AS peptide_name,
                a.method_id, m.method_name, m.method_category,
+               a.test_definition_id, tc.catalogue_code AS test_code,
+               tc.test_name AS test_definition_name, tc.review_status AS test_definition_status,
                m.method_classification, m.validation_status,
                a.test_purpose, a.material_form, a.sample_matrix,
                a.applicability_rationale, a.evidence_scope, a.limitations,
@@ -268,13 +272,15 @@ def list_verified_applicability(
         FROM peptide_method_applicability a
         JOIN peptides p ON p.id=a.peptide_id AND p.review_status='verified'
         JOIN analytical_methods m ON m.id=a.method_id AND m.review_status='verified'
+        LEFT JOIN analytical_test_catalogue tc ON tc.id=a.test_definition_id
         JOIN source_records sr ON sr.id=a.source_id
         WHERE a.review_status='verified'
           AND (:peptide IS NULL OR a.peptide_id=:peptide)
           AND (:method IS NULL OR a.method_id=:method)
+          AND (:test_definition IS NULL OR a.test_definition_id=:test_definition)
         ORDER BY p.preferred_name, a.test_purpose
         LIMIT :limit
-    """), {"peptide": peptide_id, "method": method_id, "limit": limit}).mappings().all()
+    """), {"peptide": peptide_id, "method": method_id, "test_definition": test_definition_id, "limit": limit}).mappings().all()
     return {
         "items": [dict(row) for row in rows],
         "count": len(rows),
@@ -410,6 +416,7 @@ def decide_method_applicability(
 class LaboratoryCapabilitySubmission(BaseModel):
     service_id: UUID
     method_id: UUID
+    test_definition_id: UUID | None = None
     peptide_id: UUID | None = None
     test_purpose: str = Field(min_length=5, max_length=500)
     material_form: str | None = Field(default=None, max_length=300)
@@ -434,6 +441,7 @@ def list_verified_laboratory_capabilities(
     db: Annotated[Session, Depends(get_db)],
     method_id: UUID | None = None,
     peptide_id: UUID | None = None,
+    test_definition_id: UUID | None = None,
     country_code: str | None = Query(default=None, min_length=2, max_length=2),
     limit: int = Query(default=100, ge=1, le=250),
 ):
@@ -443,6 +451,8 @@ def list_verified_laboratory_capabilities(
                s.id AS site_id, s.site_name, s.address, s.country_code,
                vs.id AS service_id, vs.service_name,
                m.id AS method_id, m.method_name, m.method_category,
+               lc.test_definition_id, tc.catalogue_code AS test_code,
+               tc.test_name AS test_definition_name, tc.review_status AS test_definition_status,
                p.id AS peptide_id, p.preferred_name AS peptide_name,
                lc.test_purpose, lc.material_form, lc.sample_matrix,
                lc.instrument_platform, lc.sample_requirements,
@@ -455,16 +465,18 @@ def list_verified_laboratory_capabilities(
           AND v.review_status='verified' AND v.verification_status='verified'
         JOIN vendor_sites s ON s.id=vs.site_id AND s.review_status='verified'
         JOIN analytical_methods m ON m.id=lc.method_id AND m.review_status='verified'
+        LEFT JOIN analytical_test_catalogue tc ON tc.id=lc.test_definition_id
         LEFT JOIN peptides p ON p.id=lc.peptide_id AND p.review_status='verified'
         JOIN source_records sr ON sr.id=lc.source_id
         WHERE lc.review_status='verified'
           AND (lc.peptide_id IS NULL OR p.id IS NOT NULL)
           AND (:method IS NULL OR lc.method_id=:method)
           AND (:peptide IS NULL OR lc.peptide_id=:peptide)
+          AND (:test_definition IS NULL OR lc.test_definition_id=:test_definition)
           AND (:country IS NULL OR upper(s.country_code)=upper(:country))
         ORDER BY v.legal_name, s.site_name, m.method_name
         LIMIT :limit
-    """), {"method": method_id, "peptide": peptide_id,
+    """), {"method": method_id, "peptide": peptide_id, "test_definition": test_definition_id,
            "country": country_code, "limit": limit}).mappings().all()
     return {
         "items": [dict(row) for row in rows],
@@ -508,19 +520,19 @@ def submit_laboratory_capability(
     source_id = _source_record(db, payload.source_name, payload.source_identifier, str(payload.source_url))
     row = db.execute(text("""
         INSERT INTO laboratory_capability_claims (
-            organization_id, service_id, method_id, peptide_id, test_purpose,
+            organization_id, service_id, method_id, test_definition_id, peptide_id, test_purpose,
             material_form, sample_matrix, instrument_platform, sample_requirements,
             storage_shipping_requirements, evidence_scope, limitations, source_id,
             review_status, submitted_by
         ) VALUES (
-            :org, :service, :method, :peptide, :purpose, :material, :matrix,
+            :org, :service, :method, :test_definition, :peptide, :purpose, :material, :matrix,
             :platform, :sample, :shipping, :scope, :limitations, :source,
             'in_review', :submitter
         )
         RETURNING id, service_id, method_id, peptide_id, test_purpose, review_status, created_at
     """), {
         "org": organization_id, "service": payload.service_id, "method": payload.method_id,
-        "peptide": payload.peptide_id, "purpose": payload.test_purpose.strip(),
+        "test_definition": payload.test_definition_id, "peptide": payload.peptide_id, "purpose": payload.test_purpose.strip(),
         "material": payload.material_form, "matrix": payload.sample_matrix.strip(),
         "platform": payload.instrument_platform, "sample": payload.sample_requirements,
         "shipping": payload.storage_shipping_requirements, "scope": payload.evidence_scope.strip(),

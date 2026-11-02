@@ -27,7 +27,7 @@ def test_user_can_list_organizations_and_switch_only_to_an_active_membership(mon
 
     user_id = uuid4()
     organization_id = uuid4()
-    captured = {}
+    captured = {"calls": []}
 
     class FakeResult:
         def mappings(self):
@@ -46,8 +46,10 @@ def test_user_can_list_organizations_and_switch_only_to_an_active_membership(mon
 
     class FakeDatabase:
         def execute(self, statement, parameters):
-            captured["statement"] = str(statement)
-            captured["parameters"] = parameters
+            captured["calls"].append({
+                "statement": str(statement),
+                "parameters": parameters,
+            })
             return FakeResult()
 
         def commit(self):
@@ -60,8 +62,10 @@ def test_user_can_list_organizations_and_switch_only_to_an_active_membership(mon
         FakeDatabase(),
     )
 
-    assert "om.organization_id = :organization_id" in captured["statement"]
-    assert captured["parameters"] == {"user_id": str(user_id), "organization_id": organization_id}
+    membership_lookup = captured["calls"][0]
+    assert "om.organization_id = :organization_id" in membership_lookup["statement"]
+    assert membership_lookup["parameters"] == {"user_id": str(user_id), "organization_id": organization_id}
+    assert any("organization_context_switched" in call["statement"] for call in captured["calls"])
     assert result["access_token"] == "switched-token"
     assert result["user"]["organization_id"] == str(organization_id)
     assert result["user"]["role"] == "reviewer"

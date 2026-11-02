@@ -120,13 +120,19 @@ def _source_record(db: Session, name: str, identifier: str, url: str):
     parsed = urlsplit(url)
     if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
         raise HTTPException(status_code=422, detail="Evidence sources must use HTTPS without embedded credentials.")
-    return db.execute(text("""
+    row = db.execute(text("""
         INSERT INTO source_records (source_name, source_identifier, source_url, retrieved_at, raw_metadata)
         VALUES (:name, :identifier, :url, now(), '{}'::jsonb)
         ON CONFLICT (source_name, source_identifier)
-        DO UPDATE SET source_url=EXCLUDED.source_url, last_seen_at=now()
-        RETURNING id
-    """), {"name": name.strip(), "identifier": identifier.strip(), "url": url}).scalar_one()
+        DO UPDATE SET last_seen_at=now()
+        RETURNING id, source_url
+    """), {"name": name.strip(), "identifier": identifier.strip(), "url": url}).mappings().one()
+    if row["source_url"] != url:
+        raise HTTPException(
+            status_code=409,
+            detail="This source name and identifier are already registered with a different URL; use the established source record or a distinct identifier.",
+        )
+    return row["id"]
 
 
 def _audit(db: Session, user: dict, org, action: str, entity_type: str, entity_id, metadata: dict):

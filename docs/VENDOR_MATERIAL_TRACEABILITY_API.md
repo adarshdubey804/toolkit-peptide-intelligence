@@ -16,7 +16,7 @@ These endpoints record source-backed vendor catalogue offerings, physical lots a
 
 ## Evidence and review rules
 
-- Every submission requires a source name, source identifier, HTTPS source URL and a concise statement of what the source supports.
+- Every submission requires a source name, source identifier, HTTPS source URL and a concise statement of what the source supports. A previously registered source name/identifier pair cannot silently be repointed to a different URL.
 - An offering must identify the exact reviewed chemical form; a peptide sequence alone is insufficient.
 - Offerings require a verified vendor identity and, when supplied, a verified site/service belonging to that vendor.
 - A lot identifier is unique within its offering. Manufacture, retest and expiry dates are checked for chronological consistency.

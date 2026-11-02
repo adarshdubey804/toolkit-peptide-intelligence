@@ -45,3 +45,20 @@ def test_curation_review_uses_persisted_owner_not_current_submitter_membership()
     assert "cr.owner_organization_id = :organization_id" in curation
     assert "cr.owner_organization_id = :org" in curation
     assert "JOIN organization_memberships om ON om.user_id = cr.submitted_by" not in curation
+
+def test_organization_applicability_and_lab_claims_are_private_by_default():
+    migration = (MIGRATIONS / "038_explicit_record_ownership.sql").read_text(encoding="utf-8")
+    methods = (ROOT / "backend" / "app" / "routers" / "analytical_methods.py").read_text(encoding="utf-8")
+    for expected in (
+        "ALTER TABLE peptide_method_applicability",
+        "ALTER TABLE peptide_test_applicability",
+        "ALTER TABLE laboratory_capability_claims",
+        "peptide_method_applicability_visibility_check",
+        "peptide_test_applicability_visibility_check",
+        "laboratory_capability_visibility_check",
+    ):
+        assert expected in migration
+    assert "a.visibility_scope='public'" in methods
+    assert "lc.visibility_scope='public'" in methods
+    assert "m.visibility_scope='public'" in methods
+    assert "owner_organization_id=:org" in methods

@@ -82,7 +82,7 @@ def test_clinical_trials_normalization_preserves_source_and_evidence_state():
 
 def test_provenance_migration_is_present_and_applied_in_development_order():
     migrations = sorted(path.name for path in MIGRATIONS_DIR.glob("*.sql"))
-    assert migrations == ["001_initial_schema.sql", "002_provenance_curation.sql", "003_authentication.sql", "004_organization_workspaces.sql", "005_curation_workflow.sql", "006_enrichment_candidates.sql", "007_vendor_directory.sql", "008_analytical_method_intelligence.sql", "009_formulation_stability_intelligence.sql", "010_process_development_intelligence.sql", "011_molecular_interaction_intelligence.sql", "012_agent_sessions.sql", "013_evidence_intelligence.sql", "014_regulatory_guidance_intelligence.sql", "015_regulatory_change_monitoring.sql", "016_regulatory_observation_integrity.sql", "017_regulatory_source_registry.sql", "018_enrichment_ingestion_runs.sql", "019_regulatory_source_observations.sql", "020_regulatory_poll_scheduler.sql", "021_evidence_review_decisions.sql", "022_structured_evidence_extraction.sql", "023_extracted_evidence_field_review.sql", "024_peptide_analytical_method_applicability.sql", "025_vendor_certification_verification.sql", "026_vendor_service_review.sql", "027_vendor_service_evidence_links.sql", "028_vendor_facility_verification.sql", "029_vendor_service_facility_link.sql", "030_vendor_certification_submitter.sql", "031_laboratory_capability_claims.sql", "032_analytical_test_catalogue.sql", "033_analytical_test_catalogue_curation.sql", "034_peptide_test_applicability.sql", "035_analytical_reference_framework_crosswalk.sql", "036_shared_api_rate_limiting.sql", "037_tamper_evident_audit_trail.sql", "038_explicit_record_ownership.sql", "039_canonical_peptide_chemical_forms.sql", "040_chemical_form_applicability_links.sql"]
+    assert migrations == ["001_initial_schema.sql", "002_provenance_curation.sql", "003_authentication.sql", "004_organization_workspaces.sql", "005_curation_workflow.sql", "006_enrichment_candidates.sql", "007_vendor_directory.sql", "008_analytical_method_intelligence.sql", "009_formulation_stability_intelligence.sql", "010_process_development_intelligence.sql", "011_molecular_interaction_intelligence.sql", "012_agent_sessions.sql", "013_evidence_intelligence.sql", "014_regulatory_guidance_intelligence.sql", "015_regulatory_change_monitoring.sql", "016_regulatory_observation_integrity.sql", "017_regulatory_source_registry.sql", "018_enrichment_ingestion_runs.sql", "019_regulatory_source_observations.sql", "020_regulatory_poll_scheduler.sql", "021_evidence_review_decisions.sql", "022_structured_evidence_extraction.sql", "023_extracted_evidence_field_review.sql", "024_peptide_analytical_method_applicability.sql", "025_vendor_certification_verification.sql", "026_vendor_service_review.sql", "027_vendor_service_evidence_links.sql", "028_vendor_facility_verification.sql", "029_vendor_service_facility_link.sql", "030_vendor_certification_submitter.sql", "031_laboratory_capability_claims.sql", "032_analytical_test_catalogue.sql", "033_analytical_test_catalogue_curation.sql", "034_peptide_test_applicability.sql", "035_analytical_reference_framework_crosswalk.sql", "036_shared_api_rate_limiting.sql", "037_tamper_evident_audit_trail.sql", "038_explicit_record_ownership.sql", "039_canonical_peptide_chemical_forms.sql", "040_chemical_form_applicability_links.sql", "041_vendor_material_batch_traceability.sql"]
     sql = (MIGRATIONS_DIR / "002_provenance_curation.sql").read_text(encoding="utf-8")
     assert "source_record_versions" in sql
     assert "external_entity_links" in sql
@@ -1434,3 +1434,27 @@ def test_chemical_form_scope_helper_rejects_missing_or_mismatched_parent():
     with pytest.raises(HTTPException) as no_parent:
         _validate_chemical_form_scope(FakeDatabase(peptide_id), None, form_id)
     assert no_parent.value.status_code == 422
+
+
+def test_vendor_material_batch_traceability_migration_preserves_form_and_evidence_scope():
+    sql = (MIGRATIONS_DIR / "041_vendor_material_batch_traceability.sql").read_text(encoding="utf-8")
+    for expected in (
+        "vendor_material_offerings",
+        "vendor_material_batches",
+        "batch_analytical_test_results",
+        "batch_analytical_test_result_decisions",
+        "chemical_form_id UUID NOT NULL",
+        "report_source_id UUID NOT NULL",
+        "acceptance_criteria_source_id",
+        "supersedes_result_id",
+        "enforce_vendor_material_offering_scope",
+        "enforce_vendor_material_batch_scope",
+        "enforce_batch_test_result_scope",
+        "prevent_batch_evidence_mutation",
+        "prevent_batch_test_result_decision_mutation",
+        "stated_available",
+        "does not independently verified",
+    ):
+        assert expected in sql
+    assert "UNIQUE(offering_id, lot_identifier)" in sql
+    assert "ON DELETE RESTRICT" in sql

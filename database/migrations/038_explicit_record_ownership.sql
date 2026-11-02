@@ -5,13 +5,18 @@ ALTER TABLE curation_reviews
     ADD COLUMN IF NOT EXISTS owner_organization_id UUID REFERENCES organizations(id) ON DELETE RESTRICT;
 ALTER TABLE formulation_profiles
     ADD COLUMN IF NOT EXISTS owner_organization_id UUID REFERENCES organizations(id) ON DELETE RESTRICT,
-    ADD COLUMN IF NOT EXISTS visibility_scope TEXT NOT NULL DEFAULT 'public';
+    ADD COLUMN IF NOT EXISTS visibility_scope TEXT NOT NULL DEFAULT 'restricted';
 ALTER TABLE process_knowledge_profiles
     ADD COLUMN IF NOT EXISTS owner_organization_id UUID REFERENCES organizations(id) ON DELETE RESTRICT,
-    ADD COLUMN IF NOT EXISTS visibility_scope TEXT NOT NULL DEFAULT 'public';
+    ADD COLUMN IF NOT EXISTS visibility_scope TEXT NOT NULL DEFAULT 'restricted';
 ALTER TABLE analytical_methods
     ADD COLUMN IF NOT EXISTS owner_organization_id UUID REFERENCES organizations(id) ON DELETE RESTRICT,
-    ADD COLUMN IF NOT EXISTS visibility_scope TEXT NOT NULL DEFAULT 'public';
+    ADD COLUMN IF NOT EXISTS visibility_scope TEXT NOT NULL DEFAULT 'restricted';
+
+-- Only pre-existing records with no submitter are treated as shared master data.
+UPDATE formulation_profiles SET visibility_scope='public' WHERE submitted_by IS NULL;
+UPDATE process_knowledge_profiles SET visibility_scope='public' WHERE submitted_by IS NULL;
+UPDATE analytical_methods SET visibility_scope='public' WHERE submitted_by IS NULL;
 
 -- Backfill only when a submitter has exactly one historical membership.
 -- Ambiguous legacy records are restricted rather than assigned to an arbitrary tenant.
@@ -62,6 +67,13 @@ ALTER TABLE process_knowledge_profiles ADD CONSTRAINT process_knowledge_visibili
     CHECK (visibility_scope IN ('public','organization','restricted'));
 ALTER TABLE analytical_methods ADD CONSTRAINT analytical_method_visibility_scope_check
     CHECK (visibility_scope IN ('public','organization','restricted'));
+
+ALTER TABLE formulation_profiles ADD CONSTRAINT formulation_owner_scope_check
+    CHECK (visibility_scope <> 'organization' OR owner_organization_id IS NOT NULL);
+ALTER TABLE process_knowledge_profiles ADD CONSTRAINT process_knowledge_owner_scope_check
+    CHECK (visibility_scope <> 'organization' OR owner_organization_id IS NOT NULL);
+ALTER TABLE analytical_methods ADD CONSTRAINT analytical_method_owner_scope_check
+    CHECK (visibility_scope <> 'organization' OR owner_organization_id IS NOT NULL);
 
 CREATE INDEX IF NOT EXISTS idx_curation_reviews_owner_queue
     ON curation_reviews(owner_organization_id, review_status, priority, created_at);

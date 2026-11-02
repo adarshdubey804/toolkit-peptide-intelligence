@@ -1477,3 +1477,13 @@ def test_chemical_form_scope_helper_rejects_missing_or_mismatched_parent():
     with pytest.raises(HTTPException) as no_parent:
         _validate_chemical_form_scope(FakeDatabase(peptide_id), None, form_id)
     assert no_parent.value.status_code == 422
+
+
+
+def test_database_architecture_audit_tracks_current_migration_baseline():
+    audit = (MIGRATIONS_DIR.parent.parent / "docs" / "DATABASE_ARCHITECTURE_AUDIT.md").read_text(encoding="utf-8")
+    inventory = (MIGRATIONS_DIR.parent.parent / "docs" / "SCHEMA_OWNERSHIP_INVENTORY.md").read_text(encoding="utf-8")
+    assert "migrations 001–043" in audit
+    assert "migrations 001–043" in inventory
+    assert "Verification status and publication visibility are independent" in inventory
+    assert "direct-ID access" in inventory

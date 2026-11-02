@@ -469,6 +469,15 @@ def test_vendor_material_offering_rls_enforces_organization_and_public_scope():
         """), {"method_a": method_a, "org_a": organization_a, "reviewer_a": submitter_b,
                "method_b": method_b, "org_b": organization_b, "reviewer_b": submitter_a})
 
+        with pytest.raises(Exception):
+            with connection.begin_nested():
+            connection.execute(text("""
+                INSERT INTO analytical_method_decisions
+                    (method_id, organization_id, reviewer_id, decision, rationale)
+                VALUES (:method, :wrong_org, :reviewer, 'verified',
+                        'This deliberately mismatched organization must be rejected.')
+            """), {"method": method_a, "wrong_org": organization_b, "reviewer": submitter_b})
+
         role_exists = connection.execute(text(
             "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='toolkit_rls_test')"
         )).scalar_one()

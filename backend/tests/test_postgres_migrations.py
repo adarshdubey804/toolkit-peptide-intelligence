@@ -75,6 +75,8 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             "evidence_appraisal_decisions",
             "publication_duplicate_candidates",
             "publication_duplicate_decisions",
+            "curation_reviews",
+            "curation_decisions",
             "claim_source_locators",
             "analytical_methods",
             "analytical_method_sources",
@@ -345,6 +347,21 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             )
         """)).scalar_one()
         assert appraisal_policy_count == 10, "Evidence appraisal and duplicate-review access paths need explicit RLS policies"
+
+        for table_name in ("curation_reviews", "curation_decisions"):
+            state = connection.execute(text("""
+                SELECT relrowsecurity, relforcerowsecurity
+                FROM pg_class WHERE oid=to_regclass(:table_name)
+            """), {"table_name": f"public.{table_name}"}).one()
+            assert tuple(state) == (True, True), f"RLS and FORCE RLS must be enabled for {table_name}"
+        curation_policy_count = connection.execute(text("""
+            SELECT count(*) FROM pg_policies
+            WHERE schemaname='public' AND policyname IN (
+                'curation_reviews_select_scope','curation_reviews_insert_scope','curation_reviews_update_scope',
+                'curation_decisions_select_scope','curation_decisions_insert_scope'
+            )
+        """)).scalar_one()
+        assert curation_policy_count == 5, "Curation review and decision access paths need explicit RLS policies"
 
 @pytest.mark.skipif(
     os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",
@@ -1145,3 +1162,82 @@ def test_evidence_appraisal_and_duplicate_review_rls_are_organization_scoped():
             connection.exec_driver_sql(f"REVOKE SELECT, INSERT ON {table} FROM toolkit_appraisal_rls_test")
         connection.exec_driver_sql("REVOKE USAGE ON SCHEMA public FROM toolkit_appraisal_rls_test")
         connection.exec_driver_sql("DROP ROLE toolkit_appraisal_rls_test")
+
+
+@pytest.mark.skipif(os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",
+                    reason="PostgreSQL curation workflow RLS integration test is enabled in CI only.")
+def test_curation_reviews_and_decisions_are_organization_scoped():
+    with engine.begin() as connection:
+        connection.execute(text("SELECT pg_advisory_xact_lock(731904221067)"))
+        apply_development_migrations(connection)
+        org_a = connection.execute(text("INSERT INTO organizations (name,organization_type) VALUES (:n,'research_team') RETURNING id"),
+                                   {"n": "curation-a-" + str(uuid4())}).scalar_one()
+        org_b = connection.execute(text("INSERT INTO organizations (name,organization_type) VALUES (:n,'research_team') RETURNING id"),
+                                   {"n": "curation-b-" + str(uuid4())}).scalar_one()
+        user_a = connection.execute(text("INSERT INTO user_profiles (display_name,role) VALUES ('Curation A','researcher') RETURNING id")).scalar_one()
+        user_b = connection.execute(text("INSERT INTO user_profiles (display_name,role) VALUES ('Curation B','researcher') RETURNING id")).scalar_one()
+
+        def review(org, user):
+            return connection.execute(text("""
+                INSERT INTO curation_reviews (entity_type,entity_id,review_status,submitted_by,owner_organization_id)
+                VALUES ('evidence_claim',:entity,'in_review',:user,:org) RETURNING id
+            """), {"entity": uuid4(), "user": user, "org": org}).scalar_one()
+
+        review_a = review(org_a, user_a)
+        review_b = review(org_b, user_b)
+        decision_a = connection.execute(text("""
+            INSERT INTO curation_decisions
+            (review_id,owner_organization_id,decision,rationale,reviewer_id,previous_status,new_status)
+            VALUES (:review,:org,'verified','Independent curation decision for organization A.',:user,'in_review','verified')
+            RETURNING id
+        """), {"review": review_a, "org": org_a, "user": user_b}).scalar_one()
+        connection.execute(text("""
+            INSERT INTO curation_decisions
+            (review_id,owner_organization_id,decision,rationale,reviewer_id,previous_status,new_status)
+            VALUES (:review,:org,'verified','Independent curation decision for organization B.',:user,'in_review','verified')
+        """), {"review": review_b, "org": org_b, "user": user_a})
+        with pytest.raises(Exception):
+            with connection.begin_nested():
+                connection.execute(text("UPDATE curation_decisions SET rationale='attempted mutation' WHERE id=:id"), {"id": decision_a})
+        with pytest.raises(Exception):
+            with connection.begin_nested():
+                connection.execute(text("DELETE FROM curation_decisions WHERE id=:id"), {"id": decision_a})
+
+        role = "toolkit_curation_rls_test"
+        if not connection.execute(text("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname=:r)"), {"r": role}).scalar_one():
+            connection.exec_driver_sql(f"CREATE ROLE {role} NOLOGIN NOBYPASSRLS")
+        connection.exec_driver_sql("GRANT USAGE ON SCHEMA public TO toolkit_curation_rls_test")
+        connection.exec_driver_sql("GRANT SELECT, INSERT, UPDATE ON curation_reviews TO toolkit_curation_rls_test")
+        connection.exec_driver_sql("GRANT SELECT, INSERT ON curation_decisions TO toolkit_curation_rls_test")
+
+        with connection.begin_nested():
+            connection.exec_driver_sql("SET LOCAL ROLE toolkit_curation_rls_test")
+            connection.execute(text("SELECT set_config('app.organization_id',:o,true)"), {"o": str(org_a)})
+            assert set(connection.execute(text("SELECT id FROM curation_reviews")).scalars()) == {review_a}
+            assert set(connection.execute(text("SELECT review_id FROM curation_decisions")).scalars()) == {review_a}
+
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO curation_reviews (entity_type,entity_id,review_status,submitted_by,owner_organization_id)
+                        VALUES ('evidence_claim',:entity,'in_review',:user,:org)
+                    """), {"entity": uuid4(), "user": user_a, "org": org_b})
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO curation_decisions
+                        (review_id,owner_organization_id,decision,rationale,reviewer_id,previous_status,new_status)
+                        VALUES (:review,:org,'verified','Cross-organization decision must fail.',:user,'in_review','verified')
+                    """), {"review": review_b, "org": org_a, "user": user_a})
+
+            connection.execute(text("UPDATE curation_reviews SET review_status='verified' WHERE id=:id"), {"id": review_a})
+            assert connection.execute(text("UPDATE curation_reviews SET review_status='verified' WHERE id=:id"), {"id": review_b}).rowcount == 0
+            connection.execute(text("SELECT set_config('app.organization_id','',true)"))
+            assert connection.execute(text("SELECT count(*) FROM curation_reviews")).scalar_one() == 0
+            assert connection.execute(text("SELECT count(*) FROM curation_decisions")).scalar_one() == 0
+
+        connection.exec_driver_sql("RESET ROLE")
+        connection.exec_driver_sql("REVOKE SELECT, INSERT, UPDATE ON curation_reviews FROM toolkit_curation_rls_test")
+        connection.exec_driver_sql("REVOKE SELECT, INSERT ON curation_decisions FROM toolkit_curation_rls_test")
+        connection.exec_driver_sql("REVOKE USAGE ON SCHEMA public FROM toolkit_curation_rls_test")
+        connection.exec_driver_sql("DROP ROLE toolkit_curation_rls_test")

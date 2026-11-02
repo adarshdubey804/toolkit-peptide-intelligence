@@ -60,6 +60,15 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             "vendor_material_batches",
             "batch_analytical_test_results",
             "batch_analytical_test_result_decisions",
+            "formulation_profiles",
+            "formulation_components",
+            "formulation_stability_observations",
+            "formulation_sources",
+            "formulation_review_decisions",
+            "process_knowledge_profiles",
+            "process_knowledge_stages",
+            "process_knowledge_sources",
+            "process_knowledge_decisions",
             "claim_source_locators",
             "analytical_methods",
             "analytical_method_sources",
@@ -260,6 +269,36 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             )
         """)).scalar_one()
         assert method_policy_count == 7, "Analytical method access paths need explicit RLS policies"
+
+        knowledge_rls_tables = (
+            "formulation_profiles", "formulation_components",
+            "formulation_stability_observations", "formulation_sources",
+            "formulation_review_decisions", "process_knowledge_profiles",
+            "process_knowledge_stages", "process_knowledge_sources",
+            "process_knowledge_decisions",
+        )
+        for table_name in knowledge_rls_tables:
+            state = connection.execute(text("""
+                SELECT relrowsecurity, relforcerowsecurity
+                FROM pg_class WHERE oid=to_regclass(:table_name)
+            """), {"table_name": f"public.{table_name}"}).one()
+            assert tuple(state) == (True, True), f"RLS and FORCE RLS must be enabled for {table_name}"
+
+        knowledge_policy_count = connection.execute(text("""
+            SELECT count(*) FROM pg_policies
+            WHERE schemaname='public' AND policyname IN (
+                'formulation_profiles_select_scope','formulation_profiles_insert_scope','formulation_profiles_update_scope',
+                'formulation_components_select_scope','formulation_components_insert_scope','formulation_components_update_scope',
+                'formulation_stability_observations_select_scope','formulation_stability_observations_insert_scope','formulation_stability_observations_update_scope',
+                'formulation_sources_select_scope','formulation_sources_insert_scope','formulation_sources_update_scope',
+                'formulation_review_decisions_select_scope','formulation_review_decisions_insert_scope',
+                'process_knowledge_profiles_select_scope','process_knowledge_profiles_insert_scope','process_knowledge_profiles_update_scope',
+                'process_knowledge_stages_select_scope','process_knowledge_stages_insert_scope','process_knowledge_stages_update_scope',
+                'process_knowledge_sources_select_scope','process_knowledge_sources_insert_scope','process_knowledge_sources_update_scope',
+                'process_knowledge_decisions_select_scope','process_knowledge_decisions_insert_scope'
+            )
+        """)).scalar_one()
+        assert knowledge_policy_count == 25, "Formulation and process knowledge access paths need explicit RLS policies"
 
 @pytest.mark.skipif(
     os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",
@@ -616,3 +655,213 @@ def test_claim_source_locator_binds_exact_source_version_and_is_append_only():
                 connection.execute(text("""
                     DELETE FROM claim_source_locators WHERE id=:locator
                 """), {"locator": locator_id})
+
+
+@pytest.mark.skipif(
+    os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",
+    reason="PostgreSQL formulation/process RLS integration test is enabled in CI only.",
+)
+def test_formulation_and_process_rls_inherit_parent_visibility():
+    with engine.begin() as connection:
+        connection.execute(text("SELECT pg_advisory_xact_lock(731904221067)"))
+        apply_development_migrations(connection)
+
+        org_a = connection.execute(text("""
+            INSERT INTO organizations (name, organization_type)
+            VALUES (:name, 'research_team') RETURNING id
+        """), {"name": "knowledge-rls-a-" + str(uuid4())}).scalar_one()
+        org_b = connection.execute(text("""
+            INSERT INTO organizations (name, organization_type)
+            VALUES (:name, 'research_team') RETURNING id
+        """), {"name": "knowledge-rls-b-" + str(uuid4())}).scalar_one()
+        user_a = connection.execute(text("""
+            INSERT INTO user_profiles (display_name, role) VALUES ('Knowledge A', 'researcher') RETURNING id
+        """)).scalar_one()
+        user_b = connection.execute(text("""
+            INSERT INTO user_profiles (display_name, role) VALUES ('Knowledge B', 'researcher') RETURNING id
+        """)).scalar_one()
+        source_id = connection.execute(text("""
+            INSERT INTO source_records (source_name, source_identifier, source_url, raw_metadata)
+            VALUES ('Knowledge RLS source', :identifier, 'https://example.org/knowledge-rls', '{}'::jsonb)
+            RETURNING id
+        """), {"identifier": str(uuid4())}).scalar_one()
+
+        def formulation(name, owner, visibility, status, submitter):
+            return connection.execute(text("""
+                INSERT INTO formulation_profiles (
+                    formulation_name, formulation_type, intended_research_context,
+                    formulation_rationale, limitations, review_status, submitted_by,
+                    owner_organization_id, visibility_scope
+                ) VALUES (:name, 'research', 'literature review', 'Test rationale',
+                          'Not a validated recipe.', :status, :submitter, :owner, :visibility)
+                RETURNING id
+            """), {"name": name, "owner": owner, "visibility": visibility,
+                   "status": status, "submitter": submitter}).scalar_one()
+
+        form_a = formulation("Private formulation A " + str(uuid4()), org_a, "organization", "in_review", user_a)
+        form_b = formulation("Private formulation B " + str(uuid4()), org_b, "organization", "in_review", user_b)
+        form_public = formulation("Public formulation " + str(uuid4()), None, "public", "verified", None)
+
+        def form_children(form_id, prefix):
+            connection.execute(text("""
+                INSERT INTO formulation_components (formulation_id, component_name, component_role, review_status)
+                VALUES (:id, :name, 'buffer', 'verified')
+            """), {"id": form_id, "name": prefix + " component"})
+            connection.execute(text("""
+                INSERT INTO formulation_stability_observations (
+                    formulation_id, study_context, observed_change, limitations, review_status
+                ) VALUES (:id, 'accelerated study context', 'Observed change', 'Study-specific only', 'verified')
+            """), {"id": form_id})
+            connection.execute(text("""
+                INSERT INTO formulation_sources (formulation_id, source_record_id, evidence_scope)
+                VALUES (:id, :source, 'Source describes this formulation record.')
+            """), {"id": form_id, "source": source_id})
+
+        for form_id, label in ((form_a, "A"), (form_b, "B"), (form_public, "Public")):
+            form_children(form_id, label)
+        connection.execute(text("""
+            INSERT INTO formulation_review_decisions (formulation_id, organization_id, reviewer_id, decision, rationale)
+            VALUES (:form, :org, :reviewer, 'verified', 'Organization-specific review decision.')
+        """), {"form": form_a, "org": org_a, "reviewer": user_b})
+        connection.execute(text("""
+            INSERT INTO formulation_review_decisions (formulation_id, organization_id, reviewer_id, decision, rationale)
+            VALUES (:form, :org, :reviewer, 'verified', 'Organization-specific review decision.')
+        """), {"form": form_b, "org": org_b, "reviewer": user_a})
+
+        def process(name, owner, visibility, status, submitter):
+            return connection.execute(text("""
+                INSERT INTO process_knowledge_profiles (
+                    profile_title, process_platform, development_context, process_overview,
+                    limitations, review_status, submitted_by, owner_organization_id, visibility_scope
+                ) VALUES (:name, 'research literature', 'non-operational research', 'Descriptive overview',
+                          'Not a manufacturing instruction.', :status, :submitter, :owner, :visibility)
+                RETURNING id
+            """), {"name": name, "owner": owner, "visibility": visibility,
+                   "status": status, "submitter": submitter}).scalar_one()
+
+        process_a = process("Private process A " + str(uuid4()), org_a, "organization", "in_review", user_a)
+        process_b = process("Private process B " + str(uuid4()), org_b, "organization", "in_review", user_b)
+        process_public = process("Public process " + str(uuid4()), None, "public", "verified", None)
+
+        def process_children(profile_id, prefix):
+            connection.execute(text("""
+                INSERT INTO process_knowledge_stages (
+                    profile_id, stage_name, stage_category, scientific_purpose, review_status
+                ) VALUES (:id, :name, 'analytical', 'Descriptive research purpose', 'verified')
+            """), {"id": profile_id, "name": prefix + " stage"})
+            connection.execute(text("""
+                INSERT INTO process_knowledge_sources (profile_id, source_record_id, evidence_scope)
+                VALUES (:id, :source, 'Source describes this process record.')
+            """), {"id": profile_id, "source": source_id})
+
+        for profile_id, label in ((process_a, "A"), (process_b, "B"), (process_public, "Public")):
+            process_children(profile_id, label)
+        connection.execute(text("""
+            INSERT INTO process_knowledge_decisions (profile_id, organization_id, reviewer_id, decision, rationale)
+            VALUES (:profile, :org, :reviewer, 'verified', 'Organization-specific review decision.')
+        """), {"profile": process_a, "org": org_a, "reviewer": user_b})
+        connection.execute(text("""
+            INSERT INTO process_knowledge_decisions (profile_id, organization_id, reviewer_id, decision, rationale)
+            VALUES (:profile, :org, :reviewer, 'verified', 'Organization-specific review decision.')
+        """), {"profile": process_b, "org": org_b, "reviewer": user_a})
+
+        role = "toolkit_knowledge_rls_test"
+        exists = connection.execute(text("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname=:role)"), {"role": role}).scalar_one()
+        if not exists:
+            connection.exec_driver_sql(f"CREATE ROLE {role} NOLOGIN NOBYPASSRLS")
+        connection.exec_driver_sql("GRANT USAGE ON SCHEMA public TO toolkit_knowledge_rls_test")
+        for table in (
+            "formulation_profiles", "formulation_components", "formulation_stability_observations",
+            "formulation_sources", "formulation_review_decisions", "process_knowledge_profiles",
+            "process_knowledge_stages", "process_knowledge_sources", "process_knowledge_decisions",
+        ):
+            connection.exec_driver_sql(f"GRANT SELECT, INSERT, UPDATE ON {table} TO toolkit_knowledge_rls_test")
+
+        with connection.begin_nested():
+            connection.exec_driver_sql("SET LOCAL ROLE toolkit_knowledge_rls_test")
+            connection.execute(text("SELECT set_config('app.organization_id', :org, true)"), {"org": str(org_a)})
+            assert set(connection.execute(text("SELECT id FROM formulation_profiles")).scalars()) == {form_a, form_public}
+            assert set(connection.execute(text("SELECT formulation_id FROM formulation_components")).scalars()) == {form_a, form_public}
+            assert set(connection.execute(text("SELECT formulation_id FROM formulation_stability_observations")).scalars()) == {form_a, form_public}
+            assert set(connection.execute(text("SELECT formulation_id FROM formulation_sources")).scalars()) == {form_a, form_public}
+            assert set(connection.execute(text("SELECT formulation_id FROM formulation_review_decisions")).scalars()) == {form_a}
+
+            assert set(connection.execute(text("SELECT id FROM process_knowledge_profiles")).scalars()) == {process_a, process_public}
+            assert set(connection.execute(text("SELECT profile_id FROM process_knowledge_stages")).scalars()) == {process_a, process_public}
+            assert set(connection.execute(text("SELECT profile_id FROM process_knowledge_sources")).scalars()) == {process_a, process_public}
+            assert set(connection.execute(text("SELECT profile_id FROM process_knowledge_decisions")).scalars()) == {process_a}
+
+            # Direct-ID writes against another organization's parent or children must fail.
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO formulation_profiles (
+                            formulation_name, formulation_type, intended_research_context,
+                            formulation_rationale, limitations, submitted_by,
+                            owner_organization_id, visibility_scope
+                        ) VALUES ('Cross-tenant formulation', 'research', 'test',
+                                  'must fail', 'must fail', :submitter, :owner, 'organization')
+                    """), {"submitter": user_a, "owner": org_b})
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO formulation_components (formulation_id, component_name, component_role)
+                        VALUES (:form, 'Cross-tenant component', 'buffer')
+                    """), {"form": form_b})
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO formulation_review_decisions (
+                            formulation_id, organization_id, reviewer_id, decision, rationale
+                        ) VALUES (:form, :org, :reviewer, 'verified', 'must fail')
+                    """), {"form": form_b, "org": org_a, "reviewer": user_a})
+
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO process_knowledge_profiles (
+                            profile_title, process_platform, development_context, process_overview,
+                            limitations, submitted_by, owner_organization_id, visibility_scope
+                        ) VALUES ('Cross-tenant process', 'research', 'test', 'must fail',
+                                  'must fail', :submitter, :owner, 'organization')
+                    """), {"submitter": user_a, "owner": org_b})
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO process_knowledge_stages (
+                            profile_id, stage_name, stage_category, scientific_purpose
+                        ) VALUES (:profile, 'Cross-tenant stage', 'analytical', 'must fail')
+                    """), {"profile": process_b})
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO process_knowledge_decisions (
+                            profile_id, organization_id, reviewer_id, decision, rationale
+                        ) VALUES (:profile, :org, :reviewer, 'verified', 'must fail')
+                    """), {"profile": process_b, "org": org_a, "reviewer": user_a})
+
+            connection.execute(text("UPDATE formulation_components SET review_status='verified' WHERE formulation_id=:id"), {"id": form_a})
+            connection.execute(text("UPDATE formulation_stability_observations SET review_status='verified' WHERE formulation_id=:id"), {"id": form_a})
+            connection.execute(text("UPDATE process_knowledge_stages SET review_status='verified' WHERE profile_id=:id"), {"id": process_a})
+
+            connection.execute(text("SELECT set_config('app.organization_id', '', true)"))
+            assert set(connection.execute(text("SELECT id FROM formulation_profiles")).scalars()) == {form_public}
+            assert set(connection.execute(text("SELECT formulation_id FROM formulation_components")).scalars()) == {form_public}
+            assert set(connection.execute(text("SELECT formulation_id FROM formulation_stability_observations")).scalars()) == {form_public}
+            assert set(connection.execute(text("SELECT formulation_id FROM formulation_sources")).scalars()) == {form_public}
+            assert connection.execute(text("SELECT count(*) FROM formulation_review_decisions")).scalar_one() == 0
+
+            assert set(connection.execute(text("SELECT id FROM process_knowledge_profiles")).scalars()) == {process_public}
+            assert set(connection.execute(text("SELECT profile_id FROM process_knowledge_stages")).scalars()) == {process_public}
+            assert set(connection.execute(text("SELECT profile_id FROM process_knowledge_sources")).scalars()) == {process_public}
+            assert connection.execute(text("SELECT count(*) FROM process_knowledge_decisions")).scalar_one() == 0
+
+        connection.exec_driver_sql("RESET ROLE")
+        for table in (
+            "formulation_profiles", "formulation_components", "formulation_stability_observations",
+            "formulation_sources", "formulation_review_decisions", "process_knowledge_profiles",
+            "process_knowledge_stages", "process_knowledge_sources", "process_knowledge_decisions",
+        ):
+            connection.exec_driver_sql(f"REVOKE SELECT, INSERT, UPDATE ON {table} FROM toolkit_knowledge_rls_test")
+        connection.exec_driver_sql("REVOKE USAGE ON SCHEMA public FROM toolkit_knowledge_rls_test")
+        connection.exec_driver_sql("DROP ROLE toolkit_knowledge_rls_test")

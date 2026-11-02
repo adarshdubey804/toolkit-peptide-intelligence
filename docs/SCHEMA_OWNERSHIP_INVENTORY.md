@@ -51,7 +51,7 @@
 
 ## Known gaps / not yet proven
 
-- The repository audit found no `ENABLE ROW LEVEL SECURITY` or `CREATE POLICY` statements through migration 043; application predicates alone are not database-enforced isolation.
+- Migrations 044–047 enable RLS for vendor material traceability, analytical methods, formulations and process knowledge. Other organization-owned domains and background workers remain outside this bounded rollout.
 - The audit does not prove every organization contribution and child table has a complete owner key or that every router has negative cross-tenant tests.
 - The audit does not establish live PostgreSQL schema parity, production role permissions, query plans, backup/restore, monitoring, TLS, or secret management.
 - Canonical peptide identity has a chemical-form foundation, but a complete deterministic identity fingerprint and collision-tested normalization for D-residues, noncanonical residues, terminal chemistry, cyclization, conjugates, salts, and aliases is not yet established.

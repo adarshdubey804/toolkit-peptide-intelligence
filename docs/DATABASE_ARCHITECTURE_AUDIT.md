@@ -49,7 +49,7 @@ Legacy records with ambiguous owners remain NULL/restricted and must be resolved
 
 ### P0 — Tenant isolation is application-enforced, not visibly database-enforced
 
-The inspected migrations contain organization membership and organization-scoped query patterns, but no PostgreSQL `ENABLE ROW LEVEL SECURITY` or `CREATE POLICY` statements were found in the migration set.
+The inspected migrations contain organization membership and organization-scoped query patterns, but migrations 044–047 now enable transaction-scoped RLS for vendor materials, analytical methods, formulations and process knowledge; broader tenant isolation and worker coverage remain pending.
 
 A missed organization predicate in one endpoint can therefore expose another tenant's data.
 

@@ -72,6 +72,19 @@ def compare_peptides(
             SELECT chemical_form,molecular_formula,average_molecular_mass,monoisotopic_mass,
                    property_origin,method_or_tool
             FROM chemical_properties WHERE peptide_id=:id AND review_status='verified'
+        """), params).mappings().all();
+
+        chemical_forms = db.execute(text("""
+            SELECT id, peptide_sequence_id, form_name, form_type, normalized_sequence,
+                   residue_encoding, stereochemistry, noncanonical_residues,
+                   terminal_chemistry, post_translational_modifications, cyclization,
+                   conjugation, salt_and_counterions, chemical_formula,
+                   average_molecular_mass, monoisotopic_mass, canonical_smiles,
+                   inchi, inchikey, identity_fingerprint, canonicalization_method,
+                   canonicalization_version
+            FROM peptide_chemical_forms
+            WHERE peptide_id=:id AND review_status='verified'
+            ORDER BY form_name, id
         """), params).mappings().all()
         targets = db.execute(text("""
             SELECT t.id,t.preferred_name,t.gene_symbol,t.organism,e.evidence_type
@@ -105,6 +118,7 @@ def compare_peptides(
             "peptide": profile,
             "sequences": [dict(x) for x in sequences],
             "chemical_properties": [dict(x) for x in chemistry],
+            "chemical_forms": [dict(x) for x in chemical_forms],
             "targets": [dict(x) for x in targets],
             "pathways": [dict(x) for x in pathways],
             "evidence_claims": [dict(x) for x in claims],
@@ -133,6 +147,18 @@ def peptide_profile(peptide_id: UUID, db: Session = Depends(get_db)):
     aliases = rows("SELECT alias FROM peptide_aliases WHERE peptide_id=:id ORDER BY alias")
     sequences = rows("SELECT sequence, sequence_type, n_terminus, c_terminus, modifications, stereochemistry_notes FROM peptide_sequences WHERE peptide_id=:id AND review_status='verified'")
     chemistry = rows("SELECT chemical_form, molecular_formula, average_molecular_mass, monoisotopic_mass, canonical_smiles, inchi, inchikey, property_origin, method_or_tool FROM chemical_properties WHERE peptide_id=:id AND review_status='verified'")
+    chemical_forms = rows("""
+        SELECT id, peptide_sequence_id, form_name, form_type, normalized_sequence,
+               residue_encoding, stereochemistry, noncanonical_residues,
+               terminal_chemistry, post_translational_modifications, cyclization,
+               conjugation, salt_and_counterions, chemical_formula,
+               average_molecular_mass, monoisotopic_mass, canonical_smiles,
+               inchi, inchikey, identity_fingerprint, canonicalization_method,
+               canonicalization_version
+        FROM peptide_chemical_forms
+        WHERE peptide_id=:id AND review_status='verified'
+        ORDER BY form_name, id
+    """)
     structures = rows("SELECT structure_type, file_format, external_identifier, method_or_prediction_tool FROM structures WHERE peptide_id=:id AND review_status='verified'")
     claims = rows("""
         SELECT DISTINCT c.id, c.claim_text, c.claim_domain, c.evidence_type, c.confidence_label,
@@ -148,6 +174,7 @@ def peptide_profile(peptide_id: UUID, db: Session = Depends(get_db)):
         "aliases": aliases,
         "sequences": sequences,
         "chemical_properties": chemistry,
+        "chemical_forms": chemical_forms,
         "structures": structures,
         "evidence_claims": claims,
     }

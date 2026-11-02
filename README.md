@@ -1,5 +1,7 @@
 # Toolkit Peptide Intelligence
 
+> Production deployment is not yet approved. Review [production readiness gates](docs/PRODUCTION_READINESS.md) before exposing the service to public traffic.
+
 Scientific intelligence for peptide research and pharmaceutical development, built by Toolkit Technologies.
 
 ## Current foundation

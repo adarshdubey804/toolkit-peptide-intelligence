@@ -127,13 +127,13 @@ def submit_process_knowledge(
         raise HTTPException(status_code=409, detail="Linked peptide must be curator-verified.")
     row = db.execute(text("""
         INSERT INTO process_knowledge_profiles (
-            peptide_id, profile_title, process_platform, development_context, process_overview,
+            organization_id, peptide_id, profile_title, process_platform, development_context, process_overview,
             critical_quality_attributes, process_impurity_context, scale_up_considerations,
             limitations, review_status, submitted_by
-        ) VALUES (:peptide, :title, :platform, :context, :overview, CAST(:cqa AS jsonb),
+        ) VALUES (:org, :peptide, :title, :platform, :context, :overview, CAST(:cqa AS jsonb),
                   CAST(:impurities AS jsonb), :scaleup, :limitations, 'in_review', :submitter)
         RETURNING id, profile_title, process_platform, review_status
-    """), {"peptide": payload.peptide_id, "title": payload.profile_title.strip(),
+    """), {"org": organization_id, "peptide": payload.peptide_id, "title": payload.profile_title.strip(),
            "platform": payload.process_platform, "context": payload.development_context,
            "overview": payload.process_overview, "cqa": __import__("json").dumps(payload.critical_quality_attributes),
            "impurities": __import__("json").dumps(payload.process_impurity_context),
@@ -197,10 +197,7 @@ def process_review_queue(
                )) FROM process_knowledge_stages ps LEFT JOIN source_records sr2 ON sr2.id=ps.source_id
                WHERE ps.profile_id=pk.id), '[]'::jsonb) AS stages
         FROM process_knowledge_profiles pk
-        WHERE pk.review_status='in_review'
-          AND EXISTS (SELECT 1 FROM organization_memberships om
-                      WHERE om.user_id=pk.submitted_by AND om.organization_id=:org
-                        AND om.membership_status='active')
+        WHERE pk.review_status='in_review' AND pk.organization_id=:org
         ORDER BY pk.created_at LIMIT :limit
     """), {"org": organization_id, "limit": limit}).mappings().all()
     return {"items": [dict(row) for row in rows], "count": len(rows)}
@@ -218,9 +215,8 @@ def decide_process_knowledge(
         raise HTTPException(status_code=403, detail="Curator or reviewer permission is required.")
     profile = db.execute(text("""
         SELECT pk.* FROM process_knowledge_profiles pk
-        JOIN organization_memberships om ON om.user_id=pk.submitted_by
         WHERE pk.id=:id AND pk.review_status='in_review'
-          AND om.organization_id=:org AND om.membership_status='active'
+          AND pk.organization_id=:org
         FOR UPDATE OF pk
     """), {"id": profile_id, "org": organization_id}).mappings().first()
     if not profile:

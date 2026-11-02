@@ -9,6 +9,11 @@ from sqlalchemy.orm import Session
 
 from .auth import get_current_user
 from ..db import get_db
+from ..services.peptide_identity import (
+    CANONICALIZATION_METHOD,
+    CANONICALIZATION_VERSION,
+    canonicalize_one_letter_sequence,
+)
 
 router = APIRouter(prefix="/api/v1/dossiers", tags=["peptide scientific dossiers"])
 
@@ -63,6 +68,51 @@ class PeptideDossierCreate(BaseModel):
         if any(len(value) > 200 for value in normalized):
             raise ValueError("Aliases must be 200 characters or fewer.")
         return normalized
+
+
+
+def _sequence_identity_fields(sequence: SequenceInput) -> dict:
+    """Return conservative sequence identity metadata without guessing chemistry.
+
+    Only unmodified, unambiguously standard L-amino-acid sequences receive a
+    sequence fingerprint. Explicit terminal chemistry, modifications,
+    stereochemistry notes, non-standard symbols, and non-amino-acid inputs
+    retain their raw notation but are not assigned a canonical identity.
+    """
+    fields = {
+        "raw_notation": sequence.sequence,
+        "normalized_sequence": None,
+        "notation_format": (
+            "amino_acid_with_explicit_chemistry"
+            if sequence.sequence_type == "amino_acid"
+            else sequence.sequence_type
+        ),
+        "canonicalization_method": None,
+        "canonicalization_version": None,
+        "identity_fingerprint": None,
+    }
+    if sequence.sequence_type != "amino_acid":
+        return fields
+    if (
+        sequence.n_terminus
+        or sequence.c_terminus
+        or sequence.modifications
+        or sequence.stereochemistry_notes
+    ):
+        return fields
+    try:
+        canonical = canonicalize_one_letter_sequence(sequence.sequence)
+    except ValueError:
+        fields["notation_format"] = "unparsed_amino_acid"
+        return fields
+    fields.update({
+        "normalized_sequence": canonical.normalized_sequence,
+        "notation_format": canonical.notation_format,
+        "canonicalization_method": CANONICALIZATION_METHOD,
+        "canonicalization_version": CANONICALIZATION_VERSION,
+        "identity_fingerprint": canonical.identity_fingerprint,
+    })
+    return fields
 
 
 def _member_role(user: dict, db: Session) -> str:
@@ -122,15 +172,20 @@ def create_peptide_dossier(
             db.execute(text("""
                 INSERT INTO peptide_sequences
                     (peptide_id, sequence, sequence_type, n_terminus, c_terminus,
-                     modifications, stereochemistry_notes, source_id, review_status)
+                     modifications, stereochemistry_notes, source_id, review_status,
+                     raw_notation, normalized_sequence, notation_format,
+                     canonicalization_method, canonicalization_version, identity_fingerprint)
                 VALUES (:peptide_id, :sequence, :sequence_type, :n_terminus, :c_terminus,
-                        CAST(:modifications AS jsonb), :stereochemistry, :source_id, 'in_review')
+                        CAST(:modifications AS jsonb), :stereochemistry, :source_id, 'in_review',
+                        :raw_notation, :normalized_sequence, :notation_format,
+                        :canonicalization_method, :canonicalization_version, :identity_fingerprint)
             """), {
                 "peptide_id": peptide_id, "sequence": sequence.sequence.strip(),
                 "sequence_type": sequence.sequence_type, "n_terminus": sequence.n_terminus,
                 "c_terminus": sequence.c_terminus,
                 "modifications": __import__("json").dumps(sequence.modifications),
                 "stereochemistry": sequence.stereochemistry_notes, "source_id": source_id,
+                **_sequence_identity_fields(sequence),
             })
 
         for chemistry in payload.chemical_properties:

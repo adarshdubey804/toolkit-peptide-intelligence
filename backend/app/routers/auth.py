@@ -171,6 +171,77 @@ def get_current_user(token: Annotated[str | None, Depends(oauth2_scheme)], db: A
     return _user_response(user)
 
 
+
+class SwitchOrganizationRequest(BaseModel):
+    organization_id: UUID
+
+
+@router.get("/organizations")
+def list_user_organizations(
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    rows = db.execute(text("""
+        SELECT o.id AS organization_id, o.name AS organization_name,
+               om.role, om.created_at AS membership_created_at
+        FROM organization_memberships om
+        JOIN organizations o ON o.id = om.organization_id
+        JOIN user_profiles up ON up.id = om.user_id
+        WHERE om.user_id = :user_id
+          AND om.membership_status = 'active'
+          AND up.is_active = TRUE
+        ORDER BY om.created_at, o.name
+    """), {"user_id": current_user["id"]}).mappings().all()
+    return {
+        "items": [
+            {
+                "organization_id": str(row["organization_id"]),
+                "organization_name": row["organization_name"],
+                "role": row["role"],
+                "membership_created_at": row["membership_created_at"],
+                "is_current": str(row["organization_id"]) == current_user["organization_id"],
+            }
+            for row in rows
+        ],
+        "count": len(rows),
+    }
+
+
+@router.post("/switch-organization")
+def switch_organization(
+    payload: SwitchOrganizationRequest,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    membership = db.execute(text("""
+        SELECT up.id, up.email, up.display_name, up.is_active,
+               om.organization_id, om.role, o.name AS organization_name
+        FROM organization_memberships om
+        JOIN user_profiles up ON up.id = om.user_id
+        JOIN organizations o ON o.id = om.organization_id
+        WHERE om.user_id = :user_id
+          AND om.organization_id = :organization_id
+          AND om.membership_status = 'active'
+          AND up.is_active = TRUE
+    """), {
+        "user_id": current_user["id"],
+        "organization_id": payload.organization_id,
+    }).mappings().first()
+    if not membership:
+        raise HTTPException(status_code=404, detail="Active organization membership not found.")
+
+    user = dict(membership)
+    token = _create_access_token(
+        str(user["id"]), str(user["organization_id"]), user["role"]
+    )
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "expires_in": TOKEN_TTL_MINUTES * 60,
+        "user": _user_response(user),
+    }
+
+
 @router.get("/me")
 def me(current_user: Annotated[dict, Depends(get_current_user)]):
     return current_user

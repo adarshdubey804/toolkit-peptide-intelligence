@@ -55,3 +55,10 @@ def test_public_material_offerings_do_not_expose_unverified_site_identifiers():
     source = _source("vendor_materials.py")
     assert "site.id AS site_id" in source
     assert "v.legal_name AS vendor_name, o.site_id" not in source
+
+
+
+def test_authenticated_request_sets_transaction_local_rls_organization_context():
+    auth_source = (BACKEND_ROOT / "app" / "routers" / "auth.py").read_text(encoding="utf-8")
+    assert "set_config('app.organization_id', :organization_id, true)" in auth_source
+    assert "UUID(claims[\"org\"])" in auth_source

@@ -111,7 +111,7 @@ def list_verified_methods(
         FROM analytical_methods am
         LEFT JOIN analytical_method_sources ams ON ams.method_id=am.id
         LEFT JOIN source_records sr ON sr.id=ams.source_record_id
-        WHERE am.review_status='verified'
+        WHERE am.review_status='verified' AND am.visibility_scope='public'
           AND (:q IS NULL OR am.method_name ILIKE '%' || :q || '%' OR am.intended_purpose ILIKE '%' || :q || '%')
           AND (:category IS NULL OR am.method_category=:category)
         GROUP BY am.id
@@ -138,11 +138,11 @@ def submit_method(
             applicable_materials, method_classification, instrument_platform,
             sample_requirements, method_scope, method_version, reference_standard,
             validation_status, acceptance_criteria_source, limitations, source_id,
-            review_status, submitted_by
+            review_status, submitted_by, owner_organization_id, visibility_scope
         ) VALUES (
             :name, :category, :principle, :purpose, :materials, :classification,
             :platform, :sample, :scope, :version, :standard, :validation,
-            :criteria, :limitations, :source, 'in_review', :submitter
+            :criteria, :limitations, :source, 'in_review', :submitter, :org, 'organization'
         ) RETURNING id, method_name, method_category, review_status, validation_status
     """), {
         "name": payload.method_name.strip(), "category": payload.method_category,
@@ -152,7 +152,7 @@ def submit_method(
         "scope": payload.method_scope, "version": payload.method_version,
         "standard": payload.reference_standard, "validation": payload.validation_status,
         "criteria": payload.acceptance_criteria_source, "limitations": payload.limitations.strip(),
-        "source": source_id, "submitter": current_user["id"],
+        "source": source_id, "submitter": current_user["id"], "org": organization_id,
     }).mappings().one()
     db.execute(text("""
         INSERT INTO analytical_method_sources (method_id, source_record_id, evidence_scope)
@@ -188,10 +188,7 @@ def method_review_queue(
         FROM analytical_methods am
         LEFT JOIN analytical_method_sources ams ON ams.method_id=am.id
         LEFT JOIN source_records sr ON sr.id=ams.source_record_id
-        WHERE am.review_status='in_review'
-          AND EXISTS (SELECT 1 FROM organization_memberships om
-                      WHERE om.organization_id=:org AND om.user_id=am.submitted_by
-                        AND om.membership_status='active')
+        WHERE am.review_status='in_review' AND am.owner_organization_id=:org
         GROUP BY am.id ORDER BY am.id LIMIT :limit
     """), {"org": organization_id, "limit": limit}).mappings().all()
     return {"items": [dict(row) for row in rows], "count": len(rows)}
@@ -209,9 +206,8 @@ def decide_method(
         raise HTTPException(status_code=403, detail="Curator or reviewer permission is required.")
     method = db.execute(text("""
         SELECT am.* FROM analytical_methods am
-        JOIN organization_memberships om ON om.user_id=am.submitted_by
         WHERE am.id=:id AND am.review_status='in_review'
-          AND om.organization_id=:org AND om.membership_status='active'
+          AND am.owner_organization_id=:org
         FOR UPDATE OF am
     """), {"id": method_id, "org": organization_id}).mappings().first()
     if not method:

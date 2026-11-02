@@ -1,4 +1,5 @@
 import pytest
+from fastapi import HTTPException
 from pydantic import ValidationError
 from uuid import uuid4
 
@@ -49,6 +50,9 @@ def test_user_can_list_organizations_and_switch_only_to_an_active_membership(mon
             captured["parameters"] = parameters
             return FakeResult()
 
+        def commit(self):
+            pass
+
     monkeypatch.setattr(auth, "_create_access_token", lambda uid, oid, role: "switched-token")
     result = auth.switch_organization(
         auth.SwitchOrganizationRequest(organization_id=organization_id),
@@ -61,3 +65,16 @@ def test_user_can_list_organizations_and_switch_only_to_an_active_membership(mon
     assert result["access_token"] == "switched-token"
     assert result["user"]["organization_id"] == str(organization_id)
     assert result["user"]["role"] == "reviewer"
+
+
+
+def test_only_organization_admin_can_add_existing_members():
+    from app.routers.organizations import MemberAdd, add_existing_member
+
+    with pytest.raises(HTTPException) as error:
+        add_existing_member(
+            MemberAdd(email="colleague@example.org", role="reviewer"),
+            {"id": str(uuid4()), "organization_id": str(uuid4()), "role": "researcher"},
+            db=object(),
+        )
+    assert error.value.status_code == 403

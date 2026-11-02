@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from .auth import get_current_user
 from ..db import get_db
+from ..rate_limit_dependencies import authenticated_write_rate_limit
 
 router = APIRouter(prefix="/api/v1/curation", tags=["scientific curation"])
 
@@ -57,7 +58,7 @@ def _entity_exists(db: Session, entity_type: str, entity_id: UUID) -> bool:
     return db.execute(text(f"SELECT 1 FROM {table} WHERE id = :entity_id"), {"entity_id": entity_id}).first() is not None
 
 
-@router.post("/reviews", status_code=201)
+@router.post("/reviews", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("curation_write"))])
 def submit_review(
     payload: ReviewSubmission,
     current_user: Annotated[dict, Depends(get_current_user)],
@@ -186,7 +187,7 @@ def get_review_claim_revision(
     return dict(row)
 
 
-@router.patch("/reviews/{review_id}/assignment")
+@router.patch("/reviews/{review_id}/assignment", dependencies=[Depends(authenticated_write_rate_limit("curation_write"))])
 def assign_review(
     review_id: UUID,
     payload: ReviewAssignment,
@@ -222,7 +223,7 @@ def assign_review(
     return dict(result)
 
 
-@router.post("/reviews/{review_id}/decisions", status_code=201)
+@router.post("/reviews/{review_id}/decisions", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("curation_write"))])
 def decide_review(
     review_id: UUID,
     payload: CurationDecision,

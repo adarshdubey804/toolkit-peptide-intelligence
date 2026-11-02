@@ -21,6 +21,9 @@ def test_audit_trail_routes_are_authenticated_and_organization_scoped():
     assert "ae.organization_id = :organization_id" in router
     assert "audit_event_sha256" in router
     assert "invalid_events" in router
+    assert "audit_chain_heads" in router
+    assert "head_valid" in router
+    assert "chain_scope IS DISTINCT FROM :chain_scope" in router
 
 
 def test_audit_chain_migration_backfills_and_protects_event_history():

@@ -15,6 +15,15 @@
 
 These controls do not amount to a complete production security program.
 
+### Limited row-level-security pilot
+
+Migration 044 enables and forces PostgreSQL row-level security on the four vendor material traceability tables: offerings, physical batches, batch analytical results and result decisions. Authenticated API requests bind the organization from the validated JWT and active membership to `app.organization_id` using transaction-local `set_config(..., true)`. PostgreSQL clears this setting at transaction end, and CI checks the reset behavior.
+
+The offering policy permits anonymous reads only for records explicitly marked public and verified. Physical lots, analytical reports and review decisions are organization-scoped. Writes require the transaction's organization context.
+
+**This is a bounded pilot, not complete tenant isolation.** Other tenant-owned tables and background workers are not yet covered. Every worker or maintenance job that accesses these RLS-protected tables must establish its own trusted transaction-local organization context, or use a separately controlled administrative database role. Do not rely on a connection-level/session-level setting. Continue the table-by-table RLS rollout only after endpoint, worker, connection-pool and cross-tenant tests are in place.
+
+
 ## Mandatory deployment controls
 
 ### 1. Network boundary and HTTPS

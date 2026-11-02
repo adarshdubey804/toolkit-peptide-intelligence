@@ -194,6 +194,10 @@ def get_current_user(token: Annotated[str | None, Depends(oauth2_scheme)], db: A
         text("SELECT set_config('app.organization_id', :organization_id, true)"),
         {"organization_id": str(organization_id)},
     )
+    db.execute(
+        text("SELECT set_config('app.user_id', :user_id, true)"),
+        {"user_id": str(user_id)},
+    )
     return _user_response(user)
 
 

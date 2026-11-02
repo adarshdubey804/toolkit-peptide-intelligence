@@ -1274,3 +1274,39 @@ def test_static_peptide_compare_route_precedes_dynamic_uuid_profile_route():
     compare_path = "/api/v1/peptides/compare"
     profile_path = "/api/v1/peptides/{peptide_id}"
     assert routes.index(compare_path) < routes.index(profile_path)
+
+
+def test_unprotected_write_routes_are_explicitly_allowlisted():
+    paths = app.openapi()["paths"]
+    public_write_routes = {
+        (method.upper(), path)
+        for path, operations in paths.items()
+        for method, operation in operations.items()
+        if method in {"post", "put", "patch", "delete"} and not operation.get("security")
+    }
+    assert public_write_routes == {
+        ("POST", "/api/v1/auth/register"),
+        ("POST", "/api/v1/auth/login"),
+        ("POST", "/api/v1/bioinformatics/analyze"),
+        ("POST", "/api/v1/bioinformatics/align"),
+        # This route is development-only and is blocked outside APP_ENV=development.
+        ("POST", "/api/v1/research/assistant/synthesize"),
+    }
+
+
+def test_public_ai_synthesis_endpoint_is_blocked_outside_development(monkeypatch):
+    import asyncio
+    import pytest
+    from fastapi import HTTPException
+    from app.config import settings
+    from app.routers.research import AssistantSynthesisRequest, synthesize_research_answer
+
+    monkeypatch.setattr(settings, "ai_synthesis_enabled", True)
+    monkeypatch.setattr(settings, "ai_api_key", "test-provider-key")
+    monkeypatch.setattr(settings, "app_env", "production")
+
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(synthesize_research_answer(
+            AssistantSynthesisRequest(question="Review published peptide evidence")
+        ))
+    assert error.value.status_code == 503

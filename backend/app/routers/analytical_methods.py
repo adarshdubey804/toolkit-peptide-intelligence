@@ -796,7 +796,7 @@ def list_verified_peptide_test_applicability(
     rows = db.execute(text("""
         SELECT a.id, a.peptide_id, a.chemical_form_id, p.preferred_name AS peptide_name,
                a.test_id, t.catalogue_code, t.test_name, t.quality_attribute,
-               a.chemical_form_id, a.applicability_status, a.material_form, a.sample_matrix,
+               a.applicability_status, a.material_form, a.sample_matrix,
                a.intended_use_context, a.rationale, a.evidence_scope, a.limitations,
                sr.source_name, sr.source_identifier, sr.source_url, a.reviewed_at
         FROM peptide_test_applicability a

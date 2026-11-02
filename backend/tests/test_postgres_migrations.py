@@ -77,6 +77,8 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             "publication_duplicate_decisions",
             "curation_reviews",
             "curation_decisions",
+            "agent_sessions",
+            "agent_session_messages",
             "claim_source_locators",
             "analytical_methods",
             "analytical_method_sources",
@@ -362,6 +364,21 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             )
         """)).scalar_one()
         assert curation_policy_count == 5, "Curation review and decision access paths need explicit RLS policies"
+
+        for table_name in ("agent_sessions", "agent_session_messages"):
+            state = connection.execute(text("""
+                SELECT relrowsecurity, relforcerowsecurity
+                FROM pg_class WHERE oid=to_regclass(:table_name)
+            """), {"table_name": f"public.{table_name}"}).one()
+            assert tuple(state) == (True, True), f"RLS and FORCE RLS must be enabled for {table_name}"
+        agent_policy_count = connection.execute(text("""
+            SELECT count(*) FROM pg_policies
+            WHERE schemaname='public' AND policyname IN (
+                'agent_sessions_select_scope','agent_sessions_insert_scope','agent_sessions_update_scope',
+                'agent_session_messages_select_scope','agent_session_messages_insert_scope'
+            )
+        """)).scalar_one()
+        assert agent_policy_count == 5, "Agent sessions and messages need user-and-organization RLS policies"
 
 @pytest.mark.skipif(
     os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",

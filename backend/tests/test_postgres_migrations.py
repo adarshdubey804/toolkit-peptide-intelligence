@@ -2065,3 +2065,88 @@ def test_extraction_artifacts_are_isolated_and_parent_links_cannot_cross_tenants
                 extracted_evidence_records, extracted_evidence_field_decisions
             FROM toolkit_extraction_rls_test
         """)
+
+
+def test_data_quality_report_counts_source_revision_and_extraction_coverage():
+    from app.routers.data_quality import build_completeness_report
+
+    with engine.begin() as connection:
+        connection.execute(text("SELECT pg_advisory_xact_lock(731904221067)"))
+        apply_development_migrations(connection)
+        org = connection.execute(text("""
+            INSERT INTO organizations (name, organization_type)
+            VALUES (:name, 'research_team') RETURNING id
+        """), {"name": "quality-report-" + str(uuid4())}).scalar_one()
+        user = connection.execute(text("""
+            INSERT INTO user_profiles (display_name, role)
+            VALUES ('Quality report user', 'researcher') RETURNING id
+        """)).scalar_one()
+        source = connection.execute(text("""
+            INSERT INTO source_records (source_name,source_identifier,source_url,retrieved_at)
+            VALUES ('Quality fixture',:identifier,'https://example.org/quality',now()) RETURNING id
+        """), {"identifier": str(uuid4())}).scalar_one()
+        version = connection.execute(text("""
+            INSERT INTO source_record_versions (
+                source_record_id,content_hash,raw_payload,payload_kind
+            ) VALUES (:source,:hash,'{"record":"quality"}'::jsonb,'normalized_provider_record')
+            RETURNING id
+        """), {"source": source, "hash": "e" * 64}).scalar_one()
+        peptide = connection.execute(text("""
+            INSERT INTO peptides (preferred_name,review_status,primary_source_id)
+            VALUES (:name,'in_review',:source) RETURNING id
+        """), {"name": "Quality peptide " + str(uuid4()), "source": source}).scalar_one()
+        connection.execute(text("""
+            INSERT INTO peptide_sequences (
+                peptide_id,sequence,sequence_type,notation_format,
+                normalized_sequence,identity_fingerprint,canonicalization_version
+            ) VALUES (:peptide,'ACDEFG','amino_acid','one_letter_amino_acid_sequence',
+                      'ACDEFG',:fingerprint,'test-v1')
+        """), {"peptide": peptide, "fingerprint": "f" * 64})
+        connection.execute(text("""
+            INSERT INTO peptide_chemical_forms (peptide_id,form_name,source_id)
+            VALUES (:peptide,'Quality fixture form',:source)
+        """), {"peptide": peptide, "source": source})
+        claim = connection.execute(text("""
+            INSERT INTO evidence_claims (peptide_id,claim_text,claim_domain)
+            VALUES (:peptide,'Quality fixture claim.','mechanism') RETURNING id
+        """), {"peptide": peptide}).scalar_one()
+        connection.execute(text("""
+            INSERT INTO claim_sources (claim_id,source_record_id,relationship)
+            VALUES (:claim,:source,'supports')
+        """), {"claim": claim, "source": source})
+        review = connection.execute(text("""
+            INSERT INTO curation_reviews (
+                entity_type,entity_id,review_status,submitted_by,owner_organization_id
+            ) VALUES ('evidence_claim',:claim,'in_review',:user,:org) RETURNING id
+        """), {"claim": claim, "user": user, "org": org}).scalar_one()
+        connection.execute(text("""
+            INSERT INTO curation_decisions (
+                review_id,owner_organization_id,decision,rationale,reviewer_id,
+                previous_status,new_status
+            ) VALUES (:review,:org,'verified','Quality fixture review decision.',:user,
+                      'in_review','verified')
+        """), {"review": review, "org": org, "user": user})
+        run = connection.execute(text("""
+            INSERT INTO evidence_extraction_runs (
+                organization_id,requested_by,question,model_name,status,source_count,record_count
+            ) VALUES (:org,:user,'Quality report extraction fixture.','test-model',
+                      'completed',1,1) RETURNING id
+        """), {"org": org, "user": user}).scalar_one()
+        connection.execute(text("""
+            INSERT INTO extracted_evidence_records (
+                organization_id,run_id,source_citation_id,source_name,source_identifier,
+                source_url,source_title,extraction,extraction_model,source_record_id,source_record_version_id
+            ) VALUES (:org,:run,'quality:1','Quality fixture','quality-1',
+                      'https://example.org/quality','Quality fixture source','{}'::jsonb,
+                      'test-model',:source,:version)
+        """), {"org": org, "run": run, "source": source, "version": version})
+
+        report = build_completeness_report(connection, org)
+        assert report["shared_catalogue"]["peptides"]["total"] >= 1
+        assert report["shared_catalogue"]["sequences"]["standard_sequence_fingerprinted"] >= 1
+        assert report["shared_catalogue"]["chemical_forms"]["with_source"] >= 1
+        assert report["organization_evidence"]["claims"]["total"] == 1
+        assert report["organization_evidence"]["claims"]["with_source"] == 1
+        assert report["organization_evidence"]["claims"]["with_revision"] == 1
+        assert report["organization_evidence"]["extractions"]["with_source_version"] == 1
+        assert report["organization_evidence"]["curation"]["claim_revision_bound_decisions"] == 1

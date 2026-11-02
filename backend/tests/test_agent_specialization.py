@@ -33,7 +33,10 @@ def test_agent_run_uses_specialized_query_and_source_scope(monkeypatch):
 
     monkeypatch.setattr(agents, "research_assistant_brief", fake_research_brief)
     request = agents.AgentRunRequest(question="How is peptide purity evaluated?", limit=3)
-    response = asyncio.run(agents.run_agent("analytical", request))
+    response = asyncio.run(agents.run_agent(
+        "analytical", request,
+        {"id": "user-1", "organization_id": "org-1", "role": "researcher"},
+    ))
 
     assert captured["limit"] == 3
     assert captured["source_scope"] == ["pubmed"]

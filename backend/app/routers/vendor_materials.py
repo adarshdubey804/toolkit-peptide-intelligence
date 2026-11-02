@@ -156,7 +156,7 @@ def public_material_offerings(
     limit: int = Query(default=50, ge=1, le=100),
 ):
     rows = db.execute(text("""
-        SELECT o.id, o.vendor_id, v.legal_name AS vendor_name, o.site_id,
+        SELECT o.id, o.vendor_id, v.legal_name AS vendor_name, site.id AS site_id,
                site.site_name, o.peptide_id, p.preferred_name AS peptide_name,
                o.chemical_form_id, f.form_name, o.product_name, o.catalogue_reference,
                o.material_description, o.packaging_description, o.stated_storage_conditions,
@@ -366,8 +366,10 @@ def submit_batch_test_result(
         SELECT id FROM analytical_test_catalogue WHERE id=:id AND review_status='verified'
     """), {"id": payload.test_id}).scalar_one_or_none()
     method = db.execute(text("""
-        SELECT id FROM analytical_methods WHERE id=:id AND review_status='verified'
-    """), {"id": payload.method_id}).scalar_one_or_none()
+        SELECT id FROM analytical_methods
+        WHERE id=:id AND review_status='verified'
+          AND (visibility_scope='public' OR owner_organization_id=:org)
+    """), {"id": payload.method_id, "org": org}).scalar_one_or_none()
     if not test or not method:
         raise HTTPException(status_code=422, detail="Batch results must reference verified analytical test and method catalogue records.")
     if payload.laboratory_service_id:

@@ -151,15 +151,15 @@ def submit_formulation(
             raise HTTPException(status_code=409, detail="Formulation can only link to a curator-verified peptide.")
     profile = db.execute(text("""
         INSERT INTO formulation_profiles (
-            peptide_id, formulation_name, formulation_type, delivery_system,
+            organization_id, peptide_id, formulation_name, formulation_type, delivery_system,
             intended_research_context, formulation_rationale, physical_state,
             container_closure_context, storage_context, development_stage,
             limitations, review_status, submitted_by
         ) VALUES (
-            :peptide, :name, :type, :delivery, :context, :rationale, :physical,
+            :org, :peptide, :name, :type, :delivery, :context, :rationale, :physical,
             :container, :storage, :stage, :limitations, 'in_review', :submitter
         ) RETURNING id, formulation_name, formulation_type, review_status
-    """), {"peptide": payload.peptide_id, "name": payload.formulation_name.strip(),
+    """), {"org": organization_id, "peptide": payload.peptide_id, "name": payload.formulation_name.strip(),
            "type": payload.formulation_type, "delivery": payload.delivery_system,
            "context": payload.intended_research_context.strip(), "rationale": payload.formulation_rationale.strip(),
            "physical": payload.physical_state, "container": payload.container_closure_context,
@@ -257,10 +257,7 @@ def formulation_review_queue(
         FROM formulation_profiles fp
         LEFT JOIN formulation_sources fs ON fs.formulation_id=fp.id
         LEFT JOIN source_records sr ON sr.id=fs.source_record_id
-        WHERE fp.review_status='in_review'
-          AND EXISTS (SELECT 1 FROM organization_memberships om
-                      WHERE om.organization_id=:org AND om.user_id=fp.submitted_by
-                        AND om.membership_status='active')
+        WHERE fp.review_status='in_review' AND fp.organization_id=:org
         GROUP BY fp.id ORDER BY fp.created_at LIMIT :limit
     """), {"org": organization_id, "limit": limit}).mappings().all()
     return {"items": [dict(row) for row in rows], "count": len(rows)}
@@ -278,9 +275,8 @@ def decide_formulation(
         raise HTTPException(status_code=403, detail="Curator or reviewer permission is required.")
     profile = db.execute(text("""
         SELECT fp.* FROM formulation_profiles fp
-        JOIN organization_memberships om ON om.user_id=fp.submitted_by
         WHERE fp.id=:id AND fp.review_status='in_review'
-          AND om.organization_id=:org AND om.membership_status='active'
+          AND fp.organization_id=:org
         FOR UPDATE OF fp
     """), {"id": formulation_id, "org": organization_id}).mappings().first()
     if not profile:

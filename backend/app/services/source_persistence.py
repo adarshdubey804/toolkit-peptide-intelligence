@@ -42,7 +42,7 @@ def persist_normalized_source_record(
         ) VALUES (
             :source_name, :source_identifier, :source_url, :retrieved_at,
             :source_version, :content_hash, :retrieved_at, :retrieved_at,
-            jsonb_build_object('record_title', :title, 'provenance_kind', 'normalized_provider_record')
+            jsonb_build_object('record_title', CAST(:title AS text), 'provenance_kind', 'normalized_provider_record')
         )
         ON CONFLICT (source_name, source_identifier) DO UPDATE SET
             source_url = EXCLUDED.source_url,

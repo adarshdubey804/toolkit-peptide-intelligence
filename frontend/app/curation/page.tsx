@@ -5,13 +5,15 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
-type Review = { id:string; entity_type:string; entity_id:string; source_record_id?:string; review_status:string; priority:string; assigned_to?:string; created_at:string; record_label?:string; source_name?:string; source_identifier?:string; source_url?:string };
+type Review = { id:string; entity_type:string; entity_id:string; source_record_id?:string; review_status:string; priority:string; assigned_to?:string; created_at:string; record_label?:string; source_name?:string; source_identifier?:string; source_url?:string; evidence_claim_revision_id?:string; evidence_claim_revision_number?:number; evidence_claim_revision_hash?:string };
+type ClaimRevision = { id:string; claim_id:string; revision_number:number; claim_text:string; claim_domain:string; evidence_type:string; confidence_label:string; limitations?:string; content_hash:string; revision_origin:string; supersedes_revision_id?:string; created_at:string };
 type User = { id:string; display_name:string; role:string; organization_name:string };
 
 export default function CurationDashboardPage() {
  const [email,setEmail]=useState(""); const [password,setPassword]=useState(""); const [token,setToken]=useState(""); const [user,setUser]=useState<User|null>(null);
  const [reviews,setReviews]=useState<Review[]>([]); const [status,setStatus]=useState("in_review"); const [loading,setLoading]=useState(false); const [busyId,setBusyId]=useState("");
  const [rationales,setRationales]=useState<Record<string,string>>({}); const [errors,setErrors]=useState(""); const [notice,setNotice]=useState("");
+ const [revisionDetails,setRevisionDetails]=useState<Record<string,ClaimRevision>>({}); const [revisionBusyId,setRevisionBusyId]=useState("");
  const loadQueue=useCallback(async()=>{ if(!token)return; setLoading(true);setErrors("");try{
   const params=new URLSearchParams({limit:"100"});if(status!=="all")params.set("review_status",status);
   const response=await fetch(API_BASE+"/api/v1/curation/reviews?"+params.toString(),{headers:{Authorization:"Bearer "+token}});
@@ -24,6 +26,17 @@ export default function CurationDashboardPage() {
   if(!["organization_admin","curator","reviewer"].includes(data.user.role))throw new Error("Your account does not have curator or reviewer permissions.");
   setPreferredOrganizationId(data.user.organization_id);setToken(data.access_token);setUser(data.user);setPassword("");
  }catch(err){setErrors(err instanceof Error?err.message:"Unable to sign in.");}finally{setLoading(false);}}
+
+ async function viewClaimRevision(review:Review){
+  if(review.entity_type!=="evidence_claim")return;
+  setRevisionBusyId(review.id);setErrors("");
+  try{
+   const response=await fetch(API_BASE+"/api/v1/curation/reviews/"+review.id+"/claim-revision",{headers:{Authorization:"Bearer "+token}});
+   const data=await response.json();if(!response.ok)throw new Error(data.detail||"Could not load the reviewed claim revision.");
+   setRevisionDetails(prev=>({...prev,[review.id]:data as ClaimRevision}));
+  }catch(err){setErrors(err instanceof Error?err.message:"Revision request failed.");}
+  finally{setRevisionBusyId("");}
+ }
  async function assignToMe(review:Review){setBusyId(review.id);setErrors("");try{
   const response=await fetch(API_BASE+"/api/v1/curation/reviews/"+review.id+"/assignment",{method:"PATCH",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify({assigned_to:user?.id})});
   const data=await response.json();if(!response.ok)throw new Error(data.detail||"Assignment failed.");setNotice("Review assignment updated.");await loadQueue();
@@ -48,6 +61,16 @@ export default function CurationDashboardPage() {
    {!loading&&reviews.length===0&&<div className="panel mt-4 p-8 text-center"><h3 className="font-semibold">No records in this queue</h3><p className="muted mt-2 text-sm">New researcher submissions will appear here after they enter review.</p></div>}
    <div className="mt-4 space-y-4">{reviews.map(review=><article key={review.id} className="panel p-5">
     <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-wider"><span className="text-emerald-300">{review.entity_type.replace("_"," ")}</span><span className="muted">· {review.priority} priority</span><span className="rounded-full border border-slate-700 px-2 py-1">{review.review_status}</span></div><h3 className="mt-3 text-lg font-semibold">{review.record_label||"Scientific record"}</h3><p className="muted mt-1 text-xs">Submitted {new Date(review.created_at).toLocaleString()}</p></div><span className="muted max-w-48 break-all text-[10px]">Review ID: {review.id}</span></div>
+    {review.entity_type==="evidence_claim"&&<section className="mt-4 rounded-xl border border-indigo-400/30 bg-indigo-400/5 p-4">
+     <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-semibold text-indigo-200">Immutable evidence revision</p><p className="muted mt-1 text-xs">{review.evidence_claim_revision_number?("Revision "+review.evidence_claim_revision_number):"Revision metadata unavailable"}{review.evidence_claim_revision_id?" · "+review.evidence_claim_revision_id:""}</p></div><button type="button" disabled={revisionBusyId===review.id||!review.evidence_claim_revision_id} onClick={()=>void viewClaimRevision(review)} className="rounded-full border border-indigo-300/40 px-4 py-2 text-xs text-indigo-100 disabled:opacity-50">{revisionBusyId===review.id?"Loading…":"View exact reviewed revision"}</button></div>
+     {review.evidence_claim_revision_hash&&<p className="mt-2 break-all font-mono text-[10px] text-slate-400">SHA-256: {review.evidence_claim_revision_hash}</p>}
+     {revisionDetails[review.id]&&<div className="mt-4 space-y-3 border-t border-indigo-300/20 pt-4">
+      <div><p className="text-[10px] uppercase tracking-wider text-slate-400">Claim text · revision {revisionDetails[review.id].revision_number}</p><p className="mt-1 whitespace-pre-wrap text-sm">{revisionDetails[review.id].claim_text}</p></div>
+      <div className="grid gap-3 text-xs sm:grid-cols-2"><p><span className="text-slate-400">Domain:</span> {revisionDetails[review.id].claim_domain}</p><p><span className="text-slate-400">Evidence type:</span> {revisionDetails[review.id].evidence_type}</p><p><span className="text-slate-400">Confidence label:</span> {revisionDetails[review.id].confidence_label}</p><p><span className="text-slate-400">Origin:</span> {revisionDetails[review.id].revision_origin}</p></div>
+      {revisionDetails[review.id].limitations&&<div><p className="text-[10px] uppercase tracking-wider text-slate-400">Limitations recorded at review time</p><p className="mt-1 text-xs">{revisionDetails[review.id].limitations}</p></div>}
+      <p className="break-all font-mono text-[10px] text-slate-500">Content hash: {revisionDetails[review.id].content_hash}</p>
+     </div>}
+    </section>}
     <div className="mt-4 rounded-xl border border-slate-700 bg-slate-950/60 p-4"><p className="text-xs font-semibold text-slate-300">Source provenance</p>{review.source_name?<><p className="mt-2 text-sm">{review.source_name}{review.source_identifier?" · "+review.source_identifier:""}</p>{review.source_url?<a href={review.source_url} target="_blank" rel="noreferrer" className="mt-2 inline-block break-all text-xs text-emerald-300 underline">Open original source ↗</a>:<p className="muted mt-2 text-xs">No source URL attached.</p>}</>:<p className="muted mt-2 text-xs">No source details returned.</p>}</div>
     {["in_review","draft"].includes(review.review_status)&&<><div className="mt-4 flex flex-wrap items-center gap-3"><button disabled={busyId===review.id} onClick={()=>void assignToMe(review)} className="rounded-full border border-slate-600 px-4 py-2 text-xs disabled:opacity-50">Assign to me</button><span className="muted text-xs">{review.assigned_to?"Assigned reviewer: "+review.assigned_to:"Unassigned"}</span></div>
      <form onSubmit={event=>void decide(event,review,"verified")} className="mt-4 border-t border-slate-800 pt-4"><label className="block"><span className={label}>Review rationale (minimum 20 characters)</span><textarea className={field} rows={3} minLength={20} value={rationales[review.id]||""} onChange={e=>setRationales(prev=>({...prev,[review.id]:e.target.value}))} placeholder="Document source quality, identity checks, evidence context and limitations."/></label>

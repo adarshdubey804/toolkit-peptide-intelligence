@@ -63,7 +63,7 @@ export default function OrganizationsPage() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Sign in failed.");
-      setPreferredOrganizationId(data.user.organization_id);setPreferredOrganizationId(data.user.organization_id); setToken(data.access_token); setUser(data.user); setPassword("");
+      setPreferredOrganizationId(data.user.organization_id); setToken(data.access_token); setUser(data.user); setPassword("");
       await loadWorkspace(data.access_token);
       setNotice("Signed in. Your organisation memberships are loaded.");
     } catch (e) {
@@ -77,7 +77,7 @@ export default function OrganizationsPage() {
       const data = await request("/api/v1/auth/switch-organization", token, {
         method: "POST", body: JSON.stringify({ organization_id: organizationId }),
       });
-      setPreferredOrganizationId(data.user.organization_id);setPreferredOrganizationId(data.user.organization_id); setToken(data.access_token); setUser(data.user);
+      setPreferredOrganizationId(data.user.organization_id); setToken(data.access_token); setUser(data.user);
       await loadWorkspace(data.access_token);
       setNotice("Active organisation changed. New requests now use the selected organisation.");
     } catch (e) {

@@ -1943,3 +1943,125 @@ def test_extracted_evidence_is_linked_to_immutable_normalized_source_version():
                 connection.execute(text("""
                     DELETE FROM source_record_versions WHERE id=:version
                 """), {"version": source_a["source_record_version_id"]})
+
+
+@pytest.mark.skipif(
+    os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",
+    reason="PostgreSQL extraction artifact RLS test is enabled in CI only.",
+)
+def test_extraction_artifacts_are_isolated_and_parent_links_cannot_cross_tenants():
+    with engine.begin() as connection:
+        connection.execute(text("SELECT pg_advisory_xact_lock(731904221067)"))
+        apply_development_migrations(connection)
+        organization_a = connection.execute(text("""
+            INSERT INTO organizations (name, organization_type)
+            VALUES (:name, 'research_team') RETURNING id
+        """), {"name": "extract-rls-a-" + str(uuid4())}).scalar_one()
+        organization_b = connection.execute(text("""
+            INSERT INTO organizations (name, organization_type)
+            VALUES (:name, 'research_team') RETURNING id
+        """), {"name": "extract-rls-b-" + str(uuid4())}).scalar_one()
+        user = connection.execute(text("""
+            INSERT INTO user_profiles (display_name, role)
+            VALUES ('Extraction RLS tester', 'researcher') RETURNING id
+        """)).scalar_one()
+
+        run_a = connection.execute(text("""
+            INSERT INTO evidence_extraction_runs (
+                organization_id,requested_by,question,model_name,status
+            ) VALUES (:org,:user,'Tenant A extraction question.','test-model','completed')
+            RETURNING id
+        """), {"org": organization_a, "user": user}).scalar_one()
+        run_b = connection.execute(text("""
+            INSERT INTO evidence_extraction_runs (
+                organization_id,requested_by,question,model_name,status
+            ) VALUES (:org,:user,'Tenant B extraction question.','test-model','completed')
+            RETURNING id
+        """), {"org": organization_b, "user": user}).scalar_one()
+        record_a = connection.execute(text("""
+            INSERT INTO extracted_evidence_records (
+                organization_id,run_id,source_citation_id,source_name,source_identifier,
+                source_url,source_title,extraction,extraction_model
+            ) VALUES (:org,:run,'fixture:a','Fixture','A','https://example.org/a',
+                      'Tenant A record','{}'::jsonb,'test-model') RETURNING id
+        """), {"org": organization_a, "run": run_a}).scalar_one()
+        record_b = connection.execute(text("""
+            INSERT INTO extracted_evidence_records (
+                organization_id,run_id,source_citation_id,source_name,source_identifier,
+                source_url,source_title,extraction,extraction_model
+            ) VALUES (:org,:run,'fixture:b','Fixture','B','https://example.org/b',
+                      'Tenant B record','{}'::jsonb,'test-model') RETURNING id
+        """), {"org": organization_b, "run": run_b}).scalar_one()
+
+        connection.exec_driver_sql("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='toolkit_extraction_rls_test') THEN
+                    CREATE ROLE toolkit_extraction_rls_test NOLOGIN;
+                END IF;
+            END $$
+        """)
+        connection.exec_driver_sql("""
+            GRANT SELECT, INSERT ON evidence_extraction_runs,
+                extracted_evidence_records, extracted_evidence_field_decisions
+            TO toolkit_extraction_rls_test
+        """)
+        connection.exec_driver_sql("SET LOCAL ROLE toolkit_extraction_rls_test")
+        connection.execute(text("SELECT set_config('app.organization_id', :org, true)"),
+                           {"org": str(organization_a)})
+
+        visible_runs = set(connection.execute(text(
+            "SELECT id FROM evidence_extraction_runs"
+        )).scalars().all())
+        visible_records = set(connection.execute(text(
+            "SELECT id FROM extracted_evidence_records"
+        )).scalars().all())
+        assert visible_runs == {run_a}
+        assert visible_records == {record_a}
+        assert connection.execute(text(
+            "SELECT id FROM extracted_evidence_records WHERE id=:id"
+        ), {"id": record_b}).scalar_one_or_none() is None
+
+        with pytest.raises(Exception):
+            with connection.begin_nested():
+                connection.execute(text("""
+                    INSERT INTO evidence_extraction_runs (
+                        organization_id,requested_by,question,model_name,status
+                    ) VALUES (:org,:user,'Cross-tenant run attempt.','test-model','completed')
+                """), {"org": organization_b, "user": user})
+
+        with pytest.raises(Exception):
+            with connection.begin_nested():
+                connection.execute(text("""
+                    INSERT INTO extracted_evidence_records (
+                        organization_id,run_id,source_citation_id,source_name,source_identifier,
+                        source_url,source_title,extraction,extraction_model
+                    ) VALUES (:org,:run,'fixture:cross','Fixture','cross',
+                              'https://example.org/cross','Cross-tenant parent','{}'::jsonb,'test-model')
+                """), {"org": organization_a, "run": run_b})
+
+        with pytest.raises(Exception):
+            with connection.begin_nested():
+                connection.execute(text("""
+                    INSERT INTO extracted_evidence_field_decisions (
+                        organization_id,record_id,field_name,decision,rationale,reviewer_id
+                    ) VALUES (:org,:record,'findings','accepted',
+                              'Cross-tenant record link must be rejected.',:user)
+                """), {"org": organization_a, "record": record_b, "user": user})
+
+        connection.execute(text("""
+            INSERT INTO extracted_evidence_field_decisions (
+                organization_id,record_id,field_name,decision,rationale,reviewer_id
+            ) VALUES (:org,:record,'findings','accepted',
+                      'Tenant A field review is organization-scoped.',:user)
+        """), {"org": organization_a, "record": record_a, "user": user})
+        visible_decisions = connection.execute(text(
+            "SELECT COUNT(*) FROM extracted_evidence_field_decisions"
+        )).scalar_one()
+        assert visible_decisions == 1
+
+        connection.exec_driver_sql("RESET ROLE")
+        connection.exec_driver_sql("""
+            REVOKE SELECT, INSERT ON evidence_extraction_runs,
+                extracted_evidence_records, extracted_evidence_field_decisions
+            FROM toolkit_extraction_rls_test
+        """)

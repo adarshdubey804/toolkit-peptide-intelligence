@@ -140,10 +140,10 @@ export default function OrganizationsPage() {
       </section>
 
       <section className="panel mt-6 p-6">
-        <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-xl font-semibold">Members ({members.length})</h2><p className="muted mt-1 text-sm">Active organisation membership only.</p></div></div>
+        <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-xl font-semibold">Members ({members.length})</h2><p className="muted mt-1 text-sm">Organisation members, including suspended accounts.</p></div></div>
         <div className="mt-5 space-y-3">{members.map(member => <div key={member.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-700 p-4">
           <div><p className="text-sm font-medium">{member.display_name}</p><p className="muted mt-1 text-xs">{member.email} · {member.membership_status}</p></div>
-          {isAdmin && member.id !== user?.id ? <select aria-label={"Role for " + member.email} disabled={busy} value={member.role} onChange={e => void updateRole(member.id, e.target.value)} className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs"><option value="curator">Curator</option><option value="reviewer">Reviewer</option><option value="researcher">Researcher</option><option value="viewer">Viewer</option></select> : <span className="rounded-full border border-slate-700 px-3 py-1 text-xs">{member.role}</span>}
+          {isAdmin && member.id !== user?.id && member.membership_status === "active" ? <select aria-label={"Role for " + member.email} disabled={busy} value={member.role} onChange={e => void updateRole(member.id, e.target.value)} className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs"><option value="curator">Curator</option><option value="reviewer">Reviewer</option><option value="researcher">Researcher</option><option value="viewer">Viewer</option></select> : <span className="rounded-full border border-slate-700 px-3 py-1 text-xs">{member.role}</span>}
         </div>)}</div>
       </section>
 

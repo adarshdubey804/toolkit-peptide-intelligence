@@ -10,8 +10,9 @@ def test_schema_governance_docs_track_current_migration_baseline():
 
     assert "migrations 001–063" in audit
     assert "migrations 001–063" in inventory
-    assert "migrations 001–063" in audit
+    readiness = (REPOSITORY_ROOT / "docs" / "PRODUCTION_READINESS.md").read_text(encoding="utf-8")
     assert "Migrations 044–063" in inventory
+    assert "migrations 044–063" in readiness
     assert "Verification status and publication visibility are independent" in inventory
     assert "direct-ID access" in inventory
     assert "AI outputs as cited, unreviewed candidates" in inventory

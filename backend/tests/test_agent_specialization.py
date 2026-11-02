@@ -32,7 +32,6 @@ def test_agent_run_uses_specialized_query_and_source_scope(monkeypatch):
         }
 
     monkeypatch.setattr(agents, "research_assistant_brief", fake_research_brief)
-    monkeypatch.setattr(agents, "enforce_rate_limit", lambda *args, **kwargs: None)
     request = agents.AgentRunRequest(question="How is peptide purity evaluated?", limit=3)
     response = asyncio.run(agents.run_agent(
         "analytical", request,

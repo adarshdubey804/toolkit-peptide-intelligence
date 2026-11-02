@@ -55,6 +55,7 @@ def test_user_can_list_organizations_and_switch_only_to_an_active_membership(mon
         def commit(self):
             pass
 
+    monkeypatch.setattr(auth, "enforce_rate_limit", lambda *args, **kwargs: None)
     monkeypatch.setattr(auth, "_create_access_token", lambda uid, oid, role: "switched-token")
     result = auth.switch_organization(
         auth.SwitchOrganizationRequest(organization_id=organization_id),

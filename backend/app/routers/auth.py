@@ -243,6 +243,11 @@ def switch_organization(
     current_user: Annotated[dict, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ):
+    enforce_rate_limit(
+        db, scope="organization_switch", identity=str(current_user["id"]),
+        limit=settings.sensitive_write_rate_limit_per_window,
+        window_seconds=settings.rate_limit_window_seconds,
+    )
     membership = db.execute(text("""
         SELECT up.id, up.email, up.display_name, up.is_active,
                om.organization_id, om.role, o.name AS organization_name

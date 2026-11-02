@@ -57,7 +57,7 @@ CREATE POLICY analytical_method_decisions_insert_scope
 -- Shared master methods (owner_organization_id IS NULL) may receive
 -- organization-scoped independent appraisals.
 CREATE OR REPLACE FUNCTION enforce_analytical_method_decision_owner()
-RETURNS trigger AS $$
+RETURNS trigger AS $method_owner_guard$
 DECLARE
     method_owner UUID;
 BEGIN
@@ -73,7 +73,7 @@ BEGIN
     END IF;
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$method_owner_guard$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS analytical_method_decision_owner_guard ON analytical_method_decisions;
 CREATE TRIGGER analytical_method_decision_owner_guard

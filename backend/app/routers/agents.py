@@ -4,9 +4,13 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
 from .research import research_assistant_brief
+from ..config import settings
 from .auth import get_current_user
+from ..db import get_db
+from ..rate_limit import enforce_rate_limit
 
 router = APIRouter(prefix="/api/v1/agents", tags=["research agents"])
 
@@ -170,7 +174,13 @@ async def run_agent(
     agent_id: str,
     request: AgentRunRequest,
     current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
 ):
+    enforce_rate_limit(
+        db, scope="agent_execution", identity=str(current_user["id"]),
+        limit=settings.agent_rate_limit_per_window,
+        window_seconds=settings.rate_limit_window_seconds,
+    )
     agent = next((item for item in AGENTS if item["id"] == agent_id), None)
     if agent is None:
         raise HTTPException(status_code=404, detail="Research agent not found.")
@@ -195,9 +205,6 @@ from uuid import UUID
 
 from fastapi import Query
 from sqlalchemy import text
-from sqlalchemy.orm import Session
-
-from ..db import get_db
 
 
 class AgentSessionCreate(BaseModel):
@@ -326,6 +333,11 @@ async def send_agent_message(
     context = _verified_peptide_context(db, payload.message, payload.peptide_id)
     if payload.peptide_id and not context:
         raise HTTPException(status_code=404, detail="Verified peptide record not found.")
+    enforce_rate_limit(
+        db, scope="agent_execution", identity=str(current_user["id"]),
+        limit=settings.agent_rate_limit_per_window,
+        window_seconds=settings.rate_limit_window_seconds,
+    )
     plan = build_agent_search_plan(agent["id"], payload.message)
     brief = await research_assistant_brief(plan["query"], payload.limit, source_scope=plan["sources"])
     output = {

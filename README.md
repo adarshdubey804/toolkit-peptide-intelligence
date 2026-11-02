@@ -23,6 +23,8 @@ Scientific intelligence for peptide research and pharmaceutical development, bui
 
 Development startup applies all ordered SQL migrations in `database/migrations`. Migration 016 adds null-safe uniqueness for regulatory version observations (PostgreSQL 15+; the supplied Compose database uses PostgreSQL 16).
 
+- Structured peptide analytical test catalogue: migration `032_analytical_test_catalogue.sql` seeds 12 source-linked draft reference candidates covering identity, purity/related substances, quantity, sequence/structure, amino-acid composition, aggregation/particles, counterions/residual peptide-associated reagents, endotoxins, sterility, bioburden/microbial limits, potency and stability. GET `/api/v1/analytical-methods/test-catalogue` supports text and quality-attribute filtering. Seed entries remain `draft`; candidate method families are discovery prompts only, not method validation, acceptance criteria or a universal test panel. Sources include FDA/ICH Q6B and USP peptide-related documentary standards.
+
 ## Evidence intelligence and scientific appraisal
 
 - Migration 013 adds reviewer-authored `evidence_appraisals` and organization-scoped `publication_duplicate_candidates`.

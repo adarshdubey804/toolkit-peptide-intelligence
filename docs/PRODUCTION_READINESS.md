@@ -110,7 +110,15 @@ The current member-management workflow adds an existing registered account immed
 
 ### 5. Scheduler database isolation
 
-The regulatory feed worker requires a separate `SCHEDULER_DATABASE_URL`. Provision a dedicated login with `NOBYPASSRLS`, grant it membership in the migration-created `toolkit_regulatory_scheduler` role, and store its credential in the deployment secret manager. The worker switches to that role on each new pooled connection. The role can read registered feeds across organizations and update only `last_polled_at`, `next_poll_at`, and `last_poll_status`; it cannot create/delete registrations or change feed identity. Do not grant this role to the API database login. The role also has only the narrow privileges required to write organization-context-bound poll observations and audit events.
+The regulatory feed worker requires a separate `SCHEDULER_DATABASE_URL`. Provision a dedicated login with `NOBYPASSRLS`, grant it membership in the migration-created `toolkit_regulatory_scheduler` role, and store its credential in the deployment secret manager. The migration runner must be allowed to create the NOLOGIN scheduler role, or the DBA must provision that role before applying migration 064. Example DBA setup for the separate login (set its password through the managed secret workflow):
+
+```sql
+CREATE ROLE toolkit_regulatory_scheduler_login LOGIN NOBYPASSRLS;
+GRANT toolkit_regulatory_scheduler TO toolkit_regulatory_scheduler_login;
+GRANT CONNECT ON DATABASE your_database TO toolkit_regulatory_scheduler_login;
+```
+
+Set `SCHEDULER_DATABASE_URL` to this login's connection string. The worker switches to that role on each new pooled connection. The role can read registered feeds across organizations and update only `last_polled_at`, `next_poll_at`, and `last_poll_status`; it cannot create/delete registrations or change feed identity. Do not grant this role to the API database login. The role also has only the narrow privileges required to write organization-context-bound poll observations and audit events.
 
 ### 6. Operations and recovery
 

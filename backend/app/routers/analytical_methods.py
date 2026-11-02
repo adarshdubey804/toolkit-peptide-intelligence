@@ -614,3 +614,39 @@ def decide_laboratory_capability(
     db.commit()
     return {"claim_id": str(claim_id), "review_status": new_status, "decision": payload.decision,
             "note": "Curation verifies the sourced capability claim only; it does not validate the analytical method or confirm current laboratory capacity."}
+
+
+@router.get("/test-catalogue")
+def list_analytical_test_catalogue(
+    db: Annotated[Session, Depends(get_db)],
+    q: str | None = Query(default=None, min_length=2, max_length=100),
+    quality_attribute: str | None = Query(default=None, min_length=2, max_length=80),
+    limit: int = Query(default=100, ge=1, le=200),
+):
+    """List source-linked test reference candidates with explicit curation state."""
+    rows = db.execute(text("""
+        SELECT t.id, t.catalogue_code, t.test_name, t.quality_attribute,
+               t.test_intent, t.candidate_method_families, t.material_considerations,
+               t.interpretation_limitations, t.review_status,
+               COALESCE(jsonb_agg(DISTINCT jsonb_build_object(
+                   'source_name', sr.source_name,
+                   'source_identifier', sr.source_identifier,
+                   'source_url', sr.source_url,
+                   'evidence_scope', ts.evidence_scope
+               )) FILTER (WHERE sr.id IS NOT NULL), '[]'::jsonb) AS sources
+        FROM analytical_test_catalogue t
+        LEFT JOIN analytical_test_catalogue_sources ts ON ts.test_id=t.id
+        LEFT JOIN source_records sr ON sr.id=ts.source_record_id
+        WHERE (:q IS NULL OR t.test_name ILIKE '%' || :q || '%'
+               OR t.test_intent ILIKE '%' || :q || '%'
+               OR t.catalogue_code ILIKE '%' || :q || '%')
+          AND (:attribute IS NULL OR t.quality_attribute=:attribute)
+        GROUP BY t.id
+        ORDER BY t.quality_attribute, t.test_name
+        LIMIT :limit
+    """), {"q": q, "attribute": quality_attribute, "limit": limit}).mappings().all()
+    return {
+        "items": [dict(row) for row in rows],
+        "count": len(rows),
+        "scope": "The initial seeded entries are draft reference candidates. They are not approved specifications, mandatory test panels, validated methods, acceptance criteria or evidence of a laboratory capability. Test selection is product-, material-, matrix- and jurisdiction-specific."
+    }

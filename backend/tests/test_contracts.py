@@ -1085,12 +1085,28 @@ def test_vendor_facility_candidate_batch_requires_source_backed_records():
         "source_identifier": "official-facility:bachem-bubendorf",
         "source_url": "https://www.bachem.com/about-bachem/our-locations/bubendorf/",
     }
-    batch = VendorSiteCandidateBatch(candidates=[valid])
+    batch = VendorSiteCandidateBatch(candidates=[{
+        **valid,
+        "additional_sources": [{
+            "source_name": "Official company contact page",
+            "source_identifier": "official-contact:facility-address",
+            "source_url": "https://www.bachem.com/contact/",
+            "evidence_scope": "Official contact page independently lists the facility postal address.",
+        }],
+    }])
     assert batch.candidates[0].country_code == "CH"
+    assert len(batch.candidates[0].additional_sources) == 1
     with pytest.raises(ValidationError):
         VendorSiteCandidateBatch(candidates=[])
     with pytest.raises(ValidationError):
         VendorSiteCandidateBatch(candidates=[{**valid, "source_url": "http://www.bachem.com/site"}])
+    with pytest.raises(ValidationError):
+        VendorSiteCandidateBatch(candidates=[{**valid, "additional_sources": [{
+            "source_name": "Third party directory",
+            "source_identifier": "third-party-site",
+            "source_url": "http://directory.example.net",
+            "evidence_scope": "Address copied from an external directory.",
+        }]}])
 
 
 

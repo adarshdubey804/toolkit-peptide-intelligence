@@ -69,6 +69,8 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             "process_knowledge_stages",
             "process_knowledge_sources",
             "process_knowledge_decisions",
+            "molecular_interaction_assessments",
+            "molecular_interaction_decisions",
             "claim_source_locators",
             "analytical_methods",
             "analytical_method_sources",
@@ -299,6 +301,25 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             )
         """)).scalar_one()
         assert knowledge_policy_count == 25, "Formulation and process knowledge access paths need explicit RLS policies"
+
+        interaction_rls_tables = ("molecular_interaction_assessments", "molecular_interaction_decisions")
+        for table_name in interaction_rls_tables:
+            state = connection.execute(text("""
+                SELECT relrowsecurity, relforcerowsecurity
+                FROM pg_class WHERE oid=to_regclass(:table_name)
+            """), {"table_name": f"public.{table_name}"}).one()
+            assert tuple(state) == (True, True), f"RLS and FORCE RLS must be enabled for {table_name}"
+        interaction_policy_count = connection.execute(text("""
+            SELECT count(*) FROM pg_policies
+            WHERE schemaname='public' AND policyname IN (
+                'molecular_interaction_assessments_select_scope',
+                'molecular_interaction_assessments_insert_scope',
+                'molecular_interaction_assessments_update_scope',
+                'molecular_interaction_decisions_select_scope',
+                'molecular_interaction_decisions_insert_scope'
+            )
+        """)).scalar_one()
+        assert interaction_policy_count == 5, "Interaction assessment and decision access paths need explicit RLS policies"
 
 @pytest.mark.skipif(
     os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",
@@ -865,3 +886,121 @@ def test_formulation_and_process_rls_inherit_parent_visibility():
             connection.exec_driver_sql(f"REVOKE SELECT, INSERT, UPDATE ON {table} FROM toolkit_knowledge_rls_test")
         connection.exec_driver_sql("REVOKE USAGE ON SCHEMA public FROM toolkit_knowledge_rls_test")
         connection.exec_driver_sql("DROP ROLE toolkit_knowledge_rls_test")
+
+
+@pytest.mark.skipif(
+    os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",
+    reason="PostgreSQL molecular interaction RLS integration test is enabled in CI only.",
+)
+def test_molecular_interaction_rls_enforces_owner_and_public_verified_scope():
+    with engine.begin() as connection:
+        connection.execute(text("SELECT pg_advisory_xact_lock(731904221067)"))
+        apply_development_migrations(connection)
+
+        org_a = connection.execute(text("""
+            INSERT INTO organizations (name, organization_type)
+            VALUES (:name, 'research_team') RETURNING id
+        """), {"name": "interaction-rls-a-" + str(uuid4())}).scalar_one()
+        org_b = connection.execute(text("""
+            INSERT INTO organizations (name, organization_type)
+            VALUES (:name, 'research_team') RETURNING id
+        """), {"name": "interaction-rls-b-" + str(uuid4())}).scalar_one()
+        user_a = connection.execute(text("""
+            INSERT INTO user_profiles (display_name, role) VALUES ('Interaction A', 'researcher') RETURNING id
+        """)).scalar_one()
+        user_b = connection.execute(text("""
+            INSERT INTO user_profiles (display_name, role) VALUES ('Interaction B', 'researcher') RETURNING id
+        """)).scalar_one()
+        peptide_id = connection.execute(text("""
+            INSERT INTO peptides (preferred_name, review_status)
+            VALUES (:name, 'verified') RETURNING id
+        """), {"name": "Interaction RLS peptide " + str(uuid4())}).scalar_one()
+        target_id = connection.execute(text("""
+            INSERT INTO targets (preferred_name) VALUES (:name) RETURNING id
+        """), {"name": "Interaction RLS target " + str(uuid4())}).scalar_one()
+        source_id = connection.execute(text("""
+            INSERT INTO source_records (source_name, source_identifier, source_url, raw_metadata)
+            VALUES ('Interaction RLS source', :identifier, 'https://example.org/interaction-rls', '{}'::jsonb)
+            RETURNING id
+        """), {"identifier": str(uuid4())}).scalar_one()
+
+        def assessment(name, owner, visibility, status, submitter):
+            return connection.execute(text("""
+                INSERT INTO molecular_interaction_assessments (
+                    peptide_id, target_id, interaction_method, evidence_type,
+                    interface_summary, limitations, source_id, review_status,
+                    submitted_by, owner_organization_id, visibility_scope
+                ) VALUES (
+                    :peptide, :target, 'literature_report', 'computational',
+                    :summary, 'Not a measured binding affinity.', :source, :status,
+                    :submitter, :owner, :visibility
+                ) RETURNING id
+            """), {"name": name, "peptide": peptide_id, "target": target_id,
+                   "summary": name + " source-linked interaction summary.",
+                   "source": source_id, "status": status, "submitter": submitter,
+                   "owner": owner, "visibility": visibility}).scalar_one()
+
+        assessment_a = assessment("Private interaction A " + str(uuid4()), org_a, "organization", "in_review", user_a)
+        assessment_b = assessment("Private interaction B " + str(uuid4()), org_b, "organization", "in_review", user_b)
+        assessment_public = assessment("Public interaction " + str(uuid4()), None, "public", "verified", None)
+        connection.execute(text("""
+            INSERT INTO molecular_interaction_decisions (assessment_id, organization_id, reviewer_id, decision, rationale)
+            VALUES (:assessment, :org, :reviewer, 'verified', 'Organization-scoped independent review.')
+        """), {"assessment": assessment_a, "org": org_a, "reviewer": user_b})
+        connection.execute(text("""
+            INSERT INTO molecular_interaction_decisions (assessment_id, organization_id, reviewer_id, decision, rationale)
+            VALUES (:assessment, :org, :reviewer, 'verified', 'Organization-scoped independent review.')
+        """), {"assessment": assessment_b, "org": org_b, "reviewer": user_a})
+
+        role = "toolkit_interaction_rls_test"
+        exists = connection.execute(text("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname=:role)"), {"role": role}).scalar_one()
+        if not exists:
+            connection.exec_driver_sql(f"CREATE ROLE {role} NOLOGIN NOBYPASSRLS")
+        connection.exec_driver_sql("GRANT USAGE ON SCHEMA public TO toolkit_interaction_rls_test")
+        connection.exec_driver_sql("GRANT SELECT, INSERT, UPDATE ON molecular_interaction_assessments TO toolkit_interaction_rls_test")
+        connection.exec_driver_sql("GRANT SELECT, INSERT, UPDATE ON molecular_interaction_decisions TO toolkit_interaction_rls_test")
+
+        with connection.begin_nested():
+            connection.exec_driver_sql("SET LOCAL ROLE toolkit_interaction_rls_test")
+            connection.execute(text("SELECT set_config('app.organization_id', :org, true)"), {"org": str(org_a)})
+            assert set(connection.execute(text("SELECT id FROM molecular_interaction_assessments")).scalars()) == {assessment_a, assessment_public}
+            assert set(connection.execute(text("SELECT assessment_id FROM molecular_interaction_decisions")).scalars()) == {assessment_a}
+
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO molecular_interaction_assessments (
+                            peptide_id, target_id, interaction_method, evidence_type,
+                            interface_summary, limitations, source_id, review_status,
+                            submitted_by, owner_organization_id, visibility_scope
+                        ) VALUES (
+                            :peptide, :target, 'literature_report', 'computational',
+                            'Cross-tenant submission must fail.', 'Must fail.', :source,
+                            'in_review', :submitter, :owner, 'organization'
+                        )
+                    """), {"peptide": peptide_id, "target": target_id, "source": source_id,
+                           "submitter": user_a, "owner": org_b})
+
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO molecular_interaction_decisions (
+                            assessment_id, organization_id, reviewer_id, decision, rationale
+                        ) VALUES (:assessment, :org, :reviewer, 'verified', 'Cross-tenant decision must fail.')
+                    """), {"assessment": assessment_b, "org": org_a, "reviewer": user_a})
+
+            connection.execute(text("""
+                UPDATE molecular_interaction_assessments
+                SET review_status='verified', reviewed_by=:reviewer, reviewed_at=now()
+                WHERE id=:id
+            """), {"reviewer": user_b, "id": assessment_a})
+
+            connection.execute(text("SELECT set_config('app.organization_id', '', true)"))
+            assert set(connection.execute(text("SELECT id FROM molecular_interaction_assessments")).scalars()) == {assessment_public}
+            assert connection.execute(text("SELECT count(*) FROM molecular_interaction_decisions")).scalar_one() == 0
+
+        connection.exec_driver_sql("RESET ROLE")
+        connection.exec_driver_sql("REVOKE SELECT, INSERT, UPDATE ON molecular_interaction_decisions FROM toolkit_interaction_rls_test")
+        connection.exec_driver_sql("REVOKE SELECT, INSERT, UPDATE ON molecular_interaction_assessments FROM toolkit_interaction_rls_test")
+        connection.exec_driver_sql("REVOKE USAGE ON SCHEMA public FROM toolkit_interaction_rls_test")
+        connection.exec_driver_sql("DROP ROLE toolkit_interaction_rls_test")

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { FormEvent, useState } from "react";
 
 const API = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
-type Metric = { total:number; verified?:number; with_primary_source?:number; source_coverage_percent?:number|null; with_source?:number; versioned_identity?:number; standard_sequence_candidates?:number; standard_sequence_fingerprinted?:number; standard_sequence_fingerprint_coverage_percent?:number|null; with_revision?:number; revision_coverage_percent?:number|null; with_source_version?:number; source_version_coverage_percent?:number|null; open_reviews?:number; decisions?:number; claim_revision_bound_decisions?:number; claim_revision_binding_percent?:number|null };
+type Metric = { total:number; verified?:number; with_primary_source?:number; source_coverage_percent?:number|null; with_source?:number; versioned_identity?:number; standard_sequence_candidates?:number; standard_sequence_fingerprinted?:number; standard_sequence_fingerprint_coverage_percent?:number|null; with_revision?:number; revision_coverage_percent?:number|null; with_source_version?:number; source_version_coverage_percent?:number|null; open_reviews?:number; total_reviews?:number; decisions?:number; claim_revision_bound_decisions?:number; claim_revision_binding_percent?:number|null };
 type Report = {
  generated_at:string; scope:{organization:string;notice:string};
  shared_catalogue:{peptides:Metric;sequences:Metric;chemical_forms:Metric};

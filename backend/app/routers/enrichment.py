@@ -196,7 +196,7 @@ def _validated_source_url(source: str, url: str) -> str:
     return url
 
 
-@router.post("/peptides/{peptide_id}/candidates", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("enrichment_write"))])
+@router.post("/peptides/{peptide_id}/candidates", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("enrichment_write", settings.enrichment_rate_limit_per_window))])
 def submit_enrichment_candidate(
     peptide_id: UUID,
     payload: CandidateSubmission,

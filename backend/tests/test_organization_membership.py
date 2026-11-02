@@ -82,3 +82,32 @@ def test_only_organization_admin_can_add_existing_members():
             db=object(),
         )
     assert error.value.status_code == 403
+
+
+def test_login_request_and_user_lookup_support_an_explicit_organization():
+    from app.routers.auth import LoginRequest, _load_user
+
+    organization_id = uuid4()
+    request = LoginRequest(
+        email="member@example.org",
+        password="a-long-enough-password",
+        organization_id=organization_id,
+    )
+    captured = {}
+
+    class FakeResult:
+        def mappings(self):
+            return self
+
+        def first(self):
+            return None
+
+    class FakeDatabase:
+        def execute(self, statement, parameters):
+            captured["statement"] = str(statement)
+            captured["parameters"] = parameters
+            return FakeResult()
+
+    _load_user(FakeDatabase(), request.email, request.organization_id)
+    assert "om.organization_id = :organization_id" in captured["statement"]
+    assert captured["parameters"]["organization_id"] == organization_id

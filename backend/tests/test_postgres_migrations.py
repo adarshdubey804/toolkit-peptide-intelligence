@@ -54,6 +54,11 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             ).scalar_one()
             assert exists, f"Expected migration-created table {table_name!r}"
 
+        applicability_table_exists = connection.execute(text("""
+            SELECT to_regclass('public.peptide_test_applicability') IS NOT NULL
+        """)).scalar_one()
+        assert applicability_table_exists, "Peptide-specific test applicability table must exist"
+
         seeded_test_count = connection.execute(text("SELECT count(*) FROM analytical_test_catalogue")).scalar_one()
         assert seeded_test_count == 12, "The initial reference catalogue must contain twelve draft test entries"
         draft_test_count = connection.execute(text("SELECT count(*) FROM analytical_test_catalogue WHERE review_status='draft'")).scalar_one()

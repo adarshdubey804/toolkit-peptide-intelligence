@@ -469,13 +469,11 @@ def test_vendor_material_offering_rls_enforces_organization_and_public_scope():
         """), {"method_a": method_a, "org_a": organization_a, "reviewer_a": submitter_b,
                "method_b": method_b, "org_b": organization_b, "reviewer_b": submitter_a})
 
-        connection.exec_driver_sql("""
-            DO $ BEGIN
-                IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='toolkit_rls_test') THEN
-                    CREATE ROLE toolkit_rls_test NOLOGIN NOBYPASSRLS;
-                END IF;
-            END $$;
-        """)
+        role_exists = connection.execute(text(
+            "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='toolkit_rls_test')"
+        )).scalar_one()
+        if not role_exists:
+            connection.exec_driver_sql("CREATE ROLE toolkit_rls_test NOLOGIN NOBYPASSRLS")
         connection.exec_driver_sql("GRANT USAGE ON SCHEMA public TO toolkit_rls_test")
         connection.exec_driver_sql("GRANT SELECT ON vendor_material_offerings TO toolkit_rls_test")
         connection.exec_driver_sql("GRANT SELECT ON analytical_methods TO toolkit_rls_test")

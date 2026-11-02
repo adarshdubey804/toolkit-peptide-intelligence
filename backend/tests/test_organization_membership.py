@@ -159,3 +159,44 @@ def test_login_falls_back_when_saved_organization_membership_is_no_longer_active
     assert lookup_organizations == [preferred_organization, None]
     assert result["access_token"] == "fallback-token"
     assert result["user"]["organization_id"] == str(active_organization)
+
+
+
+def test_authenticated_user_binds_transaction_local_organization_context(monkeypatch):
+    from app.routers import auth
+
+    user_id = uuid4()
+    organization_id = uuid4()
+    calls = []
+
+    class FakeResult:
+        def mappings(self):
+            return self
+
+        def first(self):
+            return {
+                "id": user_id,
+                "email": "member@example.org",
+                "display_name": "Member",
+                "organization_id": organization_id,
+                "role": "researcher",
+                "is_active": True,
+                "organization_name": "Research Group",
+            }
+
+    class FakeDatabase:
+        def execute(self, statement, parameters):
+            calls.append((str(statement), parameters))
+            return FakeResult()
+
+    monkeypatch.setattr(
+        auth.jwt,
+        "decode",
+        lambda token, *args, **kwargs: {"sub": str(user_id), "org": str(organization_id)},
+    )
+    user = auth.get_current_user(token="valid-signed-token", db=FakeDatabase())
+
+    assert user["organization_id"] == str(organization_id)
+    assert len(calls) == 2
+    assert "set_config('app.organization_id', :organization_id, true)" in calls[1][0]
+    assert calls[1][1] == {"organization_id": str(organization_id)}

@@ -215,7 +215,7 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
                 SELECT relrowsecurity, relforcerowsecurity
                 FROM pg_class WHERE oid=to_regclass(:table_name)
             """), {"table_name": f"public.{table_name}"}).one()
-            assert rls_state == (True, True), f"RLS and FORCE RLS must be enabled for {table_name}"
+            assert tuple(rls_state) == (True, True), f"RLS and FORCE RLS must be enabled for {table_name}"
 
         required_policies = connection.execute(text("""
             SELECT count(*) FROM pg_policies

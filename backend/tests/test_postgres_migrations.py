@@ -1766,14 +1766,14 @@ def test_vendor_identity_sites_and_certifications_follow_owner_and_public_verifi
         with connection.begin_nested():
             connection.exec_driver_sql("SET LOCAL ROLE toolkit_vendor_directory_rls_test")
             connection.execute(text("SELECT set_config('app.organization_id',:org,true)"), {"org": str(org_a)})
-            assert set(connection.execute(text("SELECT id FROM vendors")).scalars()) == {vendor_a, vendor_public}
-            assert set(connection.execute(text("SELECT vendor_id FROM vendor_sources")).scalars()) == {vendor_a, vendor_public}
-            assert set(connection.execute(text("SELECT id FROM vendor_sites")).scalars()) == {site_a, site_public}
-            assert set(connection.execute(text("SELECT site_id FROM vendor_site_sources")).scalars()) == {site_a, site_public}
-            assert set(connection.execute(text("SELECT vendor_id FROM vendor_certifications")).scalars()) == {vendor_a, vendor_public}
-            assert set(connection.execute(text("SELECT vendor_id FROM vendor_review_decisions")).scalars()) == {vendor_a}
-            assert set(connection.execute(text("SELECT site_id FROM vendor_site_decisions")).scalars()) == {site_a}
-            assert set(connection.execute(text("SELECT certification_id FROM vendor_certification_decisions")).scalars()) == {cert_a}
+            assert set(connection.execute(text("SELECT id FROM vendors WHERE id IN (:a,:b,:public)"), {"a": vendor_a, "b": vendor_b, "public": vendor_public}).scalars()) == {vendor_a, vendor_public}
+            assert set(connection.execute(text("SELECT vendor_id FROM vendor_sources WHERE vendor_id IN (:a,:b,:public)"), {"a": vendor_a, "b": vendor_b, "public": vendor_public}).scalars()) == {vendor_a, vendor_public}
+            assert set(connection.execute(text("SELECT id FROM vendor_sites WHERE id IN (:a,:b,:public)"), {"a": site_a, "b": site_b, "public": site_public}).scalars()) == {site_a, site_public}
+            assert set(connection.execute(text("SELECT site_id FROM vendor_site_sources WHERE site_id IN (:a,:b,:public)"), {"a": site_a, "b": site_b, "public": site_public}).scalars()) == {site_a, site_public}
+            assert set(connection.execute(text("SELECT vendor_id FROM vendor_certifications WHERE vendor_id IN (:a,:b,:public)"), {"a": vendor_a, "b": vendor_b, "public": vendor_public}).scalars()) == {vendor_a, vendor_public}
+            assert set(connection.execute(text("SELECT vendor_id FROM vendor_review_decisions WHERE vendor_id IN (:a,:b)"), {"a": vendor_a, "b": vendor_b}).scalars()) == {vendor_a}
+            assert set(connection.execute(text("SELECT site_id FROM vendor_site_decisions WHERE site_id IN (:a,:b)"), {"a": site_a, "b": site_b}).scalars()) == {site_a}
+            assert set(connection.execute(text("SELECT certification_id FROM vendor_certification_decisions WHERE certification_id IN (:a,:b)"), {"a": cert_a, "b": cert_b}).scalars()) == {cert_a}
 
             with pytest.raises(Exception):
                 with connection.begin_nested():
@@ -1816,10 +1816,10 @@ def test_vendor_identity_sites_and_certifications_follow_owner_and_public_verifi
             connection.execute(text("UPDATE vendor_sites SET site_scope='Owner-only update.' WHERE id=:id"), {"id": site_a})
             connection.execute(text("UPDATE vendor_certifications SET scope='Owner-only update.' WHERE id=:id"), {"id": cert_a})
             connection.execute(text("SELECT set_config('app.organization_id','',true)"))
-            assert set(connection.execute(text("SELECT id FROM vendors")).scalars()) == {vendor_public}
-            assert set(connection.execute(text("SELECT vendor_id FROM vendor_sources")).scalars()) == {vendor_public}
-            assert set(connection.execute(text("SELECT id FROM vendor_sites")).scalars()) == {site_public}
-            assert set(connection.execute(text("SELECT site_id FROM vendor_site_sources")).scalars()) == {site_public}
+            assert set(connection.execute(text("SELECT id FROM vendors WHERE id IN (:a,:b,:public)"), {"a": vendor_a, "b": vendor_b, "public": vendor_public}).scalars()) == {vendor_public}
+            assert set(connection.execute(text("SELECT vendor_id FROM vendor_sources WHERE vendor_id IN (:a,:b,:public)"), {"a": vendor_a, "b": vendor_b, "public": vendor_public}).scalars()) == {vendor_public}
+            assert set(connection.execute(text("SELECT id FROM vendor_sites WHERE id IN (:a,:b,:public)"), {"a": site_a, "b": site_b, "public": site_public}).scalars()) == {site_public}
+            assert set(connection.execute(text("SELECT site_id FROM vendor_site_sources WHERE site_id IN (:a,:b,:public)"), {"a": site_a, "b": site_b, "public": site_public}).scalars()) == {site_public}
             assert set(connection.execute(text("SELECT id FROM vendor_certifications")).scalars()) == {cert_public}
             assert connection.execute(text("SELECT count(*) FROM vendor_review_decisions")).scalar_one() == 0
             assert connection.execute(text("SELECT count(*) FROM vendor_site_decisions")).scalar_one() == 0

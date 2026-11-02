@@ -18,4 +18,4 @@ def test_claim_source_locator_migration_is_source_version_aware_and_append_only(
 def test_claim_source_locator_migration_does_not_store_restricted_quoted_full_text():
     sql = (MIGRATIONS / "046_claim_source_citation_locators.sql").read_text(encoding="utf-8")
     assert "quoted_text_hash CHAR(64)" in sql
-    assert "quoted full text" in sql
+    assert "store no restricted full text here" in sql

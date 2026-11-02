@@ -20,10 +20,10 @@ These endpoints record source-backed vendor catalogue offerings, physical lots a
 - An offering must identify the exact reviewed chemical form; a peptide sequence alone is insufficient.
 - Offerings require a verified vendor identity and, when supplied, a verified site/service belonging to that vendor.
 - A lot identifier is unique within its offering. Manufacture, retest and expiry dates are checked for chronological consistency.
-- Analytical results must reference reviewed analytical test and method catalogue records and include an observed numeric or textual result.
+- Analytical results must reference a reviewed analytical test and a verified method that is public or owned by the submitting organization, and include an observed numeric or textual result.
 - A reported `pass` is a supplier/laboratory-reported result, not proof of method validation, product suitability or clinical safety.
 - Submission records begin in `in_review`. Submitters cannot review their own records.
-- Only a reviewer decision can verify an offering and assign its visibility scope. New offerings are restricted by default.
+- Only a reviewer decision can verify an offering and assign its visibility scope. New offerings are restricted by default. Public listings do not expose identifiers for unverified vendor sites.
 - Lot records and analytical reports remain organization-scoped. Public discovery exposes offerings only when they are verified and explicitly marked `public`.
 - Evidence fields are immutable after submission. Corrections should be new, superseding records; review state and reviewer-controlled offering visibility are separate moderation fields.
 - Supplier availability is a recorded source statement, not live stock.

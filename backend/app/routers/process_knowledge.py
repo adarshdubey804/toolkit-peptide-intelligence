@@ -8,6 +8,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..db import get_db
+from ..rate_limit_dependencies import authenticated_write_rate_limit
 from .auth import get_current_user
 
 router = APIRouter(prefix="/api/v1/process-knowledge", tags=["process development intelligence"])
@@ -112,7 +113,7 @@ def list_process_knowledge(
             "scope": "Curator-reviewed descriptive process-development literature only; no executable synthesis parameters, batch instructions or release criteria."}
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("process_write"))])
 def submit_process_knowledge(
     payload: ProcessSubmission,
     current_user: Annotated[dict, Depends(get_current_user)],
@@ -203,7 +204,7 @@ def process_review_queue(
     return {"items": [dict(row) for row in rows], "count": len(rows)}
 
 
-@router.post("/{profile_id}/decisions", status_code=201)
+@router.post("/{profile_id}/decisions", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("process_write"))])
 def decide_process_knowledge(
     profile_id: UUID,
     payload: ProcessDecision,

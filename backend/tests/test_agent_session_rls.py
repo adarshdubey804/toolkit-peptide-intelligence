@@ -17,6 +17,6 @@ def test_agent_session_rls_migration_binds_user_and_organization():
 
 
 def test_authenticated_request_sets_user_and_organization_transaction_context():
-    source = (ROOT / "app" / "routers" / "auth.py").read_text(encoding="utf-8")
+    source = (ROOT / "backend" / "app" / "routers" / "auth.py").read_text(encoding="utf-8")
     assert "set_config('app.organization_id'" in source
     assert "set_config('app.user_id'" in source

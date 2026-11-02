@@ -75,6 +75,8 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             "evidence_appraisal_decisions",
             "publication_duplicate_candidates",
             "publication_duplicate_decisions",
+            "curation_reviews",
+            "curation_decisions",
             "claim_source_locators",
             "analytical_methods",
             "analytical_method_sources",
@@ -345,6 +347,21 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             )
         """)).scalar_one()
         assert appraisal_policy_count == 10, "Evidence appraisal and duplicate-review access paths need explicit RLS policies"
+
+        for table_name in ("curation_reviews", "curation_decisions"):
+            state = connection.execute(text("""
+                SELECT relrowsecurity, relforcerowsecurity
+                FROM pg_class WHERE oid=to_regclass(:table_name)
+            """), {"table_name": f"public.{table_name}"}).one()
+            assert tuple(state) == (True, True), f"RLS and FORCE RLS must be enabled for {table_name}"
+        curation_policy_count = connection.execute(text("""
+            SELECT count(*) FROM pg_policies
+            WHERE schemaname='public' AND policyname IN (
+                'curation_reviews_select_scope','curation_reviews_insert_scope','curation_reviews_update_scope',
+                'curation_decisions_select_scope','curation_decisions_insert_scope'
+            )
+        """)).scalar_one()
+        assert curation_policy_count == 5, "Curation review and decision access paths need explicit RLS policies"
 
 @pytest.mark.skipif(
     os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",

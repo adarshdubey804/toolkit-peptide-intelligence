@@ -1577,3 +1577,9 @@ def test_audit_event_rls_binds_organization_and_actor_context():
     auth_source = (Path(__file__).resolve().parents[1] / "app" / "routers" / "auth.py").read_text(encoding="utf-8")
     switch_source = auth_source.split("@router.post(\"/switch-organization\")", 1)[1]
     assert switch_source.index("set_config('app.organization_id'") < switch_source.index("INSERT INTO audit_events")
+
+
+def test_data_quality_router_is_registered_exactly_once():
+    source = (Path(__file__).resolve().parents[1] / "app" / "main.py").read_text(encoding="utf-8")
+    assert source.count("from .routers.data_quality import router as data_quality_router") == 1
+    assert source.count("app.include_router(data_quality_router)") == 1

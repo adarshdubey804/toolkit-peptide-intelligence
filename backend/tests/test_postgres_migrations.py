@@ -506,6 +506,9 @@ def test_vendor_material_offering_rls_enforces_organization_and_public_scope():
                 "SELECT id FROM vendor_material_offerings"
             )).scalars().all())
             assert visible_public == {public_b}
+            connection.execute(text("""
+                SELECT set_config('app.organization_id', :org, true)
+            """), {"org": str(organization_a)})
             visible_methods_a = set(connection.execute(text(
                 "SELECT id FROM analytical_methods"
             )).scalars().all())

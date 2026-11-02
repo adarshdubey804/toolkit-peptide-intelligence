@@ -21,6 +21,7 @@ def test_regulatory_source_registry_and_scheduler_rls_are_separated():
     for table in ("regulatory_source_registry", "audit_chain_heads"):
         assert f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY" in registry_sql
         assert f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY" in registry_sql
+    assert "CREATE ROLE toolkit_regulatory_scheduler NOLOGIN NOBYPASSRLS" in registry_sql
     assert "current_user = 'toolkit_regulatory_scheduler'" in registry_sql
     assert "GRANT UPDATE (last_polled_at, next_poll_at, last_poll_status)" in registry_sql
 

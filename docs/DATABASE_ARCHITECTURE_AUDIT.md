@@ -1,7 +1,7 @@
 # Database Architecture Audit
 
 **Audit date:** 2026-11-02  
-**Scope:** Repository schema and application access patterns on `main`, migrations 001–041, and relevant backend routers.  
+**Scope:** Repository schema and application access patterns on `main`, migrations 001–043, and relevant backend routers.  
 **Important limitation:** This is a repository-level architecture review. It does not establish the live PostgreSQL database's current schema, data quality, query plans, backup state, or deployment configuration. Those require access to the deployed database and environment.
 
 ## Executive assessment
@@ -49,7 +49,7 @@ Legacy records with ambiguous owners remain NULL/restricted and must be resolved
 
 ### P0 — Tenant isolation is application-enforced, not visibly database-enforced
 
-The inspected migrations contain organization membership and organization-scoped query patterns, but no PostgreSQL `ENABLE ROW LEVEL SECURITY` or `CREATE POLICY` statements were found in the migration set.
+The inspected migrations through 043 contain organization membership and organization-scoped query patterns, but no PostgreSQL `ENABLE ROW LEVEL SECURITY` or `CREATE POLICY` statements were found in the migration set.
 
 A missed organization predicate in one endpoint can therefore expose another tenant's data.
 
@@ -149,7 +149,7 @@ The strongest next move is not to add more tables indiscriminately. It is to for
 
 ## Table ownership inventory (repository-level classification)
 
-The following is the intended classification inferred from the current schema and route behavior. It is a design recommendation, not proof that every existing row already obeys it.
+The following is the intended classification inferred from migrations 001–043 and the inspected route behavior. It is a design recommendation, not proof that every existing row already obeys it. Migration 043 adds vendor-material evidence immutability with a narrowly scoped moderation exception; it does not close the broader tenant-isolation or ownership gaps.
 
 | Table group | Current examples | Target classification | Ownership contract to enforce |
 |---|---|---|---|

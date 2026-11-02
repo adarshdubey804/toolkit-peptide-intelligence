@@ -1004,3 +1004,119 @@ def test_molecular_interaction_rls_enforces_owner_and_public_verified_scope():
         connection.exec_driver_sql("REVOKE SELECT, INSERT, UPDATE ON molecular_interaction_assessments FROM toolkit_interaction_rls_test")
         connection.exec_driver_sql("REVOKE USAGE ON SCHEMA public FROM toolkit_interaction_rls_test")
         connection.exec_driver_sql("DROP ROLE toolkit_interaction_rls_test")
+
+
+@pytest.mark.skipif(os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",
+                    reason="PostgreSQL evidence appraisal RLS integration test is enabled in CI only.")
+def test_evidence_appraisal_and_duplicate_review_rls_are_organization_scoped():
+    with engine.begin() as connection:
+        connection.execute(text("SELECT pg_advisory_xact_lock(731904221067)"))
+        apply_development_migrations(connection)
+        org_a = connection.execute(text("INSERT INTO organizations (name, organization_type) VALUES (:n,'research_team') RETURNING id"),
+                                   {"n": "appraisal-a-" + str(uuid4())}).scalar_one()
+        org_b = connection.execute(text("INSERT INTO organizations (name, organization_type) VALUES (:n,'research_team') RETURNING id"),
+                                   {"n": "appraisal-b-" + str(uuid4())}).scalar_one()
+        user_a = connection.execute(text("INSERT INTO user_profiles (display_name, role) VALUES ('Appraisal A','researcher') RETURNING id")).scalar_one()
+        user_b = connection.execute(text("INSERT INTO user_profiles (display_name, role) VALUES ('Appraisal B','researcher') RETURNING id")).scalar_one()
+        peptide = connection.execute(text("INSERT INTO peptides (preferred_name, review_status) VALUES (:n,'verified') RETURNING id"),
+                                     {"n": "Appraisal peptide " + str(uuid4())}).scalar_one()
+        claim = connection.execute(text("INSERT INTO evidence_claims (peptide_id, claim_text, claim_domain) VALUES (:p,'Evidence appraisal RLS test claim.','mechanism') RETURNING id"),
+                                   {"p": peptide}).scalar_one()
+
+        def add_appraisal(org, reviewer):
+            return connection.execute(text("""
+                INSERT INTO evidence_appraisals
+                (organization_id,claim_id,study_design,evidence_level,risk_of_bias,replication_status,
+                 limitations,appraisal_rationale,reviewer_id)
+                VALUES (:o,:c,'observational_human','clinical_human','some_concerns','single_study',
+                        'Study-specific limitations.','Appraisal rationale with sufficient detail.',:u)
+                RETURNING id
+            """), {"o": org, "c": claim, "u": reviewer}).scalar_one()
+
+        appraisal_a = add_appraisal(org_a, user_a)
+        appraisal_b = add_appraisal(org_b, user_b)
+        connection.execute(text("""
+            INSERT INTO evidence_appraisal_decisions (organization_id,appraisal_id,decision,rationale,reviewer_id)
+            VALUES (:o,:a,'accepted','Independent appraisal decision for organization A.',:u)
+        """), {"o": org_a, "a": appraisal_a, "u": user_b})
+        connection.execute(text("""
+            INSERT INTO evidence_appraisal_decisions (organization_id,appraisal_id,decision,rationale,reviewer_id)
+            VALUES (:o,:a,'accepted','Independent appraisal decision for organization B.',:u)
+        """), {"o": org_b, "a": appraisal_b, "u": user_a})
+
+        pubs = [connection.execute(text("INSERT INTO publications (title) VALUES (:t) RETURNING id"),
+                                   {"t": "Duplicate candidate " + str(i) + " " + str(uuid4())}).scalar_one()
+                for i in range(4)]
+        candidate_a = connection.execute(text("""
+            INSERT INTO publication_duplicate_candidates (organization_id,publication_a,publication_b,match_basis)
+            VALUES (:o,:a,:b,'manual') RETURNING id
+        """), {"o": org_a, "a": pubs[0], "b": pubs[1]}).scalar_one()
+        candidate_b = connection.execute(text("""
+            INSERT INTO publication_duplicate_candidates (organization_id,publication_a,publication_b,match_basis)
+            VALUES (:o,:a,:b,'manual') RETURNING id
+        """), {"o": org_b, "a": pubs[2], "b": pubs[3]}).scalar_one()
+        connection.execute(text("""
+            INSERT INTO publication_duplicate_decisions (organization_id,candidate_id,decision,rationale,reviewer_id)
+            VALUES (:o,:c,'not_duplicate','Independent duplicate decision for organization A.',:u)
+        """), {"o": org_a, "c": candidate_a, "u": user_b})
+        connection.execute(text("""
+            INSERT INTO publication_duplicate_decisions (organization_id,candidate_id,decision,rationale,reviewer_id)
+            VALUES (:o,:c,'not_duplicate','Independent duplicate decision for organization B.',:u)
+        """), {"o": org_b, "c": candidate_b, "u": user_a})
+
+        role = "toolkit_appraisal_rls_test"
+        if not connection.execute(text("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname=:r)"), {"r": role}).scalar_one():
+            connection.exec_driver_sql(f"CREATE ROLE {role} NOLOGIN NOBYPASSRLS")
+        connection.exec_driver_sql("GRANT USAGE ON SCHEMA public TO toolkit_appraisal_rls_test")
+        for table in ("evidence_appraisals", "publication_duplicate_candidates"):
+            connection.exec_driver_sql(f"GRANT SELECT, INSERT, UPDATE ON {table} TO toolkit_appraisal_rls_test")
+        for table in ("evidence_appraisal_decisions", "publication_duplicate_decisions"):
+            connection.exec_driver_sql(f"GRANT SELECT, INSERT ON {table} TO toolkit_appraisal_rls_test")
+
+        with connection.begin_nested():
+            connection.exec_driver_sql("SET LOCAL ROLE toolkit_appraisal_rls_test")
+            connection.execute(text("SELECT set_config('app.organization_id',:o,true)"), {"o": str(org_a)})
+            assert set(connection.execute(text("SELECT id FROM evidence_appraisals")).scalars()) == {appraisal_a}
+            assert set(connection.execute(text("SELECT appraisal_id FROM evidence_appraisal_decisions")).scalars()) == {appraisal_a}
+            assert set(connection.execute(text("SELECT id FROM publication_duplicate_candidates")).scalars()) == {candidate_a}
+            assert set(connection.execute(text("SELECT candidate_id FROM publication_duplicate_decisions")).scalars()) == {candidate_a}
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO evidence_appraisals
+                        (organization_id,claim_id,study_design,evidence_level,risk_of_bias,replication_status,limitations,appraisal_rationale,reviewer_id)
+                        VALUES (:o,:c,'observational_human','clinical_human','some_concerns','single_study','No','Cross-org write must fail.',:u)
+                    """), {"o": org_b, "c": claim, "u": user_a})
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO evidence_appraisal_decisions (organization_id,appraisal_id,decision,rationale,reviewer_id)
+                        VALUES (:o,:a,'accepted','Cross-org decision must fail.',:u)
+                    """), {"o": org_a, "a": appraisal_b, "u": user_a})
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO publication_duplicate_candidates (organization_id,publication_a,publication_b,match_basis)
+                        VALUES (:o,:a,:b,'manual')
+                    """), {"o": org_b, "a": pubs[0], "b": pubs[1]})
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO publication_duplicate_decisions (organization_id,candidate_id,decision,rationale,reviewer_id)
+                        VALUES (:o,:c,'not_duplicate','Cross-org decision must fail.',:u)
+                    """), {"o": org_a, "c": candidate_b, "u": user_a})
+            connection.execute(text("UPDATE evidence_appraisals SET appraisal_status='accepted' WHERE id=:id"), {"id": appraisal_a})
+            connection.execute(text("UPDATE publication_duplicate_candidates SET status='not_duplicate' WHERE id=:id"), {"id": candidate_a})
+            connection.execute(text("SELECT set_config('app.organization_id','',true)"))
+            assert connection.execute(text("SELECT count(*) FROM evidence_appraisals")).scalar_one() == 0
+            assert connection.execute(text("SELECT count(*) FROM evidence_appraisal_decisions")).scalar_one() == 0
+            assert connection.execute(text("SELECT count(*) FROM publication_duplicate_candidates")).scalar_one() == 0
+            assert connection.execute(text("SELECT count(*) FROM publication_duplicate_decisions")).scalar_one() == 0
+
+        connection.exec_driver_sql("RESET ROLE")
+        for table in ("evidence_appraisals", "publication_duplicate_candidates"):
+            connection.exec_driver_sql(f"REVOKE SELECT, INSERT, UPDATE ON {table} FROM toolkit_appraisal_rls_test")
+        for table in ("evidence_appraisal_decisions", "publication_duplicate_decisions"):
+            connection.exec_driver_sql(f"REVOKE SELECT, INSERT ON {table} FROM toolkit_appraisal_rls_test")
+        connection.exec_driver_sql("REVOKE USAGE ON SCHEMA public FROM toolkit_appraisal_rls_test")
+        connection.exec_driver_sql("DROP ROLE toolkit_appraisal_rls_test")

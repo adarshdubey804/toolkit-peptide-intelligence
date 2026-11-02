@@ -1,0 +1,54 @@
+{
+  "candidates": [
+    {
+      "legal_name": "Bachem",
+      "website_url": "https://www.bachem.com/",
+      "country_code": "CH",
+      "vendor_type": "cdmo",
+      "source_name": "Official company website",
+      "source_identifier": "official-service-page:bachem-custom-peptide-synthesis",
+      "source_url": "https://www.bachem.com/custom-peptide-synthesis-services/",
+      "evidence_scope": "Official service page describes custom peptide synthesis, non-GMP research synthesis, peptide modifications and analytical services including HPLC and mass spectrometry. Candidate classification only; no facility, certification, current capacity, inventory or project-specific suitability is inferred."
+    },
+    {
+      "legal_name": "GenScript",
+      "website_url": "https://www.genscript.com/",
+      "country_code": "US",
+      "vendor_type": "peptide_manufacturer",
+      "source_name": "Official company website",
+      "source_identifier": "official-service-page:genscript-peptide-services",
+      "source_url": "https://www.genscript.com/peptide-services.html",
+      "evidence_scope": "Official peptide services page describes custom peptide synthesis, peptide libraries and cGMP peptide services. Candidate classification only; no facility address, certification, current capacity, inventory or project-specific suitability is inferred."
+    },
+    {
+      "legal_name": "AnaSpec",
+      "website_url": "https://www.anaspec.com/",
+      "country_code": "US",
+      "vendor_type": "peptide_manufacturer",
+      "source_name": "Official company website",
+      "source_identifier": "official-service-page:anaspec-custom-peptides",
+      "source_url": "https://www.anaspec.com/en/custom-peptides",
+      "evidence_scope": "Official service page describes custom peptide synthesis, modifications, peptide libraries and optional analytical tests such as HPLC, mass spectrometry, peptide content and endotoxin testing. Candidate classification only; no facility, certification, current capacity, inventory or project-specific suitability is inferred."
+    },
+    {
+      "legal_name": "Thermo Fisher Scientific",
+      "website_url": "https://www.thermofisher.com/",
+      "country_code": "US",
+      "vendor_type": "research_reagent_supplier",
+      "source_name": "Official company website",
+      "source_identifier": "official-service-page:thermofisher-custom-peptide-synthesis",
+      "source_url": "https://www.thermofisher.com/es/en/home/life-science/protein-biology/peptides-proteins/custom-peptide-synthesis-services.html",
+      "evidence_scope": "Official service page describes custom peptide synthesis, peptide modifications and purification by HPLC. Candidate classification only; no local facility, certification, current capacity, inventory or project-specific suitability is inferred."
+    },
+    {
+      "legal_name": "SGS",
+      "website_url": "https://www.sgs.com/",
+      "country_code": "CH",
+      "vendor_type": "analytical_laboratory",
+      "source_name": "Official company website",
+      "source_identifier": "official-service-page:sgs-india-biopharmaceutical-services",
+      "source_url": "https://www.sgs.com/en-in/service-groups/biopharmaceutical-services",
+      "evidence_scope": "Official SGS India page describes biopharmaceutical testing including product characterization, analytical method development and validation, bioanalysis and quality control, and lists a Mumbai contact. This is a general biopharmaceutical-services candidate only; peptide-specific capability and the exact services performed at the Mumbai facility are not established by this page."
+    }
+  ]
+}

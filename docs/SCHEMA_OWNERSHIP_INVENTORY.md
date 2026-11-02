@@ -1,6 +1,6 @@
 # Schema ownership and governance inventory
 
-**Baseline:** migrations 001–044 on `main` (2026-11-02)  
+**Baseline:** migrations 001–045 on `main` (2026-11-02)  
 **Purpose:** define the intended ownership, visibility, provenance, and lifecycle contract for the existing schema before expanding ingestion or AI write access.
 
 > This is a repository-level design inventory. It does not assert that every existing row is compliant, that every route enforces the contract, or that the live PostgreSQL deployment has this exact schema. Validate against the deployed database before enabling database policies or bulk imports.

@@ -326,11 +326,6 @@ async def send_agent_message(
     context = _verified_peptide_context(db, payload.message, payload.peptide_id)
     if payload.peptide_id and not context:
         raise HTTPException(status_code=404, detail="Verified peptide record not found.")
-    enforce_rate_limit(
-        db, scope="agent_execution", identity=str(current_user["id"]),
-        limit=settings.agent_rate_limit_per_window,
-        window_seconds=settings.rate_limit_window_seconds,
-    )
     plan = build_agent_search_plan(agent["id"], payload.message)
     brief = await research_assistant_brief(plan["query"], payload.limit, source_scope=plan["sources"])
     output = {

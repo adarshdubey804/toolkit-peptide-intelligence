@@ -44,8 +44,8 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             "analytical_test_catalogue",
             "analytical_test_catalogue_sources",
             "analytical_test_catalogue_decisions",
-            "analytical_test_catalogue_decisions",
-            "analytical_test_catalogue_decisions",
+            "peptide_test_applicability",
+            "peptide_test_applicability_decisions",
         )
         for table_name in required_tables:
             exists = connection.execute(
@@ -76,3 +76,10 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             )
         """)).scalar_one()
         assert certification_submitter_exists, "Certification submitter attribution is required for self-review prevention"
+
+
+        applicability_indexes = connection.execute(text("""
+            SELECT count(*) FROM pg_indexes
+            WHERE schemaname='public' AND tablename='peptide_test_applicability'
+        """)).scalar_one()
+        assert applicability_indexes >= 2, "Peptide test applicability needs organization and peptide/test lookup indexes"

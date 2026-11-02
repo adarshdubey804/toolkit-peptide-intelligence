@@ -1359,3 +1359,78 @@ def test_chemical_form_applicability_links_enforce_parent_peptide_consistency():
     assert "enforce_peptide_chemical_form_parent" in migration
     assert "IS DISTINCT FROM v_form_peptide_id" in migration
     assert "NULL preserves legacy" in migration
+
+
+
+def test_applicability_payloads_accept_optional_chemical_form_scope():
+    from uuid import uuid4
+    from app.routers.analytical_methods import (
+        ApplicabilitySubmission,
+        PeptideTestApplicabilitySubmission,
+        LaboratoryCapabilitySubmission,
+    )
+
+    form_id = uuid4()
+    method_payload = ApplicabilitySubmission(
+        peptide_id=uuid4(), chemical_form_id=form_id, method_id=uuid4(),
+        test_purpose="Assess identity for this specified form",
+        applicability_rationale="The evidence specifically addresses the selected chemical form.",
+        evidence_scope="Published characterization data for this form.",
+        limitations="The source does not establish validation or acceptance criteria.",
+        source_name="Peer-reviewed publication", source_identifier="doi:10.example/method",
+        source_url="https://doi.org/10.example/method",
+    )
+    test_payload = PeptideTestApplicabilitySubmission(
+        peptide_id=uuid4(), chemical_form_id=form_id, test_id=uuid4(),
+        applicability_status="conditional",
+        rationale="The source supports conditional applicability for the selected form.",
+        evidence_scope="Evidence for the stated form and test context.",
+        limitations="This does not establish a validated procedure or acceptance criteria.",
+        source_name="Peer-reviewed publication", source_identifier="doi:10.example/test",
+        source_url="https://doi.org/10.example/test",
+    )
+    lab_payload = LaboratoryCapabilitySubmission(
+        service_id=uuid4(), method_id=uuid4(), peptide_id=uuid4(),
+        chemical_form_id=form_id, test_purpose="Test capability for the selected form",
+        sample_matrix="Aqueous sample", evidence_scope="Facility capability source evidence.",
+        limitations="Does not establish current capacity or validation.",
+        source_name="Laboratory source", source_identifier="facility-capability-1",
+        source_url="https://example.org/capability",
+    )
+    assert method_payload.chemical_form_id == form_id
+    assert test_payload.chemical_form_id == form_id
+    assert lab_payload.chemical_form_id == form_id
+
+
+def test_chemical_form_scope_helper_rejects_missing_or_mismatched_parent():
+    from uuid import uuid4
+    from fastapi import HTTPException
+    from app.routers.analytical_methods import _validate_chemical_form_scope
+
+    peptide_id, other_peptide_id, form_id = uuid4(), uuid4(), uuid4()
+
+    class FakeResult:
+        def __init__(self, value):
+            self.value = value
+
+        def scalar_one_or_none(self):
+            return self.value
+
+    class FakeDatabase:
+        def __init__(self, value):
+            self.value = value
+
+        def execute(self, statement, parameters):
+            assert parameters["form_id"] == form_id
+            return FakeResult(self.value)
+
+    _validate_chemical_form_scope(FakeDatabase(peptide_id), peptide_id, form_id)
+    with pytest.raises(HTTPException) as mismatch:
+        _validate_chemical_form_scope(FakeDatabase(other_peptide_id), peptide_id, form_id)
+    assert mismatch.value.status_code == 422
+    with pytest.raises(HTTPException) as missing:
+        _validate_chemical_form_scope(FakeDatabase(None), peptide_id, form_id)
+    assert missing.value.status_code == 404
+    with pytest.raises(HTTPException) as no_parent:
+        _validate_chemical_form_scope(FakeDatabase(peptide_id), None, form_id)
+    assert no_parent.value.status_code == 422

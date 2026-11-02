@@ -434,4 +434,6 @@ def test_vendor_material_offering_rls_enforces_organization_and_public_scope():
                 "SELECT id FROM vendor_material_offerings"
             )).scalars().all())
             assert visible_public == {public_b}
+        connection.exec_driver_sql("REVOKE SELECT ON vendor_material_offerings FROM toolkit_rls_test")
+        connection.exec_driver_sql("REVOKE USAGE ON SCHEMA public FROM toolkit_rls_test")
         connection.exec_driver_sql("DROP ROLE toolkit_rls_test")

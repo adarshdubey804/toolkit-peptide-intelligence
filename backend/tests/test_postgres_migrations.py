@@ -52,7 +52,7 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             "analytical_test_framework_links",
             "api_rate_limit_buckets",
             "api_rate_limit_maintenance",
-            "audit_chain_heads",
+            "audit_chain_heads",\n            "vendor_material_offerings",\n            "vendor_material_batches",\n            "batch_analytical_test_results",\n            "batch_analytical_test_result_decisions",
         )
         for table_name in required_tables:
             exists = connection.execute(
@@ -206,3 +206,25 @@ def test_audit_chain_appends_sequentially_and_rejects_mutation():
                     """), {"event_id": second["id"]})
 
             fixture.rollback()
+
+
+        batch_traceability_triggers = connection.execute(text("""
+            SELECT count(*) FROM pg_trigger
+            WHERE NOT tgisinternal AND tgname IN (
+                'trg_vendor_material_offering_scope',
+                'trg_vendor_material_batch_scope',
+                'trg_batch_test_result_scope',
+                'trg_vendor_material_offerings_immutable_evidence',
+                'trg_vendor_material_batches_immutable_evidence',
+                'trg_batch_analytical_test_results_immutable_evidence',
+                'trg_batch_test_result_decisions_no_update'
+            )
+        """)).scalar_one()
+        assert batch_traceability_triggers == 7, "Vendor material, lot and batch-result integrity/audit triggers must exist"
+
+        batch_form_required = connection.execute(text("""
+            SELECT is_nullable FROM information_schema.columns
+            WHERE table_schema='public' AND table_name='vendor_material_offerings'
+              AND column_name='chemical_form_id'
+        """)).scalar_one()
+        assert batch_form_required == "NO", "A vendor offering must identify its exact chemical form"

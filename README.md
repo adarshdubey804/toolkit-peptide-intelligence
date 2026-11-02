@@ -199,3 +199,5 @@ curl -X POST "$API_BASE/api/v1/vendors/import-candidates" \
   -H "Content-Type: application/json" \
   --data-binary @data/vendor_candidates/starter_batch_2026-11.json
 ```
+
+Facility candidate batch intake: authorized contributors can submit up to 25 source-backed facility candidates for a verified vendor through `POST /api/v1/vendors/{vendor_id}/import-site-candidates`. The endpoint checks parent-vendor ownership, HTTPS source URLs on the official vendor domain, duplicate facility identity, and records each submission as `in_review` with source provenance and audit history. A starter facility manifest is available at `data/vendor_facility_candidates/starter_batch_2026-11.json` and in the vendor workspace. Import is explicit and requires a verified parent vendor; no facility is publicly listed until independent facility review. The starter contains Bachem and CordenPharma site candidates only. Facility claims reflect the scope of the linked official page and do not establish current capacity, availability, certification validity or site-specific regulatory status.

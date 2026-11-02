@@ -43,6 +43,7 @@ class MethodSubmission(BaseModel):
 
 class ApplicabilitySubmission(BaseModel):
     peptide_id: UUID
+    chemical_form_id: UUID | None = None
     method_id: UUID
     test_purpose: str = Field(min_length=5, max_length=500)
     material_form: str | None = Field(default=None, max_length=300)
@@ -89,6 +90,23 @@ def _source_record(db: Session, name: str, identifier: str, url: str):
         DO UPDATE SET source_url=EXCLUDED.source_url, last_seen_at=now()
         RETURNING id
     """), {"name": name, "identifier": identifier, "url": url}).scalar_one()
+
+
+
+
+def _validate_chemical_form_scope(db: Session, peptide_id: UUID | None, chemical_form_id: UUID | None):
+    """Ensure an optional chemical form belongs to the explicitly supplied peptide."""
+    if chemical_form_id is None:
+        return
+    if peptide_id is None:
+        raise HTTPException(status_code=422, detail="A peptide_id is required when chemical_form_id is supplied.")
+    form_peptide_id = db.execute(text("""
+        SELECT peptide_id FROM peptide_chemical_forms WHERE id=:form_id
+    """), {"form_id": chemical_form_id}).scalar_one_or_none()
+    if form_peptide_id is None:
+        raise HTTPException(status_code=404, detail="Peptide chemical form not found.")
+    if str(form_peptide_id) != str(peptide_id):
+        raise HTTPException(status_code=422, detail="The selected chemical form belongs to a different peptide.")
 
 
 @router.get("")
@@ -299,20 +317,21 @@ def submit_method_applicability(
     """), {"id": payload.method_id, "org": organization_id}).scalar_one_or_none()
     if not method:
         raise HTTPException(status_code=404, detail="Verified analytical method not found.")
+    _validate_chemical_form_scope(db, payload.peptide_id, payload.chemical_form_id)
     source_id = _source_record(db, payload.source_name, payload.source_identifier, str(payload.source_url))
     row = db.execute(text("""
         INSERT INTO peptide_method_applicability (
-            organization_id, peptide_id, method_id, test_purpose, material_form,
+            organization_id, peptide_id, chemical_form_id, method_id, test_purpose, material_form,
             sample_matrix, applicability_rationale, evidence_scope, limitations,
             source_id, review_status, submitted_by
         ) VALUES (
-            :org, :peptide, :method, :purpose, :material, :matrix,
+            :org, :peptide, :chemical_form, :method, :purpose, :material, :matrix,
             :rationale, :scope, :limitations, :source, 'in_review', :submitter
         )
-        RETURNING id, peptide_id, method_id, test_purpose, review_status, created_at
+        RETURNING id, peptide_id, chemical_form_id, method_id, test_purpose, review_status, created_at
     """), {
-        "org": organization_id, "peptide": payload.peptide_id, "method": payload.method_id,
-        "purpose": payload.test_purpose.strip(), "material": payload.material_form,
+        "org": organization_id, "peptide": payload.peptide_id, "chemical_form": payload.chemical_form_id,
+        "method": payload.method_id, "purpose": payload.test_purpose.strip(), "material": payload.material_form,
         "matrix": payload.sample_matrix, "rationale": payload.applicability_rationale.strip(),
         "scope": payload.evidence_scope.strip(), "limitations": payload.limitations.strip(),
         "source": source_id, "submitter": current_user["id"],
@@ -340,8 +359,8 @@ def applicability_review_queue(
     if role not in REVIEW_ROLES:
         raise HTTPException(status_code=403, detail="Curator or reviewer permission is required.")
     rows = db.execute(text("""
-        SELECT a.id, a.peptide_id, p.preferred_name AS peptide_name,
-               a.method_id, m.method_name, a.test_purpose, a.material_form,
+        SELECT a.id, a.peptide_id, a.chemical_form_id, a.method_id, p.preferred_name AS peptide_name,
+               m.method_name, a.test_purpose, a.material_form,
                a.sample_matrix, a.applicability_rationale, a.evidence_scope,
                a.limitations, a.submitted_by, sr.source_name, sr.source_identifier,
                sr.source_url, a.created_at
@@ -408,6 +427,7 @@ class LaboratoryCapabilitySubmission(BaseModel):
     service_id: UUID
     method_id: UUID
     peptide_id: UUID | None = None
+    chemical_form_id: UUID | None = None
     test_purpose: str = Field(min_length=5, max_length=500)
     material_form: str | None = Field(default=None, max_length=300)
     sample_matrix: str = Field(min_length=2, max_length=500)
@@ -441,7 +461,7 @@ def list_verified_laboratory_capabilities(
                vs.id AS service_id, vs.service_name,
                m.id AS method_id, m.method_name, m.method_category,
                p.id AS peptide_id, p.preferred_name AS peptide_name,
-               lc.test_purpose, lc.material_form, lc.sample_matrix,
+               lc.chemical_form_id, lc.test_purpose, lc.material_form, lc.sample_matrix,
                lc.instrument_platform, lc.sample_requirements,
                lc.storage_shipping_requirements, lc.evidence_scope,
                lc.limitations, sr.source_name, sr.source_identifier,
@@ -503,22 +523,24 @@ def submit_laboratory_capability(
         """), {"id": payload.peptide_id}).scalar_one_or_none()
         if not peptide:
             raise HTTPException(status_code=404, detail="Verified peptide record not found.")
+    _validate_chemical_form_scope(db, payload.peptide_id, payload.chemical_form_id)
     source_id = _source_record(db, payload.source_name, payload.source_identifier, str(payload.source_url))
     row = db.execute(text("""
         INSERT INTO laboratory_capability_claims (
-            organization_id, service_id, method_id, peptide_id, test_purpose,
+            organization_id, service_id, method_id, peptide_id, chemical_form_id, test_purpose,
             material_form, sample_matrix, instrument_platform, sample_requirements,
             storage_shipping_requirements, evidence_scope, limitations, source_id,
             review_status, submitted_by
         ) VALUES (
-            :org, :service, :method, :peptide, :purpose, :material, :matrix,
+            :org, :service, :method, :peptide, :chemical_form, :purpose, :material, :matrix,
             :platform, :sample, :shipping, :scope, :limitations, :source,
             'in_review', :submitter
         )
-        RETURNING id, service_id, method_id, peptide_id, test_purpose, review_status, created_at
+        RETURNING id, service_id, method_id, peptide_id, chemical_form_id, test_purpose, review_status, created_at
     """), {
         "org": organization_id, "service": payload.service_id, "method": payload.method_id,
-        "peptide": payload.peptide_id, "purpose": payload.test_purpose.strip(),
+        "peptide": payload.peptide_id, "chemical_form": payload.chemical_form_id,
+        "purpose": payload.test_purpose.strip(),
         "material": payload.material_form, "matrix": payload.sample_matrix.strip(),
         "platform": payload.instrument_platform, "sample": payload.sample_requirements,
         "shipping": payload.storage_shipping_requirements, "scope": payload.evidence_scope.strip(),
@@ -551,7 +573,7 @@ def laboratory_capability_review_queue(
     rows = db.execute(text("""
         SELECT lc.id, lc.service_id, v.legal_name AS laboratory,
                s.site_name, s.address, vs.service_name,
-               lc.method_id, m.method_name, lc.peptide_id, p.preferred_name AS peptide_name,
+               lc.method_id, m.method_name, lc.peptide_id, lc.chemical_form_id, p.preferred_name AS peptide_name,
                lc.test_purpose, lc.material_form, lc.sample_matrix,
                lc.instrument_platform, lc.sample_requirements,
                lc.storage_shipping_requirements, lc.evidence_scope, lc.limitations,
@@ -736,6 +758,7 @@ def decide_analytical_test_catalogue_entry(
 
 class PeptideTestApplicabilitySubmission(BaseModel):
     peptide_id: UUID
+    chemical_form_id: UUID | None = None
     test_id: UUID
     applicability_status: Literal["applicable", "not_applicable", "conditional", "undetermined"]
     material_form: str | None = Field(default=None, max_length=300)
@@ -771,9 +794,9 @@ def list_verified_peptide_test_applicability(
 ):
     """Return only independently reviewed applicability records for globally verified peptide/test identities."""
     rows = db.execute(text("""
-        SELECT a.id, a.peptide_id, p.preferred_name AS peptide_name,
+        SELECT a.id, a.peptide_id, a.chemical_form_id, p.preferred_name AS peptide_name,
                a.test_id, t.catalogue_code, t.test_name, t.quality_attribute,
-               a.applicability_status, a.material_form, a.sample_matrix,
+               a.chemical_form_id, a.applicability_status, a.material_form, a.sample_matrix,
                a.intended_use_context, a.rationale, a.evidence_scope, a.limitations,
                sr.source_name, sr.source_identifier, sr.source_url, a.reviewed_at
         FROM peptide_test_applicability a
@@ -814,20 +837,21 @@ def submit_peptide_test_applicability(
     """), {"id": payload.test_id}).mappings().first()
     if not test:
         raise HTTPException(status_code=404, detail="Analytical test catalogue entry not found.")
+    _validate_chemical_form_scope(db, payload.peptide_id, payload.chemical_form_id)
     source_id = _source_record(db, payload.source_name, payload.source_identifier, str(payload.source_url))
     row = db.execute(text("""
         INSERT INTO peptide_test_applicability (
-            organization_id, peptide_id, test_id, applicability_status,
+            organization_id, peptide_id, chemical_form_id, test_id, applicability_status,
             material_form, sample_matrix, intended_use_context, rationale,
             evidence_scope, limitations, source_id, review_status, submitted_by
         ) VALUES (
-            :org, :peptide, :test, :status, :material, :matrix, :context,
+            :org, :peptide, :chemical_form, :test, :status, :material, :matrix, :context,
             :rationale, :scope, :limitations, :source, 'in_review', :submitter
         )
-        RETURNING id, peptide_id, test_id, applicability_status, review_status, created_at
+        RETURNING id, peptide_id, chemical_form_id, test_id, applicability_status, review_status, created_at
     """), {
-        "org": organization_id, "peptide": payload.peptide_id, "test": payload.test_id,
-        "status": payload.applicability_status, "material": payload.material_form,
+        "org": organization_id, "peptide": payload.peptide_id, "chemical_form": payload.chemical_form_id,
+        "test": payload.test_id, "status": payload.applicability_status, "material": payload.material_form,
         "matrix": payload.sample_matrix, "context": payload.intended_use_context,
         "rationale": payload.rationale.strip(), "scope": payload.evidence_scope.strip(),
         "limitations": payload.limitations.strip(), "source": source_id,

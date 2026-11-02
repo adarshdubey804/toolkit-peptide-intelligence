@@ -1434,7 +1434,7 @@ def test_regulatory_guidance_versions_and_decisions_follow_owner_and_public_veri
                 RETURNING id
             """), {"guidance": guidance_id, "version": suffix,
                    "url": "https://example.org/regulatory/" + suffix,
-                   "hash": (suffix[0].lower() * 64), "user": user, "status": status}).scalar_one()
+                   "hash": (("c" if suffix == "P1" else suffix[0].lower()) * 64), "user": user, "status": status}).scalar_one()
 
         version_a = version(guidance_a, user_a, "pending_review", "A1")
         version_b = version(guidance_b, user_b, "pending_review", "B1")

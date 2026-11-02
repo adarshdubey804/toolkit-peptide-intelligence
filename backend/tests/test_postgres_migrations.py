@@ -3056,3 +3056,107 @@ def test_analytical_test_catalogue_decisions_are_private_to_the_reviewing_organi
         """)
         connection.exec_driver_sql("REVOKE USAGE ON SCHEMA public FROM toolkit_test_catalogue_decision_rls_test")
         connection.exec_driver_sql("DROP ROLE toolkit_test_catalogue_decision_rls_test")
+
+
+
+
+@pytest.mark.skipif(
+    os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",
+    reason="PostgreSQL audit event RLS integration test is enabled in CI only.",
+)
+def test_audit_events_are_organization_private_and_actor_bound():
+    with engine.begin() as connection:
+        connection.execute(text("SELECT pg_advisory_xact_lock(731904221067)"))
+        apply_development_migrations(connection)
+        org_a = connection.execute(text("""
+            INSERT INTO organizations (name,organization_type)
+            VALUES (:name,'research_team') RETURNING id
+        """), {"name":"audit-rls-a-"+str(uuid4())}).scalar_one()
+        org_b = connection.execute(text("""
+            INSERT INTO organizations (name,organization_type)
+            VALUES (:name,'research_team') RETURNING id
+        """), {"name":"audit-rls-b-"+str(uuid4())}).scalar_one()
+        user_a = connection.execute(text("""
+            INSERT INTO user_profiles (display_name,role)
+            VALUES ('Audit actor A','researcher') RETURNING id
+        """)).scalar_one()
+        user_b = connection.execute(text("""
+            INSERT INTO user_profiles (display_name,role)
+            VALUES ('Audit actor B','researcher') RETURNING id
+        """)).scalar_one()
+        event_a = connection.execute(text("""
+            INSERT INTO audit_events (
+                actor_user_id,organization_id,action,entity_type,event_metadata
+            ) VALUES (:actor,:org,'audit_fixture_a','fixture','{}'::jsonb) RETURNING id
+        """), {"actor":user_a,"org":org_a}).scalar_one()
+        event_b = connection.execute(text("""
+            INSERT INTO audit_events (
+                actor_user_id,organization_id,action,entity_type,event_metadata
+            ) VALUES (:actor,:org,'audit_fixture_b','fixture','{}'::jsonb) RETURNING id
+        """), {"actor":user_b,"org":org_b}).scalar_one()
+
+        role = "toolkit_audit_event_rls_test"
+        exists = connection.execute(text(
+            "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname=:role)"
+        ), {"role":role}).scalar_one()
+        if not exists:
+            connection.exec_driver_sql("CREATE ROLE toolkit_audit_event_rls_test NOLOGIN NOBYPASSRLS")
+        connection.exec_driver_sql("GRANT USAGE ON SCHEMA public TO toolkit_audit_event_rls_test")
+        connection.exec_driver_sql("GRANT SELECT,INSERT ON audit_events TO toolkit_audit_event_rls_test")
+        connection.exec_driver_sql("GRANT SELECT,INSERT,UPDATE ON audit_chain_heads TO toolkit_audit_event_rls_test")
+
+        with connection.begin_nested():
+            connection.exec_driver_sql("SET LOCAL ROLE toolkit_audit_event_rls_test")
+            connection.execute(text("""
+                SELECT set_config('app.organization_id',:org,true),
+                       set_config('app.user_id',:user,true)
+            """), {"org":str(org_a),"user":str(user_a)})
+            assert set(connection.execute(text("""
+                SELECT id FROM audit_events WHERE id IN (:a,:b)
+            """), {"a":event_a,"b":event_b}).scalars().all()) == {event_a}
+            assert connection.execute(text(
+                "SELECT id FROM audit_events WHERE id=:id"
+            ), {"id":event_b}).scalar_one_or_none() is None
+
+            own_event = connection.execute(text("""
+                INSERT INTO audit_events (
+                    actor_user_id,organization_id,action,entity_type,event_metadata
+                ) VALUES (:actor,:org,'audit_owner_write','fixture','{}'::jsonb) RETURNING id
+            """), {"actor":user_a,"org":org_a}).scalar_one()
+            assert own_event is not None
+
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO audit_events (
+                            actor_user_id,organization_id,action,entity_type,event_metadata
+                        ) VALUES (:actor,:org,'audit_actor_spoof','fixture','{}'::jsonb)
+                    """), {"actor":user_b,"org":org_a})
+
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO audit_events (
+                            actor_user_id,organization_id,action,entity_type,event_metadata
+                        ) VALUES (:actor,:org,'audit_cross_org','fixture','{}'::jsonb)
+                    """), {"actor":user_a,"org":org_b})
+
+            # Scheduler events are actor-less, but remain bound to the source owner's organization.
+            connection.execute(text("SELECT set_config('app.user_id','',true)"))
+            worker_event = connection.execute(text("""
+                INSERT INTO audit_events (
+                    actor_user_id,organization_id,action,entity_type,event_metadata
+                ) VALUES (NULL,:org,'audit_worker_write','fixture','{}'::jsonb) RETURNING id
+            """), {"org":org_a}).scalar_one()
+            assert worker_event is not None
+
+            connection.execute(text("SELECT set_config('app.organization_id','',true)"))
+            assert connection.execute(text(
+                "SELECT count(*) FROM audit_events"
+            )).scalar_one() == 0
+
+        connection.exec_driver_sql("RESET ROLE")
+        connection.exec_driver_sql("REVOKE SELECT,INSERT ON audit_events FROM toolkit_audit_event_rls_test")
+        connection.exec_driver_sql("REVOKE SELECT,INSERT,UPDATE ON audit_chain_heads FROM toolkit_audit_event_rls_test")
+        connection.exec_driver_sql("REVOKE USAGE ON SCHEMA public FROM toolkit_audit_event_rls_test")
+        connection.exec_driver_sql("DROP ROLE toolkit_audit_event_rls_test")

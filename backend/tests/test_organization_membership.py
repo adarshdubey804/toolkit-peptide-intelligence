@@ -138,7 +138,11 @@ def test_login_falls_back_when_saved_organization_membership_is_no_longer_active
 
     monkeypatch.setattr(auth.settings, "app_secret_key", "test-secret-" + "x" * 32)
     monkeypatch.setattr(auth, "_load_user", load_user)
-    monkeypatch.setattr(auth.password_hash, "verify", lambda password, stored_hash: True)
+    class FakePasswordHash:
+        def verify(self, password, stored_hash):
+            return True
+
+    monkeypatch.setattr(auth, "password_hash", FakePasswordHash())
     monkeypatch.setattr(auth, "_create_access_token", lambda uid, oid, role: "fallback-token")
 
     result = auth.login(

@@ -1453,7 +1453,7 @@ def test_vendor_material_batch_traceability_migration_preserves_form_and_evidenc
         "prevent_batch_evidence_mutation",
         "prevent_batch_test_result_decision_mutation",
         "stated_available",
-        "does not independently verified",
+        "not independently verified until reviewed",
     ):
         assert expected in sql
     assert "UNIQUE(offering_id, lot_identifier)" in sql

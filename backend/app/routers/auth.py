@@ -18,6 +18,9 @@ from ..db import get_db
 router = APIRouter(prefix="/api/v1/auth", tags=["authentication"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
 password_hash = PasswordHash.recommended()
+# One-time Argon2 hash used so unknown emails and password-less accounts still
+# perform a password verification with comparable cost to a real account.
+DUMMY_PASSWORD_HASH = password_hash.hash("toolkit-invalid-login-dummy-secret")
 TOKEN_TTL_MINUTES = 60
 
 
@@ -121,8 +124,12 @@ def login(payload: LoginRequest, db: Annotated[Session, Depends(get_db)]):
     if len(settings.app_secret_key) < 32:
         raise HTTPException(status_code=503, detail="Authentication is not configured with a sufficiently long application secret.")
     user = _load_user(db, payload.email.strip().lower())
-    # A dummy verification reduces obvious timing differences for unknown accounts.
-    if not user or not user["password_hash"] or not password_hash.verify(payload.password, user["password_hash"]):
+    # Always perform one Argon2 verification, including for unknown email
+    # addresses and accounts without a password hash, to reduce timing-based
+    # account enumeration.
+    stored_hash = user["password_hash"] if user and user["password_hash"] else DUMMY_PASSWORD_HASH
+    password_valid = password_hash.verify(payload.password, stored_hash)
+    if not user or not password_valid:
         raise HTTPException(status_code=401, detail="Email or password is incorrect.", headers={"WWW-Authenticate": "Bearer"})
     if not user["is_active"]:
         raise HTTPException(status_code=403, detail="This account is inactive.")

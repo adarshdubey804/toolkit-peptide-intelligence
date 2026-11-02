@@ -70,3 +70,25 @@ def test_rate_limit_returns_429_and_retry_after_when_exceeded():
     assert db.committed
     assert error.value.status_code == 429
     assert error.value.headers["Retry-After"] == "55"
+
+
+
+def test_request_identity_ignores_untrusted_forwarded_headers():
+    from types import SimpleNamespace
+
+    from app.rate_limit import request_client_identity
+
+    request = SimpleNamespace(
+        client=SimpleNamespace(host="10.0.0.8"),
+        headers={"x-forwarded-for": "203.0.113.77"},
+    )
+    assert request_client_identity(request) == "10.0.0.8"
+
+
+def test_public_research_router_has_rate_limit_dependency():
+    from app.routers.research import limit_public_research_discovery, router
+
+    assert any(
+        dependency.dependency is limit_public_research_discovery
+        for dependency in router.dependencies
+    )

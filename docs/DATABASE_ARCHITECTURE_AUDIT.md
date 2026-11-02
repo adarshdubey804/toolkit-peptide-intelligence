@@ -1,7 +1,7 @@
 # Database Architecture Audit
 
 **Audit date:** 2026-11-02  
-**Scope:** Repository schema and application access patterns on `main`, migrations 001–044, and relevant backend routers.  
+**Scope:** Repository schema and application access patterns on `main`, migrations 001–063, and relevant backend routers.  
 **Important limitation:** This is a repository-level architecture review. It does not establish the live PostgreSQL database's current schema, data quality, query plans, backup state, or deployment configuration. Those require access to the deployed database and environment.
 
 ## Executive assessment
@@ -29,12 +29,12 @@ It is not yet ready to be treated as a complete, production-grade scientific dat
 
 The schema deliberately separates shared scientific master data from organization-submitted records. Migrations 038–041 introduce explicit `owner_organization_id` and visibility scopes for curation reviews/decisions, analytical methods, formulation profiles, process-knowledge profiles, and molecular-interaction assessments. The associated submission, review, evidence-claim, dossier, and enrichment access paths are being aligned to those stored owners rather than deriving tenant scope from a submitter's current memberships.
 
-The remaining ownership work is operational and defensive: ambiguous legacy rows must be resolved through a controlled process, every new submission path must set its owner, and cross-tenant negative tests must cover every router. A verified record is not automatically public where its visibility scope remains organization-private.
+The remaining ownership work is operational and defensive: ambiguous legacy rows must be resolved through a controlled process, every new submission path must set its owner, and cross-tenant negative tests must cover every router. Migrations 060–063 add RLS for laboratory capability claims, peptide applicability, analytical test-catalogue review decisions, and audit events; migrations 057–059 cover extraction artifacts, enrichment artifacts, and vendor service evidence. A verified record is not automatically public where its visibility scope remains organization-private.
 
 **Required design:** Keep immutable owner IDs on organization submissions and explicit visibility/publication state. Child records inherit access only through an explicitly owned parent. Shared master data such as peptides, publications, targets, pathways, and source records must not receive arbitrary tenant ownership. Public promotion must be a separate, reviewed transition.
 
 
-**Current ownership model after migrations 038–041:**
+**Current ownership model after migrations 038–063:**
 
 | Data class | Ownership and visibility rule |
 |---|---|
@@ -49,9 +49,9 @@ Legacy records with ambiguous owners remain NULL/restricted and must be resolved
 
 ### P0 — Tenant isolation is partially database-enforced, not yet comprehensive
 
-The RLS rollout now covers vendor materials and batch evidence; analytical methods and their review workflow; formulations and process knowledge; molecular interaction assessments; evidence appraisal and curation workflows; user-private agent sessions; regulatory guidance and source-poll artifacts; vendor identity, facilities, certifications and service/evidence links; laboratory capability claims; and peptide-method and peptide-test applicability assessments; organization-private editorial decisions on the shared analytical test catalogue; tamper-evident audit events scoped to the owning organization and authenticated actor. These policies use transaction-local organization context and distinguish owner-private contributions from explicitly public, verified records. The rollout is still partial: other tenant-owned tables, route-level authorization paths, privileged operators and background workers require separate review. The cross-tenant source registry remains a documented worker-control-plane exception until a dedicated worker role is introduced.
+The RLS rollout in migrations 044–063 covers vendor materials and batch evidence; analytical methods and their review workflow; formulations and process knowledge; molecular interaction assessments; evidence appraisal and curation workflows; user-private agent sessions; regulatory guidance and source-poll artifacts; vendor identity, facilities, certifications, services and service/evidence links; laboratory capability claims; peptide-method and peptide-test applicability assessments; organization-private editorial decisions on the shared analytical test catalogue; tamper-evident audit events scoped to the owning organization and authenticated actor; and extraction/enrichment artifacts. These policies use transaction-local organization context and distinguish owner-private contributions from explicitly public, verified records. The rollout is still partial: remaining tenant-owned tables, route-level authorization paths, privileged operators and background workers require separate review. The cross-tenant source registry remains a documented worker-control-plane exception until a dedicated worker role is introduced.
 
-A missed organization predicate in one endpoint can therefore expose another tenant's data.
+A missed organization predicate in an uncovered endpoint or worker can therefore expose another tenant's data.
 
 **Required design:** Decide explicitly between (a) PostgreSQL RLS with transaction-local tenant context and carefully scoped service roles, or (b) a rigorously centralized repository/service layer with mandatory tenant scope and comprehensive cross-tenant integration tests. RLS is recommended for organization-private records. Public, verified scientific master data should remain deliberately readable according to its publication rules. Do not enable RLS without testing connection-pool context reset and background-worker behavior.
 

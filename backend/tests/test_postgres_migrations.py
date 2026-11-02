@@ -35,6 +35,9 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             "formulation_profiles",
             "process_knowledge_profiles",
             "regulatory_source_poll_runs",
+            "vendors", "vendor_sources", "vendor_review_decisions",
+            "vendor_sites", "vendor_site_sources", "vendor_site_decisions",
+            "vendor_certifications", "vendor_certification_decisions",
             "extracted_evidence_field_decisions",
             "peptide_method_applicability",
             "peptide_method_applicability_decisions",
@@ -424,6 +427,32 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             )
         """)).scalar_one()
         assert source_scheduler_policy_count == 6, "Regulatory source observations and poll runs need explicit RLS policies"
+
+        vendor_rls_tables = (
+            "vendors", "vendor_sources", "vendor_review_decisions",
+            "vendor_sites", "vendor_site_sources", "vendor_site_decisions",
+            "vendor_certifications", "vendor_certification_decisions",
+        )
+        for table_name in vendor_rls_tables:
+            state = connection.execute(text("""
+                SELECT relrowsecurity, relforcerowsecurity
+                FROM pg_class WHERE oid=to_regclass(:table_name)
+            """), {"table_name": f"public.{table_name}"}).one()
+            assert tuple(state) == (True, True), f"RLS and FORCE RLS must be enabled for {table_name}"
+        vendor_policy_count = connection.execute(text("""
+            SELECT count(*) FROM pg_policies
+            WHERE schemaname='public' AND policyname IN (
+                'vendors_select_scope','vendors_insert_scope','vendors_update_scope',
+                'vendor_sources_select_scope','vendor_sources_insert_scope','vendor_sources_update_scope',
+                'vendor_review_decisions_select_scope','vendor_review_decisions_insert_scope',
+                'vendor_sites_select_scope','vendor_sites_insert_scope','vendor_sites_update_scope',
+                'vendor_site_sources_select_scope','vendor_site_sources_insert_scope','vendor_site_sources_update_scope',
+                'vendor_site_decisions_select_scope','vendor_site_decisions_insert_scope',
+                'vendor_certifications_select_scope','vendor_certifications_insert_scope','vendor_certifications_update_scope',
+                'vendor_certification_decisions_select_scope','vendor_certification_decisions_insert_scope'
+            )
+        """)).scalar_one()
+        assert vendor_policy_count == 21, "Vendor identity, site and certification access paths need explicit RLS policies"
 
 @pytest.mark.skipif(
     os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",

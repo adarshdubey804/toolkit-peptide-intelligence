@@ -2401,3 +2401,222 @@ def test_data_quality_report_counts_source_revision_and_extraction_coverage():
         assert report["organization_evidence"]["claims"]["with_revision"] == 1
         assert report["organization_evidence"]["extractions"]["with_source_version"] == 1
         assert report["organization_evidence"]["curation"]["claim_revision_bound_decisions"] == 1
+
+
+
+
+@pytest.mark.skipif(
+    os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",
+    reason="PostgreSQL laboratory capability RLS integration test is enabled in CI only.",
+)
+def test_laboratory_capability_claims_are_owner_scoped_and_public_only_when_verified():
+    with engine.begin() as connection:
+        connection.execute(text("SELECT pg_advisory_xact_lock(731904221067)"))
+        apply_development_migrations(connection)
+        org_a = connection.execute(text("""
+            INSERT INTO organizations (name, organization_type)
+            VALUES (:name,'research_team') RETURNING id
+        """), {"name":"lab-capability-a-"+str(uuid4())}).scalar_one()
+        org_b = connection.execute(text("""
+            INSERT INTO organizations (name, organization_type)
+            VALUES (:name,'research_team') RETURNING id
+        """), {"name":"lab-capability-b-"+str(uuid4())}).scalar_one()
+        user_a = connection.execute(text("""
+            INSERT INTO user_profiles (display_name,role)
+            VALUES ('Lab capability owner A','researcher') RETURNING id
+        """)).scalar_one()
+        user_b = connection.execute(text("""
+            INSERT INTO user_profiles (display_name,role)
+            VALUES ('Lab capability owner B','researcher') RETURNING id
+        """)).scalar_one()
+
+        source = connection.execute(text("""
+            INSERT INTO source_records (source_name,source_identifier,source_url,retrieved_at)
+            VALUES ('Lab capability fixture',:identifier,'https://example.org/lab-capability',now())
+            RETURNING id
+        """), {"identifier":str(uuid4())}).scalar_one()
+        peptide = connection.execute(text("""
+            INSERT INTO peptides (preferred_name,review_status)
+            VALUES ('Verified lab fixture peptide','verified') RETURNING id
+        """)).scalar_one()
+        chemical_form = connection.execute(text("""
+            INSERT INTO peptide_chemical_forms (peptide_id,form_name,review_status)
+            VALUES (:peptide,'Verified lab fixture chemical form','verified') RETURNING id
+        """), {"peptide":peptide}).scalar_one()
+        method = connection.execute(text("""
+            INSERT INTO analytical_methods (
+                method_name,method_category,review_status,visibility_scope
+            ) VALUES ('Public verified fixture method','identity','verified','public')
+            RETURNING id
+        """)).scalar_one()
+
+        def create_vendor_service(org, owner, label):
+            vendor = connection.execute(text("""
+                INSERT INTO vendors (
+                    organization_id,legal_name,vendor_type,verification_status,review_status
+                ) VALUES (:org,:name,'analytical_laboratory','verified','verified') RETURNING id
+            """), {"org":org,"name":label+" laboratory"}).scalar_one()
+            site = connection.execute(text("""
+                INSERT INTO vendor_sites (
+                    vendor_id,organization_id,site_name,address,country_code,site_scope,
+                    review_status,submitted_by
+                ) VALUES (:vendor,:org,:name,'1 Science Road','IN','Analytical testing facility',
+                          'verified',:owner) RETURNING id
+            """), {"vendor":vendor,"org":org,"name":label+" facility","owner":owner}).scalar_one()
+            service = connection.execute(text("""
+                INSERT INTO vendor_services (
+                    vendor_id,site_id,service_name,capability_description,
+                    review_status,submitted_by
+                ) VALUES (:vendor,:site,'Peptide LC-MS testing',
+                          'Source-backed peptide identity and purity testing.',
+                          'verified',:owner) RETURNING id
+            """), {"vendor":vendor,"site":site,"owner":owner}).scalar_one()
+            return service
+
+        service_a = create_vendor_service(org_a,user_a,"A")
+        service_b = create_vendor_service(org_b,user_b,"B")
+
+        def create_claim(org, service, owner, visibility, status):
+            return connection.execute(text("""
+                INSERT INTO laboratory_capability_claims (
+                    organization_id,service_id,method_id,peptide_id,chemical_form_id,
+                    test_purpose,sample_matrix,evidence_scope,limitations,source_id,
+                    review_status,submitted_by,visibility_scope
+                ) VALUES (
+                    :org,:service,:method,:peptide,:form,
+                    'Confirm peptide identity and purity','Aqueous peptide sample',
+                    'Published facility service page and analytical method reference.',
+                    'Does not guarantee current capacity, turnaround or method validation.',
+                    :source,:status,:owner,:visibility
+                ) RETURNING id
+            """), {
+                "org":org,"service":service,"method":method,"peptide":peptide,
+                "form":chemical_form,"source":source,"status":status,
+                "owner":owner,"visibility":visibility,
+            }).scalar_one()
+
+        claim_a = create_claim(org_a,service_a,user_a,"organization","in_review")
+        claim_b = create_claim(org_b,service_b,user_b,"organization","in_review")
+        public_claim = create_claim(org_a,service_a,user_a,"public","verified")
+        decision_a = connection.execute(text("""
+            INSERT INTO laboratory_capability_decisions (
+                claim_id,organization_id,reviewer_id,decision,rationale
+            ) VALUES (:claim,:org,:reviewer,'verified',
+                      'Independent reviewer checked the cited facility and method evidence.')
+            RETURNING id
+        """), {"claim":claim_a,"org":org_a,"reviewer":user_b}).scalar_one()
+        decision_b = connection.execute(text("""
+            INSERT INTO laboratory_capability_decisions (
+                claim_id,organization_id,reviewer_id,decision,rationale
+            ) VALUES (:claim,:org,:reviewer,'verified',
+                      'Independent reviewer checked the cited facility and method evidence.')
+            RETURNING id
+        """), {"claim":claim_b,"org":org_b,"reviewer":user_a}).scalar_one()
+
+        role = "toolkit_lab_capability_rls_test"
+        exists = connection.execute(text(
+            "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname=:role)"
+        ), {"role":role}).scalar_one()
+        if not exists:
+            connection.exec_driver_sql("CREATE ROLE toolkit_lab_capability_rls_test NOLOGIN NOBYPASSRLS")
+        connection.exec_driver_sql("GRANT USAGE ON SCHEMA public TO toolkit_lab_capability_rls_test")
+        for table in (
+            "vendors","vendor_sites","vendor_services","analytical_methods",
+            "peptides","peptide_chemical_forms",
+        ):
+            connection.exec_driver_sql(
+                f"GRANT SELECT ON {table} TO toolkit_lab_capability_rls_test"
+            )
+        connection.exec_driver_sql("""
+            GRANT SELECT,INSERT,UPDATE ON laboratory_capability_claims
+            TO toolkit_lab_capability_rls_test
+        """)
+        connection.exec_driver_sql("""
+            GRANT SELECT,INSERT ON laboratory_capability_decisions
+            TO toolkit_lab_capability_rls_test
+        """)
+
+        with connection.begin_nested():
+            connection.exec_driver_sql("SET LOCAL ROLE toolkit_lab_capability_rls_test")
+            connection.execute(text("SELECT set_config('app.organization_id',:org,true)"),
+                               {"org":str(org_a)})
+            visible_claims = set(connection.execute(text("""
+                SELECT id FROM laboratory_capability_claims
+                WHERE id IN (:a,:b,:public)
+            """), {"a":claim_a,"b":claim_b,"public":public_claim}).scalars().all())
+            assert visible_claims == {claim_a,public_claim}
+            assert connection.execute(text("""
+                SELECT id FROM laboratory_capability_claims WHERE id=:id
+            """), {"id":claim_b}).scalar_one_or_none() is None
+            assert set(connection.execute(text("""
+                SELECT id FROM laboratory_capability_decisions
+                WHERE id IN (:a,:b)
+            """), {"a":decision_a,"b":decision_b}).scalars().all()) == {decision_a}
+
+            valid_insert = connection.execute(text("""
+                INSERT INTO laboratory_capability_claims (
+                    organization_id,service_id,method_id,peptide_id,chemical_form_id,
+                    test_purpose,sample_matrix,evidence_scope,limitations,source_id,
+                    review_status,submitted_by
+                ) VALUES (
+                    :org,:service,:method,:peptide,:form,
+                    'Confirm peptide identity','Aqueous sample',
+                    'Published facility page and method reference.',
+                    'No guarantee of current capacity or method validation.',
+                    :source,'in_review',:owner
+                ) RETURNING id
+            """), {
+                "org":org_a,"service":service_a,"method":method,"peptide":peptide,
+                "form":chemical_form,"source":source,"owner":user_a,
+            }).scalar_one()
+            assert valid_insert is not None
+
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO laboratory_capability_claims (
+                            organization_id,service_id,method_id,test_purpose,sample_matrix,
+                            evidence_scope,limitations,source_id,submitted_by
+                        ) VALUES (
+                            :org,:service,:method,'Cross-tenant service claim','Aqueous sample',
+                            'Cross-tenant service must not be visible.',
+                            'Cross-tenant service ownership is not permitted.',:source,:owner
+                        )
+                    """), {
+                        "org":org_a,"service":service_b,"method":method,
+                        "source":source,"owner":user_a,
+                    })
+
+            with pytest.raises(Exception):
+                with connection.begin_nested():
+                    connection.execute(text("""
+                        INSERT INTO laboratory_capability_decisions (
+                            claim_id,organization_id,reviewer_id,decision,rationale
+                        ) VALUES (:claim,:org,:reviewer,'verified',
+                                  'Decision must not cross organization boundaries.')
+                    """), {"claim":claim_b,"org":org_a,"reviewer":user_a})
+
+            connection.execute(text("SELECT set_config('app.organization_id','',true)"))
+            public_claims = set(connection.execute(text("""
+                SELECT id FROM laboratory_capability_claims
+            """)).scalars().all())
+            assert public_claims == {public_claim}
+
+        connection.exec_driver_sql("RESET ROLE")
+        connection.exec_driver_sql("""
+            REVOKE SELECT,INSERT,UPDATE ON laboratory_capability_claims
+            FROM toolkit_lab_capability_rls_test
+        """)
+        connection.exec_driver_sql("""
+            REVOKE SELECT,INSERT ON laboratory_capability_decisions
+            FROM toolkit_lab_capability_rls_test
+        """)
+        for table in (
+            "vendors","vendor_sites","vendor_services","analytical_methods",
+            "peptides","peptide_chemical_forms",
+        ):
+            connection.exec_driver_sql(
+                f"REVOKE SELECT ON {table} FROM toolkit_lab_capability_rls_test"
+            )
+        connection.exec_driver_sql("REVOKE USAGE ON SCHEMA public FROM toolkit_lab_capability_rls_test")
+        connection.exec_driver_sql("DROP ROLE toolkit_lab_capability_rls_test")

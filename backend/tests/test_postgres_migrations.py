@@ -213,7 +213,8 @@ def test_audit_chain_appends_sequentially_and_rejects_mutation():
             WHERE NOT tgisinternal AND tgname IN (
                 'trg_vendor_material_offering_scope',
                 'trg_vendor_material_batch_scope',
-                'trg_batch_test_result_scope',\n                'trg_batch_test_result_decision_scope',
+                'trg_batch_test_result_scope',
+                'trg_batch_test_result_decision_scope',
                 'trg_vendor_material_offerings_immutable_evidence',
                 'trg_vendor_material_batches_immutable_evidence',
                 'trg_batch_analytical_test_results_immutable_evidence',

@@ -1037,12 +1037,20 @@ def test_vendor_candidate_batch_import_contract_and_unverified_defaults():
     }
     batch = VendorCandidateBatch(candidates=[valid])
     assert len(batch.candidates) == 1
+    assert batch.candidates[0].identity_source is None
     with pytest.raises(ValidationError):
         VendorCandidateBatch(candidates=[])
     with pytest.raises(ValidationError):
         VendorCandidateBatch(candidates=[{**valid, "country_code": "USA"}])
     with pytest.raises(ValidationError):
         VendorCandidateBatch(candidates=[{**valid, "source_url": "http://example.org/source"}])
+    with pytest.raises(ValidationError):
+        VendorCandidateBatch(candidates=[{**valid, "identity_source": {
+            "source_name": "Official company profile",
+            "source_identifier": "identity-example",
+            "source_url": "http://example.org/profile",
+            "evidence_scope": "Official profile identifies the corporate reference country.",
+        }}])
 
 
 

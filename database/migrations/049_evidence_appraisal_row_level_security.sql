@@ -17,7 +17,7 @@ CREATE POLICY evidence_appraisal_decisions_insert_scope ON evidence_appraisal_de
 WITH CHECK (
  organization_id = NULLIF(current_setting('app.organization_id', true), '')::uuid
  AND EXISTS (SELECT 1 FROM evidence_appraisals appraisal
-             WHERE appraisal.id=appraisal_id AND appraisal.organization_id=organization_id)
+             WHERE appraisal.id=evidence_appraisal_decisions.appraisal_id AND appraisal.organization_id=evidence_appraisal_decisions.organization_id)
 );
 
 ALTER TABLE publication_duplicate_candidates ENABLE ROW LEVEL SECURITY;
@@ -38,5 +38,5 @@ CREATE POLICY publication_duplicate_decisions_insert_scope ON publication_duplic
 WITH CHECK (
  organization_id = NULLIF(current_setting('app.organization_id', true), '')::uuid
  AND EXISTS (SELECT 1 FROM publication_duplicate_candidates candidate
-             WHERE candidate.id=candidate_id AND candidate.organization_id=organization_id)
+             WHERE candidate.id=publication_duplicate_decisions.candidate_id AND candidate.organization_id=publication_duplicate_decisions.organization_id)
 );

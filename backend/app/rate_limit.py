@@ -64,17 +64,19 @@ def enforce_rate_limit(
             "now": now,
         },
     ).scalar_one()
-    # Opportunistic retention cleanup: at most one backend instance performs
-    # this once per hour, avoiding unbounded growth from one-off client IPs.
-    if epoch % 3600 < window_seconds:
-        cleanup_lock = db.execute(
-            text("SELECT pg_try_advisory_xact_lock(731904221068)")
-        ).scalar_one()
-        if cleanup_lock:
-            db.execute(text("""
-                DELETE FROM api_rate_limit_buckets
-                WHERE updated_at < clock_timestamp() - interval '30 days'
-            """))
+    # Only one request per hour wins the atomic maintenance marker update.
+    cleanup_due = db.execute(text("""
+        UPDATE api_rate_limit_maintenance
+        SET last_cleanup_at = clock_timestamp()
+        WHERE singleton = TRUE
+          AND last_cleanup_at < clock_timestamp() - interval '1 hour'
+        RETURNING singleton
+    """)).scalar_one_or_none()
+    if cleanup_due:
+        db.execute(text("""
+            DELETE FROM api_rate_limit_buckets
+            WHERE updated_at < clock_timestamp() - interval '30 days'
+        """))
 
     db.commit()
 

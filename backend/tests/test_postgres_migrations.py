@@ -84,6 +84,8 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             "regulatory_guidance_versions",
             "regulatory_change_events",
             "regulatory_change_decisions",
+            "regulatory_source_observations",
+            "regulatory_source_poll_runs",
             "claim_source_locators",
             "analytical_methods",
             "analytical_method_sources",
@@ -407,6 +409,21 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             )
         """)).scalar_one()
         assert regulatory_policy_count == 13, "Regulatory guidance and change-history access paths need explicit RLS policies"
+
+        for table_name in ("regulatory_source_observations", "regulatory_source_poll_runs"):
+            state = connection.execute(text("""
+                SELECT relrowsecurity, relforcerowsecurity
+                FROM pg_class WHERE oid=to_regclass(:table_name)
+            """), {"table_name": f"public.{table_name}"}).one()
+            assert tuple(state) == (True, True), f"RLS and FORCE RLS must be enabled for {table_name}"
+        source_scheduler_policy_count = connection.execute(text("""
+            SELECT count(*) FROM pg_policies
+            WHERE schemaname='public' AND policyname IN (
+                'regulatory_source_observations_select_scope','regulatory_source_observations_insert_scope','regulatory_source_observations_update_scope',
+                'regulatory_source_poll_runs_select_scope','regulatory_source_poll_runs_insert_scope','regulatory_source_poll_runs_update_scope'
+            )
+        """)).scalar_one()
+        assert source_scheduler_policy_count == 6, "Regulatory source observations and poll runs need explicit RLS policies"
 
 @pytest.mark.skipif(
     os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",

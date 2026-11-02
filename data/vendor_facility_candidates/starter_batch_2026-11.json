@@ -112,6 +112,28 @@
           ]
         }
       ]
+    },
+    {
+      "vendor_name": "PolyPeptide Group AG",
+      "candidates": [
+        {
+          "site_name": "PolyPeptide Ambernath",
+          "address": "K-28, Additional MIDC, Anand Nagar, Ambernath (East), Thane 421 506, Maharashtra, India",
+          "country_code": "IN",
+          "site_scope": "Official site page describes a 1,462 square metre facility using solid-phase peptide synthesis and producing generic commercial peptide products. The page does not establish every analytical or quality service at this site.",
+          "source_name": "Official manufacturing site page",
+          "source_identifier": "official-facility:polypeptide-ambernath-synthesis",
+          "source_url": "https://www.polypeptide.com/contacts/manufacturing-sites/ambernath-india/",
+          "additional_sources": [
+            {
+              "source_name": "Official company contacts page",
+              "source_identifier": "official-contact:polypeptide-ambernath-address",
+              "source_url": "https://www.polypeptide.com/contacts/",
+              "evidence_scope": "Official corporate contacts page lists the facility address in Ambernath, Maharashtra, India."
+            }
+          ]
+        }
+      ]
     }
   ]
 }

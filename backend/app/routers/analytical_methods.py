@@ -308,19 +308,24 @@ def submit_method_applicability(
     """), {"id": payload.method_id}).scalar_one_or_none()
     if not method:
         raise HTTPException(status_code=404, detail="Verified analytical method not found.")
+    if payload.test_definition_id is not None:
+        test_definition = db.execute(text("SELECT id FROM analytical_test_catalogue WHERE id=:id"), {"id": payload.test_definition_id}).scalar_one_or_none()
+        if not test_definition:
+            raise HTTPException(status_code=404, detail="Analytical test catalogue entry not found.")
     source_id = _source_record(db, payload.source_name, payload.source_identifier, str(payload.source_url))
     row = db.execute(text("""
         INSERT INTO peptide_method_applicability (
-            organization_id, peptide_id, method_id, test_purpose, material_form,
+            organization_id, peptide_id, method_id, test_definition_id, test_purpose, material_form,
             sample_matrix, applicability_rationale, evidence_scope, limitations,
             source_id, review_status, submitted_by
         ) VALUES (
-            :org, :peptide, :method, :purpose, :material, :matrix,
+            :org, :peptide, :method, :test_definition, :purpose, :material, :matrix,
             :rationale, :scope, :limitations, :source, 'in_review', :submitter
         )
         RETURNING id, peptide_id, method_id, test_purpose, review_status, created_at
     """), {
         "org": organization_id, "peptide": payload.peptide_id, "method": payload.method_id,
+        "test_definition": payload.test_definition_id,
         "purpose": payload.test_purpose.strip(), "material": payload.material_form,
         "matrix": payload.sample_matrix, "rationale": payload.applicability_rationale.strip(),
         "scope": payload.evidence_scope.strip(), "limitations": payload.limitations.strip(),
@@ -511,6 +516,10 @@ def submit_laboratory_capability(
     """), {"id": payload.method_id}).scalar_one_or_none()
     if not method:
         raise HTTPException(status_code=404, detail="Verified analytical method not found.")
+    if payload.test_definition_id is not None:
+        test_definition = db.execute(text("SELECT id FROM analytical_test_catalogue WHERE id=:id"), {"id": payload.test_definition_id}).scalar_one_or_none()
+        if not test_definition:
+            raise HTTPException(status_code=404, detail="Analytical test catalogue entry not found.")
     if payload.peptide_id is not None:
         peptide = db.execute(text("""
             SELECT id FROM peptides WHERE id=:id AND review_status='verified'

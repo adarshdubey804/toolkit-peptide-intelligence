@@ -44,3 +44,11 @@ def test_agent_run_uses_specialized_query_and_source_scope(monkeypatch):
     assert response["mode"] == "specialized_source_grounded_workflow"
     assert response["retrieval_plan"]["sources_requested"] == ["pubmed"]
     assert len(response["agent_output"]["recommended_review"]) == 4
+
+
+def test_direct_agent_execution_requires_bearer_authentication():
+    from app.main import app
+
+    operation = app.openapi()["paths"]["/api/v1/agents/{agent_id}/run"]["post"]
+    assert operation.get("security")
+    assert any("OAuth2PasswordBearer" in requirement for requirement in operation["security"])

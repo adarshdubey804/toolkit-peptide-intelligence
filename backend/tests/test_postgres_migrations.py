@@ -60,6 +60,9 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             "vendor_material_batches",
             "batch_analytical_test_results",
             "batch_analytical_test_result_decisions",
+            "analytical_methods",
+            "analytical_method_sources",
+            "analytical_method_decisions",
         )
         for table_name in required_tables:
             exists = connection.execute(
@@ -235,6 +238,28 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
         """)).scalar_one()
         assert required_policies == 11, "All vendor material traceability access paths need explicit RLS policies"
 
+        method_rls_tables = ("analytical_methods", "analytical_method_sources", "analytical_method_decisions")
+        for table_name in method_rls_tables:
+            method_rls_state = connection.execute(text("""
+                SELECT relrowsecurity, relforcerowsecurity
+                FROM pg_class WHERE oid=to_regclass(:table_name)
+            """), {"table_name": f"public.{table_name}"}).one()
+            assert tuple(method_rls_state) == (True, True), f"RLS and FORCE RLS must be enabled for {table_name}"
+
+        method_policy_count = connection.execute(text("""
+            SELECT count(*) FROM pg_policies
+            WHERE schemaname='public' AND policyname IN (
+                'analytical_methods_select_scope',
+                'analytical_methods_insert_scope',
+                'analytical_methods_update_scope',
+                'analytical_method_sources_select_scope',
+                'analytical_method_sources_insert_scope',
+                'analytical_method_decisions_select_scope',
+                'analytical_method_decisions_insert_scope'
+            )
+        """)).scalar_one()
+        assert method_policy_count == 7, "Analytical method access paths need explicit RLS policies"
+
 @pytest.mark.skipif(
     os.getenv("RUN_POSTGRES_MIGRATION_TESTS") != "1",
     reason="PostgreSQL audit-chain integration test is enabled in CI only.",
@@ -407,15 +432,62 @@ def test_vendor_material_offering_rls_enforces_organization_and_public_scope():
         """), {"org": organization_b, "vendor": vendor_b, "peptide": peptide_b,
                "form": form_b, "source": source_id, "submitter": submitter_b}).scalar_one()
 
-        connection.exec_driver_sql("""
-            DO $$ BEGIN
-                IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='toolkit_rls_test') THEN
-                    CREATE ROLE toolkit_rls_test NOLOGIN NOBYPASSRLS;
-                END IF;
-            END $$;
-        """)
+        method_a = connection.execute(text("""
+            INSERT INTO analytical_methods (
+                method_name, method_category, owner_organization_id, visibility_scope,
+                review_status, submitted_by, limitations
+            ) VALUES ('Private method A', 'other', :org, 'organization',
+                      'in_review', :submitter, 'Organization-owned test method.')
+            RETURNING id
+        """), {"org": organization_a, "submitter": submitter_a}).scalar_one()
+        method_b = connection.execute(text("""
+            INSERT INTO analytical_methods (
+                method_name, method_category, owner_organization_id, visibility_scope,
+                review_status, submitted_by, limitations
+            ) VALUES ('Private method B', 'other', :org, 'organization',
+                      'in_review', :submitter, 'Organization-owned test method.')
+            RETURNING id
+        """), {"org": organization_b, "submitter": submitter_b}).scalar_one()
+        method_public = connection.execute(text("""
+            INSERT INTO analytical_methods (
+                method_name, method_category, owner_organization_id, visibility_scope,
+                review_status, submitted_by, limitations
+            ) VALUES ('Public verified method', 'other', NULL, 'public',
+                      'verified', NULL, 'Shared master test method.')
+            RETURNING id
+        """)).scalar_one()
+        for method_id in (method_a, method_b, method_public):
+            connection.execute(text("""
+                INSERT INTO analytical_method_sources (method_id, source_record_id, evidence_scope)
+                VALUES (:method, :source, 'Source describes the analytical method and its scope.')
+            """), {"method": method_id, "source": source_id})
+        connection.execute(text("""
+            INSERT INTO analytical_method_decisions
+                (method_id, organization_id, reviewer_id, decision, rationale)
+            VALUES (:method_a, :org_a, :reviewer_a, 'verified', 'Independent method review for organization A.'),
+                   (:method_b, :org_b, :reviewer_b, 'verified', 'Independent method review for organization B.')
+        """), {"method_a": method_a, "org_a": organization_a, "reviewer_a": submitter_b,
+               "method_b": method_b, "org_b": organization_b, "reviewer_b": submitter_a})
+
+        with pytest.raises(Exception):
+            with connection.begin_nested():
+                connection.execute(text("""
+                INSERT INTO analytical_method_decisions
+                    (method_id, organization_id, reviewer_id, decision, rationale)
+                VALUES (:method, :wrong_org, :reviewer, 'verified',
+                        'This deliberately mismatched organization must be rejected.')
+            """), {"method": method_a, "wrong_org": organization_b, "reviewer": submitter_b})
+
+        role_exists = connection.execute(text(
+            "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='toolkit_rls_test')"
+        )).scalar_one()
+        if not role_exists:
+            connection.exec_driver_sql("CREATE ROLE toolkit_rls_test NOLOGIN NOBYPASSRLS")
         connection.exec_driver_sql("GRANT USAGE ON SCHEMA public TO toolkit_rls_test")
         connection.exec_driver_sql("GRANT SELECT ON vendor_material_offerings TO toolkit_rls_test")
+        connection.exec_driver_sql("GRANT SELECT ON analytical_methods TO toolkit_rls_test")
+        connection.exec_driver_sql("GRANT SELECT ON analytical_method_sources TO toolkit_rls_test")
+        connection.exec_driver_sql("GRANT SELECT ON analytical_method_decisions TO toolkit_rls_test")
 
         with connection.begin_nested():
             connection.exec_driver_sql("SET LOCAL ROLE toolkit_rls_test")
@@ -434,7 +506,40 @@ def test_vendor_material_offering_rls_enforces_organization_and_public_scope():
                 "SELECT id FROM vendor_material_offerings"
             )).scalars().all())
             assert visible_public == {public_b}
+            connection.execute(text("""
+                SELECT set_config('app.organization_id', :org, true)
+            """), {"org": str(organization_a)})
+            visible_methods_a = set(connection.execute(text(
+                "SELECT id FROM analytical_methods"
+            )).scalars().all())
+            assert visible_methods_a == {method_a, method_public}
+            visible_method_sources_a = set(connection.execute(text(
+                "SELECT method_id FROM analytical_method_sources"
+            )).scalars().all())
+            assert visible_method_sources_a == {method_a, method_public}
+            visible_method_decisions_a = set(connection.execute(text(
+                "SELECT method_id FROM analytical_method_decisions"
+            )).scalars().all())
+            assert visible_method_decisions_a == {method_a}
+
+            connection.execute(text("""
+                SELECT set_config('app.organization_id', '', true)
+            """))
+            visible_methods_public = set(connection.execute(text(
+                "SELECT id FROM analytical_methods"
+            )).scalars().all())
+            assert visible_methods_public == {method_public}
+            visible_sources_public = set(connection.execute(text(
+                "SELECT method_id FROM analytical_method_sources"
+            )).scalars().all())
+            assert visible_sources_public == {method_public}
+            assert connection.execute(text(
+                "SELECT count(*) FROM analytical_method_decisions"
+            )).scalar_one() == 0
         connection.exec_driver_sql("RESET ROLE")
+        connection.exec_driver_sql("REVOKE SELECT ON analytical_method_decisions FROM toolkit_rls_test")
+        connection.exec_driver_sql("REVOKE SELECT ON analytical_method_sources FROM toolkit_rls_test")
+        connection.exec_driver_sql("REVOKE SELECT ON analytical_methods FROM toolkit_rls_test")
         connection.exec_driver_sql("REVOKE SELECT ON vendor_material_offerings FROM toolkit_rls_test")
         connection.exec_driver_sql("REVOKE USAGE ON SCHEMA public FROM toolkit_rls_test")
         connection.exec_driver_sql("DROP ROLE toolkit_rls_test")

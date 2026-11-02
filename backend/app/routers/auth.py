@@ -126,6 +126,10 @@ def login(payload: LoginRequest, db: Annotated[Session, Depends(get_db)]):
     if len(settings.app_secret_key) < 32:
         raise HTTPException(status_code=503, detail="Authentication is not configured with a sufficiently long application secret.")
     user = _load_user(db, payload.email.strip().lower(), payload.organization_id)
+    # A stale or revoked browser preference must not lock a legitimate user out;
+    # fall back only to one of the account's own active memberships.
+    if not user and payload.organization_id:
+        user = _load_user(db, payload.email.strip().lower())
     # Always perform one Argon2 verification, including for unknown email
     # addresses and accounts without a password hash, to reduce timing-based
     # account enumeration.
@@ -135,6 +139,8 @@ def login(payload: LoginRequest, db: Annotated[Session, Depends(get_db)]):
         raise HTTPException(status_code=401, detail="Email or password is incorrect.", headers={"WWW-Authenticate": "Bearer"})
     if not user["is_active"]:
         raise HTTPException(status_code=403, detail="This account is inactive.")
+    if not user["organization_id"]:
+        raise HTTPException(status_code=403, detail="This account has no active organization membership.")
     token = _create_access_token(str(user["id"]), str(user["organization_id"]) if user["organization_id"] else None, user["role"])
     return {"access_token": token, "token_type": "bearer", "expires_in": TOKEN_TTL_MINUTES * 60, "user": _user_response(user)}
 

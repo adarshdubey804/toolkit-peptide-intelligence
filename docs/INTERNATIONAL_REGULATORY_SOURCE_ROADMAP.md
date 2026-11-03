@@ -11,6 +11,7 @@
 | Australia | TGA Australian Register of Therapeutic Goods (ARTG) | Official public search | Public register for therapeutic goods that may legally be supplied in Australia; product/formulation and sponsor/manufacturer details where published; exemptions exist | Official link-out only; automated ingestion not integrated |
 | Japan | PMDA approved-product lists and product information search | Official public lists and search | Published approved drug product lists, selected review reports and Japanese product information; English translations are selective | Official link-out only; automated ingestion not integrated |
 | China | NMPA information-center drug product databases | Official Chinese-language data query portal and published records | Domestic and imported drug product databases; source documentation describes approval/registration numbers, product names, dosage forms, specifications, holders/manufacturers and approval dates | Official link-out only; automated ingestion not integrated |
+| China | NMPA Center for Drug Evaluation (CDE) | Official Chinese-language public information portal | Accepted drug applications, review-task disclosures, clinical-trial implied permissions, breakthrough-therapy and priority-review designations, conditional approvals and marketed-drug information | Official link-out only; automated ingestion not integrated |
 | European Union | EMA Article 57 product snapshot | Public XLSX snapshot | Products with valid marketing authorisations in the EEA at the snapshot date; active substance, route, country and holder fields where published | Integrated read-only snapshot importer |
 | European Union | EMA Product Management Service (PMS) public API | FHIR R5 API with prior registration and OAuth2 | Limited public subset of non-nullified human medicinal products; current/provisional status scope and confidential-field exclusions | Planned; credentials and access scope required |
 | European Union | EMA ePI pilot API | Public API for published pilot product information | Published electronic product information pilot; not a complete register of all EU products | Planned source evaluation |
@@ -108,3 +109,9 @@ For every new jurisdiction, an adapter is accepted only after it has: (1) a sour
 - Official NMPA public service window: `https://www.nmpa.gov.cn/zwfwqjd/index.html`.
 - NMPA's drug base-code guidance describes separate domestic and imported drug databases and fields such as approval/registration number, product name, dosage form, specification, marketing authorisation holder/manufacturer, approval date and validity information.
 - Current platform status: link-out only. The public query workflow, language normalization, CAPTCHA/access controls and historical status completeness have not been validated for automated ingestion.
+
+### China — NMPA Center for Drug Evaluation (CDE) (link-out stage)
+- Official CDE portal: `https://www.cde.org.cn/`.
+- CDE publicly exposes accepted product applications, review-task information, clinical-trial implied permissions, breakthrough-therapy and priority-review designations, conditional approvals and marketed-drug information.
+- These states represent different regulatory/development milestones. An accepted application, clinical-trial implied permission or designation is not a marketing authorisation.
+- Current platform status: link-out only; automated ingestion requires source-native status mapping, Chinese-language normalization, stable identifiers and historical change coverage.

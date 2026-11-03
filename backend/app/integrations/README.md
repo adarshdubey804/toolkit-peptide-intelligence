@@ -45,3 +45,16 @@ All integrations are read-only discovery clients. Results returned from external
 ## Regulatory interpretation
 - FDA Drugs@FDA, FDA Purple Book, FDA labeling resources and DailyMed answer different questions and have different coverage. They are complementary, not interchangeable.
 - External search results remain `not_reviewed`; no provider automatically creates or verifies a peptide, product authorization or mechanism claim.
+
+## Health Canada Drug Product Database (DPD)
+- Read-only endpoint: `GET /api/v1/research/health-canada-dpd?q=...`.
+- Searches the official DPD active-ingredient endpoint and enriches returned drug product codes with product, source status, dosage form and route records.
+- Preserves Canadian DIN, brand, company, ingredient/strength and source status. DPD status codes distinguish approved, marketed, dormant and multiple cancelled/interim-order states.
+- DPD includes human pharmaceutical and biological products, as well as veterinary, radiopharmaceutical and disinfectant classes; filter and review the product class before treating a result as a human peptide medicine.
+- An empty ingredient search is not proof of non-authorization or absence of a peptide. All returned products remain `not_reviewed` until matched to a canonical peptide identity and exact chemical form.
+- Official API documentation: https://health-products.canada.ca/api/documentation/dpd-documentation-en.html
+
+## European Medicines Agency (EMA) Product Management Service (PMS)
+- The public PMS API exposes a limited FHIR R5 dataset for human medicinal products, including provisional/current records; it excludes nullified products and some confidential fields.
+- API access requires prior registration and OAuth2 credentials. The connector is planned but must not be activated until credentials, data terms and supported FHIR resource scopes are configured.
+- Official API documentation: https://api.pms.ema.europa.eu/public/v1/swagger

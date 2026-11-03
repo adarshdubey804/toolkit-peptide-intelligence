@@ -13,6 +13,7 @@ export default function PeptideWorkbookImportPage() {
   const [token, setToken] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [items, setItems] = useState<ImportedItem[]>([]);
+  const [workbookMetadata, setWorkbookMetadata] = useState<Record<string, unknown>>({});
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -45,6 +46,7 @@ export default function PeptideWorkbookImportPage() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Workbook import failed.");
       setItems(data.items || []);
+      setWorkbookMetadata(data.workbook_metadata || {});
       setNotice(`Imported ${data.imported_count} independent peptide discovery folders. Batch: ${data.batch_id}`);
     } catch (e) { setError(e instanceof Error ? e.message : "Workbook import failed."); }
     finally { setBusy(false); }
@@ -65,6 +67,14 @@ export default function PeptideWorkbookImportPage() {
     </form>}
     {error && <p role="alert" className="mt-5 rounded-xl border border-rose-800 bg-rose-950/30 p-4 text-sm text-rose-200">{error}</p>}
     {notice && <p role="status" className="mt-5 rounded-xl border border-emerald-800 bg-emerald-950/30 p-4 text-sm text-emerald-200">{notice}</p>}
+    {Object.keys(workbookMetadata).length > 0 && <section className="panel mt-8 max-w-4xl p-5">
+      <h2 className="font-semibold">Preserved summary and source worksheets</h2>
+      <p className="muted mt-1 text-xs">These companion sheets are retained exactly as workbook observations. Their citations still require claim-level matching and verification.</p>
+      {Object.entries(workbookMetadata).map(([sheet, rows])=><details key={sheet} className="mt-4 rounded-xl border border-slate-700 p-4">
+        <summary className="cursor-pointer text-sm font-medium">{sheet}</summary>
+        <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap break-words text-xs text-slate-300">{JSON.stringify(rows, null, 2)}</pre>
+      </details>)}
+    </section>}
     {items.length > 0 && <section className="mt-8"><div className="mb-4 flex items-center justify-between"><h2 className="text-xl font-semibold">Created discovery folders</h2><Link href="/peptide-discovery" className="text-sm text-emerald-300">Open discovery workspace →</Link></div><div className="grid gap-3 sm:grid-cols-2">{items.map(item=><article key={item.candidate_id} className="panel flex items-center justify-between gap-4 p-4"><div><h3 className="font-medium">{item.name}</h3><p className="muted mt-1 text-xs">Workbook row {item.worksheet_row} · Awaiting scientific review</p></div><Link className="shrink-0 text-sm text-emerald-300" href={`/peptide-discovery/${item.candidate_id}`}>Open folder →</Link></article>)}</div></section>}
     <aside className="panel mt-8 max-w-3xl p-5"><h2 className="font-semibold">Scientific integrity</h2><p className="muted mt-2 text-sm leading-6">Workbook values are preserved as user-supplied source observations. They are not treated as verified FDA status, clinical evidence, sequence, mechanism of action or safety findings. Missing information remains explicitly uncurated until supported by references.</p></aside>
   </main>;

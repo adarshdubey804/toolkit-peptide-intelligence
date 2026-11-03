@@ -1892,6 +1892,7 @@ def test_dramp_fasta_and_fasts_merge_preserves_sequence_and_smiles():
     assert merged[0]["candidate_name"] == "Epicidin 280 (Bacteriocin)"
     assert merged[0]["reported_sequence"] == "SLGPAIKATRQVCPKATRFVTVSCKKSDCQ"
     assert merged[0]["reported_chemical_form"] == "CC(C)C[C@@H]1NC(=O)"
+    assert merged[0]["chemical_form"] == "CC(C)C[C@@H]1NC(=O)"
     assert set(merged[0]["dataset_categories"]) == {"general_amps", "general_smiles"}
 
 
@@ -1926,6 +1927,15 @@ def test_dramp_fasta_and_fasts_merge_preserves_sequence_and_smiles():
     assert merged[0]["reported_sequence"] == "SLGPAIKATRQVCPKATRFVTVSCKKSDCQ"
     assert merged[0]["reported_chemical_form"] == "CC(C)C[C@@H]1NC(=O)"
     assert set(merged[0]["dataset_categories"]) == {"general_amps", "general_smiles"}
+
+
+def test_dramp_research_and_global_discovery_contracts_are_registered():
+    route = app.openapi()["paths"]["/api/v1/research/dramp-peptides"]["get"]
+    params = {item["name"]: item for item in route["parameters"]}
+    assert params["limit"]["schema"]["maximum"] == 100
+    from app.routers.enrichment import PeptideDiscoveryRequest
+    request = PeptideDiscoveryRequest(query="Epicidin", sources=["dramp"])
+    assert request.sources == ["dramp"]
 
 
 def test_dramp_research_and_global_discovery_contracts_are_registered():

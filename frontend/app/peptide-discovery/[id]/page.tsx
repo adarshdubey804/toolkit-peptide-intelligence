@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { getAccessToken } from "@/lib/auth";
 
@@ -67,7 +67,7 @@ export default function DiscoveryCandidateDossierPage() {
   const [canonicalPeptideId, setCanonicalPeptideId] = useState("");
   const [rationale, setRationale] = useState("");
 
-  async function loadDossier(authToken: string) {
+  const loadDossier = useCallback(async (authToken: string) => {
     setLoading(true);
     setError("");
     try {
@@ -83,7 +83,7 @@ export default function DiscoveryCandidateDossierPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [params.id]);
 
   useEffect(() => {
     const storedToken = getAccessToken();
@@ -94,7 +94,7 @@ export default function DiscoveryCandidateDossierPage() {
     }
     setToken(storedToken);
     void loadDossier(storedToken);
-  }, [params.id]);
+  }, [loadDossier]);
 
   async function submitDecision(event: FormEvent) {
     event.preventDefault();

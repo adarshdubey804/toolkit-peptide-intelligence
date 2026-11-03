@@ -90,3 +90,13 @@ All integrations are read-only discovery clients. Results returned from external
 - DRAMP is an antimicrobial-peptide repository, not a complete inventory of all peptide classes or medicines. Activity annotations are not mechanisms of action.
 - Non-patent DRAMP data are distributed under CC BY 4.0. Patent AMP downloads are excluded pending separate authorization; retain attribution and release metadata.
 - Official downloads and release notes: https://dramp.cpu-bioinfor.org/downloads/ and https://dramp.cpu-bioinfor.org/static/update.php
+
+
+## European Medicines Agency (EMA) Article 57 public product data
+- Read-only endpoint: `GET /api/v1/research/ema-article57?q=...`.
+- The adapter downloads the EMA Article 57 XLSX snapshot, searches product name and active substance, and returns source-native product name, active substance, route, country of authorisation and marketing-authorisation holder where present.
+- The workbook is cached in-process for six hours; each returned observation records the snapshot retrieval/version metadata and source row locator.
+- EMA states that the Article 57 public file contains medicines authorised in the EEA and only products with a valid marketing authorisation are included in the published snapshot. The file is updated periodically.
+- A match is **not** a peptide identity assertion. Product-to-peptide linkage and current authorization verification remain curator tasks; the source snapshot is not a replacement for the competent authority's live register.
+- The EMA PMS public API beta is deliberately not used by this connector: its published specification describes a limited FHIR R5 dataset, OAuth2 client-credential access and beta/reference-only constraints. Reassess only after EMA's terms and production status permit the intended use.
+- Official source: https://www.ema.europa.eu/en/human-regulatory-overview/post-authorisation/data-medicines-iso-idmp-standards-post-authorisation/public-data-article-57-database.

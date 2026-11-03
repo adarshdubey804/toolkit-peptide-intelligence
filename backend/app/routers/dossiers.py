@@ -256,3 +256,198 @@ def create_peptide_dossier(
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(status_code=409, detail="The dossier conflicts with an existing source or record. Check the source identifier and retry.") from exc
+
+
+@router.post("/from-discovery-candidate/{candidate_id}", status_code=201,
+             dependencies=[Depends(authenticated_write_rate_limit("dossier_write"))])
+def create_dossier_from_accepted_discovery_candidate(
+    candidate_id: UUID,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """Create an in-review canonical peptide draft only after a curator accepts a new identity."""
+    role = _member_role(current_user, db)
+    if role not in {"organization_admin", "curator"}:
+        raise HTTPException(status_code=403, detail="Only organization admins and curators can create canonical peptide drafts.")
+
+    candidate = db.execute(text("""
+        SELECT candidate.id, candidate.candidate_name, candidate.candidate_kind,
+               candidate.source_development_status, candidate.reported_sequence,
+               candidate.reported_sequence_type, candidate.reported_chemical_form,
+               candidate.canonical_peptide_id, candidate.candidate_status,
+               candidate.identity_match_status, candidate.source_record_id,
+               source.source_name, source.source_identifier, source.source_url,
+               source.license_notes
+        FROM peptide_discovery_candidates candidate
+        JOIN source_records source ON source.id=candidate.source_record_id
+        WHERE candidate.id=:candidate_id
+        FOR UPDATE OF candidate
+    """), {"candidate_id": candidate_id}).mappings().first()
+    if candidate is None:
+        raise HTTPException(status_code=404, detail="Discovery candidate not found.")
+    if candidate["canonical_peptide_id"] is not None:
+        raise HTTPException(status_code=409, detail="This candidate is already linked to a canonical peptide dossier.")
+    if candidate["candidate_status"] != "accepted" or candidate["identity_match_status"] != "new_entity":
+        raise HTTPException(status_code=409, detail="A curator must first accept this candidate as a new peptide identity.")
+
+    latest_decision = db.execute(text("""
+        SELECT decision, reviewer_id
+        FROM peptide_discovery_decisions
+        WHERE candidate_id=:candidate_id
+        ORDER BY decided_at DESC
+        LIMIT 1
+    """), {"candidate_id": candidate_id}).mappings().first()
+    if not latest_decision or latest_decision["decision"] != "accepted_as_new_peptide":
+        raise HTTPException(status_code=409, detail="The latest curation decision must be accepted_as_new_peptide.")
+
+    source_id = candidate["source_record_id"]
+    description = (
+        f"Draft canonical record created from accepted discovery candidate {candidate_id}. "
+        f"Primary source: {candidate['source_name']} ({candidate['source_identifier']}). "
+        "Imported fields remain in review and are not verified scientific assertions."
+    )
+    peptide_id = db.execute(text("""
+        INSERT INTO peptides (
+            preferred_name, peptide_category, description, development_status,
+            intended_use_class, review_status, primary_source_id
+        ) VALUES (
+            :name, :category, :description, :development_status,
+            'unspecified', 'in_review', :source_id
+        )
+        RETURNING id
+    """), {
+        "name": candidate["candidate_name"],
+        "category": None if candidate["candidate_kind"] == "unknown" else candidate["candidate_kind"],
+        "description": description,
+        "development_status": candidate["source_development_status"],
+        "source_id": source_id,
+    }).scalar_one()
+
+    sequence_id = None
+    if candidate["reported_sequence"]:
+        sequence_type = candidate["reported_sequence_type"]
+        if sequence_type not in {"amino_acid", "nucleotide", "other"}:
+            sequence_type = "other"
+        sequence_input = SequenceInput(
+            sequence=candidate["reported_sequence"],
+            sequence_type=sequence_type,
+        )
+        identity_fields = _sequence_identity_fields(sequence_input)
+        sequence_id = db.execute(text("""
+            INSERT INTO peptide_sequences (
+                peptide_id, sequence, sequence_type, source_id, review_status,
+                raw_notation, normalized_sequence, notation_format,
+                canonicalization_method, canonicalization_version, identity_fingerprint
+            ) VALUES (
+                :peptide_id, :sequence, :sequence_type, :source_id, 'in_review',
+                :raw_notation, :normalized_sequence, :notation_format,
+                :canonicalization_method, :canonicalization_version, :identity_fingerprint
+            )
+            RETURNING id
+        """), {
+            "peptide_id": peptide_id,
+            "sequence": candidate["reported_sequence"],
+            "sequence_type": sequence_type,
+            "source_id": source_id,
+            **identity_fields,
+        }).scalar_one()
+
+    if candidate["reported_chemical_form"]:
+        db.execute(text("""
+            INSERT INTO chemical_properties (
+                peptide_id, chemical_form, property_origin, method_or_tool,
+                source_id, review_status
+            ) VALUES (
+                :peptide_id, :chemical_form, 'imported',
+                'Source-reported discovery metadata; not curator verified',
+                :source_id, 'in_review'
+            )
+        """), {
+            "peptide_id": peptide_id,
+            "chemical_form": candidate["reported_chemical_form"],
+            "source_id": source_id,
+        })
+
+    review_id = db.execute(text("""
+        INSERT INTO curation_reviews (
+            entity_type, entity_id, source_record_id, review_status,
+            priority, submitted_by, owner_organization_id
+        ) VALUES (
+            'peptide', :peptide_id, :source_id, 'in_review',
+            'normal', :submitter, :organization_id
+        )
+        RETURNING id
+    """), {
+        "peptide_id": peptide_id,
+        "source_id": source_id,
+        "submitter": current_user["id"],
+        "organization_id": current_user["organization_id"],
+    }).scalar_one()
+
+    db.execute(text("""
+        INSERT INTO external_entity_links (
+            source_record_id, entity_type, entity_id, relationship,
+            identity_confidence, match_method, reviewed_by, reviewed_at
+        ) VALUES (
+            :source_id, 'peptide', :peptide_id, 'discovery_candidate_source',
+            'curator_accepted_new_identity', 'manual_curation', :reviewer, now()
+        )
+        ON CONFLICT (source_record_id, entity_type, entity_id, relationship) DO NOTHING
+    """), {
+        "source_id": source_id,
+        "peptide_id": peptide_id,
+        "reviewer": current_user["id"],
+    })
+
+    db.execute(text("""
+        UPDATE peptide_discovery_candidates
+        SET canonical_peptide_id=:peptide_id,
+            identity_match_status='matched',
+            match_rationale=concat_ws(
+                E'\\n',
+                NULLIF(match_rationale, ''),
+                'A draft canonical dossier was created after an accepted_as_new_peptide curator decision; the peptide and imported evidence remain in_review.'
+            ),
+            updated_at=now()
+        WHERE id=:candidate_id
+    """), {"peptide_id": peptide_id, "candidate_id": candidate_id})
+
+    db.execute(text("""
+        INSERT INTO audit_events (
+            actor_user_id, organization_id, action, entity_type, entity_id, event_metadata
+        ) VALUES (
+            :actor, :organization_id, 'canonical_peptide_draft_created_from_discovery',
+            'peptide', :peptide_id,
+            jsonb_build_object(
+                'candidate_id', :candidate_id,
+                'source_record_id', :source_id,
+                'review_id', :review_id,
+                'sequence_imported', :sequence_imported,
+                'sequence_identity_fingerprint_created', :fingerprint_created,
+                'chemical_form_imported', :chemical_form_imported,
+                'source_name', :source_name
+            )
+        )
+    """), {
+        "actor": current_user["id"],
+        "organization_id": current_user["organization_id"],
+        "peptide_id": peptide_id,
+        "candidate_id": candidate_id,
+        "source_id": source_id,
+        "review_id": review_id,
+        "sequence_imported": bool(candidate["reported_sequence"]),
+        "fingerprint_created": bool(candidate["reported_sequence"] and identity_fields.get("identity_fingerprint")) if candidate["reported_sequence"] else False,
+        "chemical_form_imported": bool(candidate["reported_chemical_form"]),
+        "source_name": candidate["source_name"],
+    })
+    db.commit()
+    return {
+        "peptide_id": str(peptide_id),
+        "candidate_id": str(candidate_id),
+        "source_record_id": str(source_id),
+        "review_id": str(review_id),
+        "review_status": "in_review",
+        "sequence_id": str(sequence_id) if sequence_id else None,
+        "sequence_identity_fingerprint_created": bool(candidate["reported_sequence"] and identity_fields.get("identity_fingerprint")) if candidate["reported_sequence"] else False,
+        "message": "A draft canonical peptide dossier was created and submitted to the curator review queue. It is not publicly visible until verified.",
+    }

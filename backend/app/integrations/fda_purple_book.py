@@ -3,9 +3,11 @@
 The Purple Book is a downloadable monthly dataset rather than a JSON API.
 The latest snapshot includes all listed FDA-licensed biological products.
 """
+import asyncio
 import csv
 import io
 import re
+import time
 
 import httpx
 
@@ -15,6 +17,11 @@ CSV_URL_PATTERN = re.compile(
     r'(\d{4})/purplebook-search-[^"\']+?-data-download\.csv)["\']',
     re.IGNORECASE,
 )
+
+SNAPSHOT_CACHE_TTL_SECONDS = 3600
+_SNAPSHOT_CACHE: tuple[float, str, list[dict]] | None = None
+_SNAPSHOT_LOCK = asyncio.Lock()
+
 
 FIELD_MAP = {
     "applicant": "Applicant",
@@ -120,16 +127,22 @@ class FdaPurpleBookProvider:
         if not 1 <= limit <= 100:
             raise ValueError("Purple Book result limit must be between 1 and 100.")
 
-        timeout = httpx.Timeout(45.0, connect=8.0)
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-            page = await client.get(DOWNLOADS_PAGE_URL)
-            page.raise_for_status()
-            csv_url = discover_latest_csv_url(page.text)
-            response = await client.get(csv_url)
-            response.raise_for_status()
-            content = response.content.decode("utf-8-sig", errors="replace")
-
-        products = parse_purple_book_csv(content)
+        global _SNAPSHOT_CACHE
+        async with _SNAPSHOT_LOCK:
+            now = time.monotonic()
+            if _SNAPSHOT_CACHE and now - _SNAPSHOT_CACHE[0] < SNAPSHOT_CACHE_TTL_SECONDS:
+                _, csv_url, products = _SNAPSHOT_CACHE
+            else:
+                timeout = httpx.Timeout(45.0, connect=8.0)
+                async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+                    page = await client.get(DOWNLOADS_PAGE_URL)
+                    page.raise_for_status()
+                    csv_url = discover_latest_csv_url(page.text)
+                    response = await client.get(csv_url)
+                    response.raise_for_status()
+                    content = response.content.decode("utf-8-sig", errors="replace")
+                products = parse_purple_book_csv(content)
+                _SNAPSHOT_CACHE = (now, csv_url, products)
         needle = term.casefold()
         matched = [
             normalize_product(row, csv_url)

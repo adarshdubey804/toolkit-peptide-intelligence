@@ -78,3 +78,13 @@ The interface must display these limitations and the last checked timestamp. Nev
 
 ### ChEMBL peptide scope
 The ChEMBL adapter searches molecule records and retains only linked biotherapeutic entries whose HELM notation explicitly begins with `PEPTIDE1{`. ChEMBL also contains antibodies and recombinant proteins; these are excluded from this peptide-specific adapter unless separately curated under a different entity scope. HELM notation is preserved verbatim and must not be flattened into an unmodified amino-acid sequence. ChEMBL mechanism records are source-reported observations and are not automatically promoted into the canonical peptide mechanism table.
+
+## Specialist peptide research resources and reuse limits
+
+| Source | Scientific contribution | Current access and limitations |
+|---|---|---|
+| PeptideAtlas | Multi-organism peptide evidence from tandem mass-spectrometry proteomics, build-specific peptide identifications, spectra and FDR processing | Link-out only. Data products are CC BY-NC 4.0; commercial reuse requires separate permission. Do not bulk-ingest into commercial deployments without permission |
+| CancerPPD 2.0 | Manually curated anticancer peptide/protein sequences, chemical modifications, structures, cancer cell-line assays, tissues and selected clinical-trial links | Link-out only. The database includes both peptides and proteins; a clear redistribution licence has not been validated for this platform. Do not copy or bulk-ingest until terms are confirmed |
+| ProPepBA | Experimentally measured protein–peptide binding affinities, assay conditions, target/peptide sequences, structures and chemically modified peptide entries | Link-out only. This is a specialist binding-affinity resource, not a global peptide inventory; redistribution and automated extraction terms require confirmation |
+
+These sources are displayed in the source coverage catalogue for direct researcher consultation. A public website or REST API does not, by itself, grant permission to mirror or redistribute its data.

@@ -117,3 +117,11 @@ All integrations are read-only discovery clients. Results returned from external
 - APD6 includes natural, synthetic and predicted antimicrobial peptides and offers search/export features for research.
 - The APD6 website states that fair use does not include copying the APD database to establish a competing database. This platform does not scrape, bulk-download, cache, or redistribute APD6 records or sequences.
 - Revisit automated integration only after explicit written permission and a reviewed data-use agreement. This preserves the option to open the source website directly without creating an unlicensed mirror.
+
+## GtoPdb peptide interaction review import
+
+- The enrichment workspace accepts an exact GtoPdb peptide ligand ID and retrieves the ligand and interaction records using the registered API key.
+- Explicit target/action interactions are imported individually into `peptide_mechanisms` with `source_asserted` evidence, unknown mechanism class and an exact source locator.
+- Every imported interaction enters the organization-scoped independent curator queue; no source result is automatically verified.
+- The importer does not infer pathways, affinity, receptor subtype, clinical effects or regulatory authorization.
+- Configure `GTOPDB_API_KEY` only after registering with GtoPdb. Preserve attribution and comply with the database ODbL and content CC BY-SA 4.0 terms.

@@ -2238,3 +2238,18 @@ def test_dossier_sections_are_organization_scoped_and_revisioned():
     assert "prevent_peptide_dossier_section_revision_mutation" in sql
     assert "citations JSONB" in sql
     assert "media JSONB" in sql
+
+
+def test_dossier_editor_cors_allows_put_requests():
+    from app.main import app
+    cors = next(m for m in app.user_middleware if m.cls.__name__ == "CORSMiddleware")
+    assert "PUT" in cors.kwargs["allow_methods"]
+
+
+def test_private_workbook_discovery_records_are_tenant_scoped():
+    sql = (MIGRATIONS_DIR / "071_peptide_workbook_imports.sql").read_text(encoding="utf-8")
+    assert "owner_organization_id UUID REFERENCES organizations(id)" in sql
+    assert "peptide_discovery_candidates FORCE ROW LEVEL SECURITY" in sql
+    assert "peptide_discovery_observations FORCE ROW LEVEL SECURITY" in sql
+    assert "peptide_workbook_import_batches FORCE ROW LEVEL SECURITY" in sql
+    assert "peptide_workbook_import_rows FORCE ROW LEVEL SECURITY" in sql

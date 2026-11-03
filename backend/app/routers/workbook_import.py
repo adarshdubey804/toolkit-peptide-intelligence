@@ -3,13 +3,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from io import BytesIO
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from openpyxl import load_workbook
-from pydantic import BaseModel, Field, HttpUrl, field_validator
+from pydantic import BaseModel, Field, HttpUrl
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -20,14 +21,14 @@ from ..rate_limit_dependencies import authenticated_write_rate_limit
 router = APIRouter(prefix="/api/v1/dossiers", tags=["peptide scientific dossiers"])
 
 NAME_HEADERS = {
-    "peptide generic common name", "peptide name", "peptide", "generic name", "common name"
+    "peptide generic common name", "peptide name", "peptide", "generic name", "generic common name", "common name"
 }
 STATUS_HEADERS = {"status detail", "fda approved", "fda status", "approval status"}
 FDA_HEADERS = {"fda approved", "fda status", "approved by fda"}
 
 
 def _normalise_header(value) -> str:
-    return " ".join(str(value or "").strip().lower().replace("_", " ").replace("/", " ").replace("?", "").split())
+    return " ".join(re.sub(r"[^a-z0-9 ]+", " ", str(value or "").strip().lower().replace("_", " ").replace("/", " ")).split())
 
 
 def _first_header(headers, aliases):

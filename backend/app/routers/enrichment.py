@@ -441,10 +441,13 @@ async def submit_gtopdb_mechanism_for_review(
     usable_interactions = []
     for interaction in interactions[:50]:
         action = interaction.get("type") or interaction.get("interactionType") or interaction.get("action")
-        if action and str(action).strip():
+        target = interaction.get("targetName") or interaction.get("target_name") or interaction.get("target")
+        if isinstance(target, dict):
+            target = target.get("name") or target.get("preferredName")
+        if action and str(action).strip() and target and str(target).strip():
             usable_interactions.append(interaction)
     if not usable_interactions:
-        raise HTTPException(status_code=422, detail="GtoPdb has no explicit target-action interaction records for this ligand; no mechanism record was created.")
+        raise HTTPException(status_code=422, detail="GtoPdb has no explicit target-and-action interaction records for this ligand; no mechanism record was created.")
 
     source_id = ligand.get("source_identifier")
     source_url = ligand.get("source_url")
@@ -491,7 +494,7 @@ async def submit_gtopdb_mechanism_for_review(
         )
         if not action:
             continue
-        target_name = (str(target).strip()[:500] if target else "Target not specified in GtoPdb interaction")
+        target_name = str(target).strip()[:500]
         action_text = str(action).strip()[:500]
         statement = (
             f"GtoPdb reports {action_text} for peptide ligand "

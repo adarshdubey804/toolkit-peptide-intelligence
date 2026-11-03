@@ -167,7 +167,7 @@ class ChEMBLProvider:
                 status_response = await client.get(f"{BASE_URL}/status.json")
                 status_response.raise_for_status()
                 status_payload = status_response.json()
-                release = status_payload.get("chembl_db_version")
+                release = status_payload.get("chembl_db_version") if isinstance(status_payload, dict) else None
             except (httpx.HTTPError, ValueError, TypeError):
                 release = None
 

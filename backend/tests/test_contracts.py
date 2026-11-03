@@ -2065,6 +2065,7 @@ def test_global_discovery_candidate_dossier_and_decision_routes_are_registered()
 
 
 def test_global_discovery_decision_requires_canonical_link_only_for_existing_peptide():
+    import pytest
     from pydantic import ValidationError
     from app.routers.enrichment import GlobalDiscoveryDecision
     from uuid import uuid4

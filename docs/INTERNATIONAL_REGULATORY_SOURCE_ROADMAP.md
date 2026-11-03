@@ -6,6 +6,7 @@
 | United States | NLM DailyMed SPL | Public API | Current structured labels and versions; SPL presence is not proof of FDA approval and may differ from last FDA-approved label | Integrated read-only discovery |
 | United States | FDA Purple Book | Monthly downloadable source snapshot | Biological products licensed under the PHS Act, including reference products, biosimilars and interchangeable products; reconcile exact BLA and product identifiers with Drugs@FDA | Integrated read-only snapshot importer; not a live API |
 | Canada | Health Canada Drug Product Database | Public JSON/XML API | Product-specific DINs and approved, marketed, dormant and cancelled statuses; includes human and non-human product classes | Integrated read-only discovery |
+| India | CDSCO approved drugs / SUGAM | Official web search portal and published PDF approval lists | CDSCO publishes approved drug/vaccine/rDNA/blood-product search records and annual/new-drug approval lists; available fields vary by record and publication | Official link-out only; automated ingestion pending API, completeness and licensing assessment |
 | European Union | EMA Article 57 product snapshot | Public XLSX snapshot | Products with valid marketing authorisations in the EEA at the snapshot date; active substance, route, country and holder fields where published | Integrated read-only snapshot importer |
 | European Union | EMA Product Management Service (PMS) public API | FHIR R5 API with prior registration and OAuth2 | Limited public subset of non-nullified human medicinal products; current/provisional status scope and confidential-field exclusions | Planned; credentials and access scope required |
 | European Union | EMA ePI pilot API | Public API for published pilot product information | Published electronic product information pilot; not a complete register of all EU products | Planned source evaluation |
@@ -66,10 +67,16 @@ The following jurisdictions are priority gaps. They are not production integrati
 
 | Jurisdiction | Authority / source family | Evaluation required before integration |
 |---|---|---|
-| India | CDSCO official approved new drugs, biologics and regulatory notices | Identify authoritative current product lists, machine-readable access, stable application/product identifiers, historical status coverage and update cadence |
+| India | CDSCO official approved-drug search, SUGAM and new-drug approval lists | Confirm a documented public API or permitted snapshot-ingestion route; assess searchable portal fields, historical completeness, stable product identifiers and status semantics. Official source links are available, but automated ingestion is not yet integrated |
 | United Kingdom | MHRA product and medicines information sources | Confirm official product register/API access, authorisation status semantics, product identifiers, labels and licence terms |
 | Australia | TGA Australian Register of Therapeutic Goods (ARTG) | Confirm public search/export/API options, biologic/peptide coverage, ARTG identifiers and status history |
 | Japan | PMDA / MHLW drug and biologic approval sources | Confirm official datasets, language/translation controls, approval identifiers, product forms and historical status |
 | China | NMPA drug and biologic registration sources | Confirm official publication channels, stable identifiers, access restrictions, product status semantics and update cadence |
 
 For every new jurisdiction, an adapter is accepted only after it has: (1) a source-access and licence assessment; (2) a documented source-native schema/status map; (3) pagination/completeness checks; (4) source retrieval timestamps and payload hashes; (5) normalization and identity tests; (6) failure/retry tests; and (7) explicit no-result and ambiguity semantics. A national source being absent from the integration list is not evidence that no peptide products are authorised there.
+
+### India — CDSCO official source access (link-out stage)
+- CDSCO's official SUGAM approved-drug search portal: `https://cdscoonline.gov.in/CDSCO/cdscoDrugs`.
+- CDSCO's official published "List of Approved New Drugs": `https://cdsco.gov.in/opencms/en/Approval_new/Approved-New-Drugs/`.
+- The portal presents search fields for drug, manufacturer, indication and drug type; published records can include composition, dosage, indication, manufacturer and approval date. The official public page does not document a supported open API in the material reviewed for this integration.
+- Current platform status is link-out only. Do not automate access to authenticated SUGAM workflows, infer complete national coverage from visible search results, or treat the absence of a search result as proof of non-approval.

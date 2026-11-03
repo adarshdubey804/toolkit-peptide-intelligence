@@ -8,6 +8,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from openpyxl import load_workbook
+from pydantic import BaseModel, Field, HttpUrl, field_validator
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -188,3 +189,88 @@ async def import_peptide_workbook(
             "mechanism, clinical conclusion or authorization is created by this import."
         ),
     }
+
+
+class DossierReferenceInput(BaseModel):
+    title: str = Field(min_length=3, max_length=500)
+    source_name: str = Field(min_length=2, max_length=160)
+    url: HttpUrl
+    doi: str | None = Field(default=None, max_length=200)
+    pmid: str | None = Field(default=None, max_length=40)
+    registry_id: str | None = Field(default=None, max_length=100)
+    locator: str | None = Field(default=None, max_length=500)
+    evidence_type: str = Field(default="unknown", max_length=60)
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class DossierMediaInput(BaseModel):
+    title: str = Field(min_length=2, max_length=300)
+    image_url: HttpUrl
+    asset_type: str = Field(default="other", max_length=60)
+    caption: str | None = Field(default=None, max_length=1000)
+    alt_text: str = Field(min_length=5, max_length=500)
+    source_name: str = Field(min_length=2, max_length=160)
+    source_identifier: str | None = Field(default=None, max_length=200)
+    attribution: str | None = Field(default=None, max_length=500)
+    license_or_reuse_terms: str = Field(min_length=3, max_length=1000)
+    is_prediction: bool = False
+
+
+class DossierSectionInput(BaseModel):
+    content: dict = Field(default_factory=dict)
+    references: list[DossierReferenceInput] = Field(default_factory=list, max_length=100)
+    media: list[DossierMediaInput] = Field(default_factory=list, max_length=30)
+
+
+@router.get("/candidates/{candidate_id}/sections")
+def list_candidate_dossier_sections(
+    candidate_id: str,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    organization_id, _ = _membership(current_user, db)
+    rows = db.execute(text("""
+        SELECT id, section_key, content, references, media, revision, updated_at
+        FROM peptide_dossier_sections
+        WHERE candidate_id=:candidate AND organization_id=:org
+        ORDER BY section_key
+    """), {"candidate": candidate_id, "org": organization_id}).mappings().all()
+    return {"items": [dict(row) for row in rows], "candidate_id": candidate_id}
+
+
+@router.put("/candidates/{candidate_id}/sections/{section_key}")
+def save_candidate_dossier_section(
+    candidate_id: str,
+    section_key: str,
+    payload: DossierSectionInput,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    organization_id, _ = _membership(current_user, db)
+    if not section_key or len(section_key) > 80 or not section_key.replace("-", "").replace("_", "").isalnum():
+        raise HTTPException(status_code=422, detail="Section key must be a short lowercase slug.")
+    candidate_exists = db.execute(text("""
+        SELECT 1 FROM peptide_discovery_candidates WHERE id=:candidate
+    """), {"candidate": candidate_id}).scalar_one_or_none()
+    if not candidate_exists:
+        raise HTTPException(status_code=404, detail="Peptide discovery folder not found.")
+    references = [item.model_dump(mode="json") for item in payload.references]
+    media = [item.model_dump(mode="json") for item in payload.media]
+    row = db.execute(text("""
+        INSERT INTO peptide_dossier_sections
+            (candidate_id, organization_id, section_key, content, references, media, updated_by)
+        VALUES (:candidate, :org, :section_key, CAST(:content AS jsonb),
+                CAST(:references AS jsonb), CAST(:media AS jsonb), :user_id)
+        ON CONFLICT (candidate_id, organization_id, section_key) DO UPDATE SET
+            content=EXCLUDED.content, references=EXCLUDED.references,
+            media=EXCLUDED.media, updated_by=EXCLUDED.updated_by
+        RETURNING id, section_key, content, references, media, revision, updated_at
+    """), {
+        "candidate": candidate_id, "org": organization_id, "section_key": section_key,
+        "content": json.dumps(payload.content, ensure_ascii=False),
+        "references": json.dumps(references, ensure_ascii=False),
+        "media": json.dumps(media, ensure_ascii=False),
+        "user_id": current_user["id"],
+    }).mappings().one()
+    db.commit()
+    return {"section": dict(row), "notice": "Section saved; an immutable revision was recorded."}

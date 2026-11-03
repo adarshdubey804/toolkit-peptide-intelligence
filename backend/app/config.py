@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     ncbi_email: str | None = None
     ncbi_api_key: str | None = None
     openfda_api_key: str | None = None
+    gtopdb_api_key: str | None = None
     ai_synthesis_enabled: bool = False
     ai_api_key: str | None = None
     ai_api_base_url: str = "https://api.openai.com/v1"

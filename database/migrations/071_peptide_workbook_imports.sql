@@ -100,3 +100,7 @@ CREATE POLICY peptide_workbook_import_batches_insert_scope ON peptide_workbook_i
 CREATE POLICY peptide_workbook_import_batches_update_scope ON peptide_workbook_import_batches FOR UPDATE
     USING (organization_id = NULLIF(current_setting('app.organization_id', true), '')::uuid)
     WITH CHECK (organization_id = NULLIF(current_setting('app.organization_id', true), '')::uuid);
+
+CREATE POLICY peptide_workbook_import_rows_update_scope ON peptide_workbook_import_rows FOR UPDATE
+    USING (organization_id = NULLIF(current_setting('app.organization_id', true), '')::uuid)
+    WITH CHECK (organization_id = NULLIF(current_setting('app.organization_id', true), '')::uuid);

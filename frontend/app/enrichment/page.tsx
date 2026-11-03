@@ -214,6 +214,13 @@ export default function EnrichmentPage() {
         <div className="flex gap-2"><button onClick={() => void loadQueue()} className="rounded-full border border-slate-600 px-4 py-2 text-xs">Load curator queue</button><button onClick={() => { setToken(""); setResult(null); setUserLabel(""); setQueue([]); }} className="rounded-full border border-slate-600 px-4 py-2 text-xs">Sign out</button></div>
       </div>
       <section className="panel mt-5 p-5">
+        <form onSubmit={discover} className="grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
+          <label className="block"><span className={label}>Peptide dossier UUID</span><input className={field} required minLength={36} maxLength={36} value={peptideId} onChange={e => setPeptideId(e.target.value)} placeholder="Paste the peptide record UUID" /></label>
+          <button disabled={loading || peptideId.trim().length !== 36} className="rounded-full bg-emerald-400 px-6 py-3 text-sm font-semibold text-slate-950 disabled:opacity-50">{loading ? "Searching sources…" : "Discover evidence"}</button>
+        </form>
+        <p className="muted mt-3 text-xs">Find the UUID in a submitted dossier or the curation queue. Discovery currently searches the peptide's preferred name and aliases.</p>
+      </section>
+       <section className="panel mt-5 p-5">
         <h2 className="text-lg font-semibold">Import a DailyMed mechanism of action</h2>
         <p className="muted mt-2 text-sm">Paste a DailyMed SPL Set ID from a source-backed discovery record. The system extracts only Section 12.1 and submits it as an unverified mechanism for independent curator review.</p>
         <form onSubmit={submitDailyMedMechanism} className="mt-4 grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
@@ -233,14 +240,7 @@ export default function EnrichmentPage() {
         <p className="muted mt-3 text-xs">Requires the platform's registered GtoPdb API key. Each record remains unverified until an independent curator checks ligand identity, target subtype and source context. GtoPdb licensing and attribution requirements apply.</p>
       </section>
 
-      <section className="panel mt-5 p-5">
-        <form onSubmit={discover} className="grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
-          <label className="block"><span className={label}>Peptide dossier UUID</span><input className={field} required minLength={36} maxLength={36} value={peptideId} onChange={e => setPeptideId(e.target.value)} placeholder="Paste the peptide record UUID" /></label>
-          <button disabled={loading || peptideId.trim().length !== 36} className="rounded-full bg-emerald-400 px-6 py-3 text-sm font-semibold text-slate-950 disabled:opacity-50">{loading ? "Searching sources…" : "Discover evidence"}</button>
-        </form>
-        <p className="muted mt-3 text-xs">Find the UUID in a submitted dossier or the curation queue. Discovery currently searches the peptide's preferred name and aliases.</p>
-      </section>
-    </>}
+   </>}
 
     {error && <div role="alert" className="mt-5 rounded-xl border border-rose-400/30 bg-rose-400/5 p-4 text-sm text-rose-200">{error}</div>}
     {notice && <div role="status" className="mt-5 rounded-xl border border-emerald-400/30 bg-emerald-400/5 p-4 text-sm text-emerald-200">{notice}</div>}

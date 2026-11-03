@@ -1675,3 +1675,11 @@ def test_global_peptide_discovery_persistence_route_is_registered_and_rate_limit
         getattr(dependency.call, "rate_limit_scope", None) == "enrichment_write"
         for dependency in discovery_route.dependant.dependencies
     )
+
+
+def test_global_peptide_discovery_browser_route_is_registered():
+    paths = app.openapi()["paths"]
+    route = paths["/api/v1/enrichment/discovery-candidates"]["get"]
+    parameters = {item["name"]: item for item in route["parameters"]}
+    assert parameters["limit"]["schema"]["default"] == 50
+    assert parameters["offset"]["schema"]["default"] == 0

@@ -257,6 +257,34 @@ async def discover_and_persist_peptide_candidates(
             "error": "Configure NCBI_EMAIL to enable PubMed discovery.",
         }
 
+    dailymed_result = source_results.get("dailymed")
+    if dailymed_result and dailymed_result.get("status") == "success":
+        semaphore = asyncio.Semaphore(5)
+        async def enrich_dailymed_moa(item: dict) -> None:
+            set_id = item.get("set_id")
+            if not set_id:
+                item["mechanism_extraction_status"] = "missing_spl_set_id"
+                return
+            try:
+                async with semaphore:
+                    extracted = await DailyMedProvider().get_mechanism_of_action(set_id)
+                item["mechanism_extraction_status"] = extracted.get("extraction_status")
+                item["mechanism_source_url"] = extracted.get("source_url")
+                item["mechanism_source_locator"] = (
+                    f"Section 12.1 Mechanism of Action (LOINC {extracted.get('section_code')})"
+                    if extracted.get("found") else None
+                )
+                item["mechanism_evidence_level"] = extracted.get("evidence_level", "unknown")
+                item["mechanism_extraction_notice"] = extracted.get("notice")
+                if extracted.get("found"):
+                    item["mechanism_of_action"] = extracted.get("mechanism_text")
+            except Exception:
+                item["mechanism_extraction_status"] = "source_unavailable_or_unparseable"
+
+        await asyncio.gather(*(
+            enrich_dailymed_moa(item) for item in dailymed_result.get("items", [])
+        ))
+
     persisted = []
     failed = []
     try:

@@ -401,6 +401,71 @@ async def discover_and_persist_peptide_candidates(
     }
 
 
+@router.get("/discovery-candidates")
+def list_global_peptide_discovery_candidates(
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    q: str | None = None,
+    candidate_status: str = "all",
+    source_name: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """Browse source-backed discovery observations; identity remains unverified."""
+    organization_id, role = _candidate_membership(current_user, db)
+    if role not in {"organization_admin", "curator", "reviewer", "researcher"}:
+        raise HTTPException(status_code=403, detail="Researcher, curator or reviewer membership is required.")
+    if candidate_status not in {"all", "discovered", "needs_review", "accepted", "rejected", "duplicate", "superseded"}:
+        raise HTTPException(status_code=422, detail="Invalid discovery candidate status.")
+    if not 1 <= limit <= 100 or not 0 <= offset <= 100000:
+        raise HTTPException(status_code=422, detail="Limit must be 1–100 and offset 0–100000.")
+    if q is not None and (len(q.strip()) < 2 or len(q) > 160):
+        raise HTTPException(status_code=422, detail="Search text must contain 2–160 characters.")
+    if source_name is not None and (len(source_name) < 2 or len(source_name) > 100):
+        raise HTTPException(status_code=422, detail="Source name must contain 2–100 characters.")
+
+    filters = ["1=1"]
+    params: dict[str, object] = {"limit": limit, "offset": offset}
+    if candidate_status != "all":
+        filters.append("candidate_status = :status")
+        params["status"] = candidate_status
+    if q:
+        filters.append("(position(lower(:query) in lower(candidate_name)) > 0 OR position(lower(:query) in lower(source_entity_identifier)) > 0)")
+        params["query"] = q.strip()
+    if source_name:
+        filters.append("source_name = :source_name")
+        params["source_name"] = source_name
+    where = " AND ".join(filters)
+
+    items = db.execute(text(f"""
+        SELECT c.id, c.candidate_name, c.candidate_kind, c.source_development_status,
+               c.source_jurisdiction_code, c.reported_sequence, c.reported_chemical_form,
+               c.reported_target, c.reported_mechanism, c.identity_match_status,
+               c.match_confidence, c.match_rationale, c.candidate_status,
+               c.canonical_peptide_id, c.first_seen_at, c.last_seen_at, c.last_observed_at,
+               s.source_name, s.source_identifier, s.source_url, s.content_hash,
+               (SELECT count(*) FROM peptide_discovery_observations o WHERE o.candidate_id=c.id) AS observation_count
+        FROM peptide_discovery_candidates c
+        JOIN source_records s ON s.id=c.source_record_id
+        WHERE {where}
+        ORDER BY c.last_seen_at DESC, c.candidate_name
+        LIMIT :limit OFFSET :offset
+    """), params).mappings().all()
+    total = db.execute(text(f"""
+        SELECT count(*)
+        FROM peptide_discovery_candidates c
+        JOIN source_records s ON s.id=c.source_record_id
+        WHERE {where}
+    """), {k: v for k, v in params.items() if k not in {"limit", "offset"}}).scalar_one()
+    return {
+        "items": [dict(item) for item in items],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "scope": "Source observations only. A candidate is not a verified peptide entity or regulatory status determination.",
+    }
+
+
 @router.post("/peptides/{peptide_id}/candidates", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("enrichment_write", settings.enrichment_rate_limit_per_window))])
 def submit_enrichment_candidate(
     peptide_id: UUID,

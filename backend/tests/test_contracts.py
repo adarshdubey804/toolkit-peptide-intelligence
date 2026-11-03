@@ -4,6 +4,7 @@ import asyncio
 from app.integrations.clinicaltrials import normalize_study
 from app.integrations.dailymed import normalize_spl
 from app.integrations.fda_drugsfda import normalize_application
+from app.integrations.health_canada_dpd import normalize_product
 from app.main import MIGRATIONS_DIR, app
 
 
@@ -1683,3 +1684,33 @@ def test_global_peptide_discovery_browser_route_is_registered():
     parameters = {item["name"]: item for item in route["parameters"]}
     assert parameters["limit"]["schema"]["default"] == 50
     assert parameters["offset"]["schema"]["default"] == 0
+
+
+def test_health_canada_dpd_product_normalization_preserves_status_and_identity():
+    result = normalize_product(
+        {
+            "drug_code": 12345,
+            "drug_identification_number": "01234567",
+            "brand_name": "Example Peptide",
+            "company_name": "Example Manufacturer",
+            "class_name": "Human",
+            "last_update_date": "2025-01-01",
+        },
+        [{"ingredient_name": "PEPTIDE X", "strength": "1", "strength_unit": "MG"}],
+        [{"drug_code": 12345, "status": "Approved"}],
+        [{"pharmaceutical_form_name": "Solution"}],
+        [{"route_of_administration_name": "Subcutaneous"}],
+    )
+    assert result["drug_identification_number"] == "01234567"
+    assert result["active_ingredients"][0]["ingredient_name"] == "PEPTIDE X"
+    assert result["source_status_records"][0]["status"] == "Approved"
+    assert result["jurisdiction"] == "CA"
+    assert result["curation_status"] == "not_reviewed"
+    assert "do not" in result["status_notice"]
+
+
+def test_health_canada_dpd_route_is_registered_and_bounded():
+    paths = app.openapi()["paths"]
+    route = paths["/api/v1/research/health-canada-dpd"]["get"]
+    params = {item["name"]: item for item in route["parameters"]}
+    assert params["limit"]["schema"]["maximum"] == 50

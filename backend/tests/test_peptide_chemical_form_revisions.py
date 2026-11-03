@@ -75,7 +75,7 @@ def test_peptide_chemical_form_revisions_are_immutable_and_content_sensitive():
 
             revisions = connection.execute(
                 text("""
-                    SELECT revision_number, revision_origin, snapshot, content_hash,
+                    SELECT id, revision_number, revision_origin, snapshot, content_hash,
                            supersedes_revision_id
                     FROM peptide_chemical_form_revisions
                     WHERE chemical_form_id=:form_id
@@ -101,7 +101,7 @@ def test_peptide_chemical_form_revisions_are_immutable_and_content_sensitive():
             )
             revisions = connection.execute(
                 text("""
-                    SELECT revision_number, snapshot, supersedes_revision_id
+                    SELECT id, revision_number, snapshot, supersedes_revision_id
                     FROM peptide_chemical_form_revisions
                     WHERE chemical_form_id=:form_id
                     ORDER BY revision_number

@@ -18,6 +18,7 @@ from ..rate_limit import enforce_rate_limit, request_client_identity
 from ..integrations.alphafold import AlphaFoldProvider
 from ..integrations.clinicaltrials import ClinicalTrialsProvider
 from ..integrations.dailymed import DailyMedProvider
+from ..integrations.dbaasp import DbaaspProvider
 from ..integrations.ema_article57 import EmaArticle57Provider
 from ..integrations.fda_drugsfda import FdaDrugsFdaProvider
 from ..integrations.fda_purple_book import FdaPurpleBookProvider
@@ -72,6 +73,18 @@ async def search_dramp_peptides(
         return await DrampProvider().search(q, limit)
     except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
         raise HTTPException(status_code=502, detail="DRAMP datasets could not be reached or parsed.") from exc
+
+
+@router.get("/dbaasp-peptides")
+async def search_dbaasp_peptides(
+    q: str = Query(min_length=2, max_length=160),
+    limit: int = Query(default=20, ge=1, le=25),
+):
+    """Search DBAASP v4 experimental antimicrobial peptide records."""
+    try:
+        return await DbaaspProvider().search(q, limit)
+    except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(status_code=502, detail="DBAASP could not be reached or returned an invalid response.") from exc
 
 
 @router.get("/ema-article57")

@@ -7,6 +7,9 @@
 | United States | FDA Purple Book | Monthly downloadable source snapshot | Biological products licensed under the PHS Act, including reference products, biosimilars and interchangeable products; reconcile exact BLA and product identifiers with Drugs@FDA | Integrated read-only snapshot importer; not a live API |
 | Canada | Health Canada Drug Product Database | Public JSON/XML API | Product-specific DINs and approved, marketed, dormant and cancelled statuses; includes human and non-human product classes | Integrated read-only discovery |
 | India | CDSCO approved drugs / SUGAM | Official web search portal and published PDF approval lists | CDSCO publishes approved drug/vaccine/rDNA/blood-product search records and annual/new-drug approval lists; available fields vary by record and publication | Official link-out only; automated ingestion pending API, completeness and licensing assessment |
+| United Kingdom | MHRA Products | Official public product information search | Nationally licensed medicine information, active-substance and Product Licence search, SPCs, PILs and selected assessment reports; EMA centrally authorised products are a separate source scope | Official link-out only; automated ingestion not integrated |
+| Australia | TGA Australian Register of Therapeutic Goods (ARTG) | Official public search | Public register for therapeutic goods that may legally be supplied in Australia; product/formulation and sponsor/manufacturer details where published; exemptions exist | Official link-out only; automated ingestion not integrated |
+| Japan | PMDA approved-product lists and product information search | Official public lists and search | Published approved drug product lists, selected review reports and Japanese product information; English translations are selective | Official link-out only; automated ingestion not integrated |
 | European Union | EMA Article 57 product snapshot | Public XLSX snapshot | Products with valid marketing authorisations in the EEA at the snapshot date; active substance, route, country and holder fields where published | Integrated read-only snapshot importer |
 | European Union | EMA Product Management Service (PMS) public API | FHIR R5 API with prior registration and OAuth2 | Limited public subset of non-nullified human medicinal products; current/provisional status scope and confidential-field exclusions | Planned; credentials and access scope required |
 | European Union | EMA ePI pilot API | Public API for published pilot product information | Published electronic product information pilot; not a complete register of all EU products | Planned source evaluation |
@@ -68,9 +71,9 @@ The following jurisdictions are priority gaps. They are not production integrati
 | Jurisdiction | Authority / source family | Evaluation required before integration |
 |---|---|---|
 | India | CDSCO official approved-drug search, SUGAM and new-drug approval lists | Confirm a documented public API or permitted snapshot-ingestion route; assess searchable portal fields, historical completeness, stable product identifiers and status semantics. Official source links are available, but automated ingestion is not yet integrated |
-| United Kingdom | MHRA product and medicines information sources | Confirm official product register/API access, authorisation status semantics, product identifiers, labels and licence terms |
-| Australia | TGA Australian Register of Therapeutic Goods (ARTG) | Confirm public search/export/API options, biologic/peptide coverage, ARTG identifiers and status history |
-| Japan | PMDA / MHLW drug and biologic approval sources | Confirm official datasets, language/translation controls, approval identifiers, product forms and historical status |
+| United Kingdom | MHRA Products | Official product information link-out is available; evaluate documented bulk/API access, status history, product identifiers and licence terms before ingestion |
+| Australia | TGA ARTG | Official public search link-out is available; evaluate permitted export/API access, biologic/peptide coverage, ARTG identifiers and status history before ingestion |
+| Japan | PMDA approved-product lists and product information search | Official link-outs are available; evaluate bulk/API access, Japanese/English reconciliation, approval identifiers, product forms and historical status before ingestion |
 | China | NMPA drug and biologic registration sources | Confirm official publication channels, stable identifiers, access restrictions, product status semantics and update cadence |
 
 For every new jurisdiction, an adapter is accepted only after it has: (1) a source-access and licence assessment; (2) a documented source-native schema/status map; (3) pagination/completeness checks; (4) source retrieval timestamps and payload hashes; (5) normalization and identity tests; (6) failure/retry tests; and (7) explicit no-result and ambiguity semantics. A national source being absent from the integration list is not evidence that no peptide products are authorised there.
@@ -80,3 +83,21 @@ For every new jurisdiction, an adapter is accepted only after it has: (1) a sour
 - CDSCO's official published "List of Approved New Drugs": `https://cdsco.gov.in/opencms/en/Approval_new/Approved-New-Drugs/`.
 - The portal presents search fields for drug, manufacturer, indication and drug type; published records can include composition, dosage, indication, manufacturer and approval date. The official public page does not document a supported open API in the material reviewed for this integration.
 - Current platform status is link-out only. Do not automate access to authenticated SUGAM workflows, infer complete national coverage from visible search results, or treat the absence of a search result as proof of non-approval.
+
+### United Kingdom — MHRA Products (link-out stage)
+- Official search: `https://products.mhra.gov.uk/`.
+- The service provides national UK medicine product information searchable by product, active substance or Product Licence number, including SPCs, PILs and selected Public Assessment Reports.
+- MHRA states that this service covers nationally licensed medicines; centrally authorised products are a separate EMA scope. Product information may remain visible for a period after marketing authorisation cancellation.
+- Current platform status: link-out only. Do not infer current authorisation solely from a historical product-information page.
+
+### Australia — TGA ARTG (link-out stage)
+- Official ARTG information and search instructions: `https://www.tga.gov.au/products/regulations-all-products/about-australian-register-therapeutic-goods-artg/searching-australian-register-therapeutic-goods-artg`.
+- TGA describes ARTG as the public database of therapeutic goods that can be legally supplied in Australia and identifies product/formulation, sponsor and manufacturer information among its fields.
+- Exempt therapeutic goods may not need ARTG inclusion. Therefore, ARTG absence is not a universal statement that a therapeutic good cannot be supplied.
+- Current platform status: link-out only; automated ingestion requires access, licence and completeness review.
+
+### Japan — PMDA approved products (link-out stage)
+- PMDA English approved drug product lists: `https://www.pmda.go.jp/english/review-services/reviews/approved-information/drugs/0002.html`.
+- PMDA Japanese product information search: `https://www.pmda.go.jp/PmdaSearch/iyakuSearch/`.
+- PMDA publishes approved-product lists and product information; English review reports are selective translations and Japanese originals prevail if translations differ.
+- Current platform status: link-out only; automated ingestion requires bilingual normalization, product identifier mapping and source-status review.

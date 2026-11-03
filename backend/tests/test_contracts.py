@@ -1996,3 +1996,33 @@ def test_ema_article57_research_and_discovery_contracts_are_registered():
     request = PeptideDiscoveryRequest(query="peptide X", sources=["ema_article57"])
     assert request.sources == ["ema_article57"]
 
+
+
+def test_global_discovery_candidate_dossier_and_decision_routes_are_registered():
+    paths = app.openapi()["paths"]
+    assert "get" in paths["/api/v1/enrichment/discovery-candidates/{candidate_id}"]
+    assert "post" in paths["/api/v1/enrichment/discovery-candidates/{candidate_id}/decisions"]
+
+
+def test_global_discovery_decision_requires_canonical_link_only_for_existing_peptide():
+    from pydantic import ValidationError
+    from app.routers.enrichment import GlobalDiscoveryDecision
+    from uuid import uuid4
+
+    valid = GlobalDiscoveryDecision(
+        decision="accepted_as_existing_peptide",
+        canonical_peptide_id=uuid4(),
+        rationale="Sequence and chemical form match the verified canonical record.",
+    )
+    assert valid.canonical_peptide_id is not None
+    with pytest.raises(ValidationError):
+        GlobalDiscoveryDecision(
+            decision="rejected",
+            canonical_peptide_id=uuid4(),
+            rationale="This candidate is not a peptide entity and is excluded.",
+        )
+    with pytest.raises(ValidationError):
+        GlobalDiscoveryDecision(
+            decision="rejected",
+            rationale="                    ",
+        )

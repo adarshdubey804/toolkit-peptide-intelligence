@@ -335,3 +335,40 @@ def decide_review(
            "decision": payload.decision, "record_type": review["entity_type"]})
     db.commit()
     return dict(decision)
+
+
+
+@router.get("/reviews/{review_id}/mechanism")
+def get_review_mechanism_evidence(
+    review_id: UUID,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """Return the exact source-backed MOA record assigned for this organization's review."""
+    organization_id, role = _membership(current_user, db)
+    _require_reviewer_role(role)
+    row = db.execute(text("""
+        SELECT mechanism.id, mechanism.peptide_id, peptide.preferred_name AS peptide_name,
+               mechanism.chemical_form_id, form.form_name AS chemical_form_name,
+               mechanism.mechanism_title, mechanism.mechanism_statement,
+               mechanism.mechanism_class, mechanism.target_name, mechanism.target_action,
+               mechanism.binding_or_interaction, mechanism.downstream_signaling,
+               mechanism.pathway_context, mechanism.biological_effect,
+               mechanism.tissue_or_cell_context, mechanism.species_or_population,
+               mechanism.evidence_level, mechanism.evidence_type,
+               mechanism.confidence_score, mechanism.limitations,
+               mechanism.source_locator, mechanism.source_excerpt,
+               mechanism.model_or_method, mechanism.review_status,
+               mechanism.created_at, source.source_name, source.source_identifier,
+               source.source_version, source.source_url
+        FROM curation_reviews review
+        JOIN peptide_mechanisms mechanism
+          ON review.entity_type='peptide_mechanism' AND mechanism.id=review.entity_id
+        JOIN peptides peptide ON peptide.id=mechanism.peptide_id
+        LEFT JOIN peptide_chemical_forms form ON form.id=mechanism.chemical_form_id
+        JOIN source_records source ON source.id=mechanism.source_record_id
+        WHERE review.id=:review_id AND review.owner_organization_id=:organization_id
+    """), {"review_id": review_id, "organization_id": organization_id}).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Mechanism review not found in this organization.")
+    return dict(row)

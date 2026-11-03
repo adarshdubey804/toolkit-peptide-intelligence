@@ -166,7 +166,8 @@ export default function PeptideProfilePage() {
           <p className="muted mt-3 text-xs">Evidence type: {mechanism.evidence_type.replaceAll("_", " ")} · Source: {mechanism.source_name}{mechanism.source_locator ? ` · ${mechanism.source_locator}` : ""}</p>
           {mechanism.source_url && <a href={mechanism.source_url} target="_blank" rel="noreferrer" className="mt-2 inline-block text-xs text-emerald-300">Open supporting source ↗</a>}
         </article>)}
-      </div> : <p className="muted text-sm">No curator-verified mechanism records are currently available. This means the mechanism has not yet been established in this dossier; it does not mean the peptide has no biological mechanism.</p>\n        <Link href="/enrichment" className="mt-3 inline-block text-sm text-emerald-300 underline">Search source evidence and submit a mechanism for curator review →</Link>}
+      </div> : <p className="muted text-sm">No curator-verified mechanism records are currently available. This means the mechanism has not yet been established in this dossier; it does not mean the peptide has no biological mechanism.</p>
+        <Link href="/enrichment" className="mt-3 inline-block text-sm text-emerald-300 underline">Search source evidence and submit a mechanism for curator review →</Link>}
       <p className="muted mt-4 text-xs">Evidence levels are shown separately. Computational, AI-extracted, animal and in-vitro mechanisms are not presented as established human mechanisms or proof of clinical benefit.</p>
     </Section>
     <div className="mt-8 grid gap-4 lg:grid-cols-2">

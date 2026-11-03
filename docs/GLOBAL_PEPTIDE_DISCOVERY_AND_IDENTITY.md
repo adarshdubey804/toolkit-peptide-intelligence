@@ -83,7 +83,7 @@ A worldwide inventory is an ongoing evidence-coverage programme, not a one-time 
 
 | Source | Potential contribution | Access / governance consideration |
 |---|---|---|
-| APD6 | Curated natural antimicrobial peptide sequence datasets with organism/source categories | Public FASTA downloads; preserve release date and citation |
+| APD6 | Curated natural, synthetic and predicted antimicrobial peptides, activity/function categories and selected structures | External link-out only: APD6 states that fair use does not include copying its database to set up a competing database; no bulk ingestion or redistribution without explicit permission |
 | DBAASP | Antimicrobial peptide sequences, experimental activity, MIC and target-organism annotations | Verify current download/API access and field-level reuse terms before ingestion |
 | PeptideAtlas | Mass-spectrometry-supported endogenous peptide/proteomics observations across organisms | Data products are CC BY-NC 4.0; restrict to non-commercial use unless separately licensed |
 | IEDB | Peptide epitopes and immune assay evidence | Epitope evidence is not a comprehensive peptide inventory or proof of therapeutic status |
@@ -100,3 +100,7 @@ A candidate becomes a canonical peptide only after an explicit identity decision
 - duplicate, rejected or needs-more-evidence: preserve the decision and its rationale in append-only history.
 
 No name-only match, source search result or AI extraction creates a verified peptide. Provisional candidate folders remain clearly labelled as unverified until canonical identity review is complete.
+
+
+### APD6 access policy
+APD6 is linked as an external research resource, not ingested into the platform. Its official site reports natural, synthetic and predicted AMP records and downloadable sequence lists, but its terms explicitly state that fair use does not include copying the database to establish a competing database. The platform therefore opens APD6 for direct researcher inspection and stores no copied APD6 records or sequence exports unless the database owner grants explicit permission.

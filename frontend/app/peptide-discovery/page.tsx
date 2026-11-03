@@ -152,6 +152,7 @@ export default function PeptideDiscoveryPage() {
       <div className="mt-5 flex flex-wrap gap-3 text-xs">
         <Link href="/peptides" className="rounded-full border border-slate-600 px-4 py-2">Verified peptide dossiers</Link>
         <Link href="/enrichment" className="rounded-full border border-slate-600 px-4 py-2">Existing peptide enrichment</Link>
+        <a href="https://aps.unmc.edu/" target="_blank" rel="noreferrer" className="rounded-full border border-slate-600 px-4 py-2">APD6 external database ↗</a>
       </div>
     </header>
 

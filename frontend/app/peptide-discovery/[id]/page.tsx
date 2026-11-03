@@ -182,6 +182,7 @@ export default function DiscoveryCandidateDossierPage() {
       <p className="muted mt-3 text-sm">{candidate.source_identifier} · {candidate.candidate_kind.replaceAll("_", " ")}</p>
       <p className="muted mt-4 leading-7">{data.dossier_notice}</p>
       {candidate.canonical_peptide_id && <Link href={"/peptides/" + candidate.canonical_peptide_id} className="mt-4 inline-block text-sm text-emerald-300">Open linked canonical peptide dossier →</Link>}
+      <Link href={"/peptide-discovery/" + candidate.id + "/edit"} className="mt-4 ml-4 inline-block rounded-full border border-emerald-400/50 px-4 py-2 text-sm text-emerald-300">Edit scientific dossier →</Link>
     </header>
 
     <nav aria-label="Candidate dossier sections" className="panel mt-6 p-4">

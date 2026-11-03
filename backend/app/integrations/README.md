@@ -100,3 +100,13 @@ All integrations are read-only discovery clients. Results returned from external
 - A match is **not** a peptide identity assertion. Product-to-peptide linkage and current authorization verification remain curator tasks; the source snapshot is not a replacement for the competent authority's live register.
 - The EMA PMS public API beta is deliberately not used by this connector: its published specification describes a limited FHIR R5 dataset, OAuth2 client-credential access and beta/reference-only constraints. Reassess only after EMA's terms and production status permit the intended use.
 - Official source: https://www.ema.europa.eu/en/human-regulatory-overview/post-authorisation/data-medicines-iso-idmp-standards-post-authorisation/public-data-article-57-database.
+
+
+## DBAASP v4 — experimental antimicrobial peptide evidence
+- Read-only search endpoint: `GET /api/v1/research/dbaasp-peptides?q=...`; the source API supports `GET https://dbaasp.org/peptides` and exact record retrieval at `/peptides/{peptideId}`.
+- The adapter searches by source name, retrieves bounded detail records, and preserves source IDs, sequence (including source-specific modified symbols), termini, unusual residues, covalent bonds, SMILES, PDB/MD structure references, target activity, antibiofilm activity, hemolytic/cytotoxic measurements, synergy records and publications.
+- Assay context is retained as reported: organism/strain, activity measure, value, concentration, unit, medium, pH, ionic strength, salt and reference where available. No values are converted into clinical efficacy or incidence.
+- DBAASP v4 covers ribosomal, nonribosomal, synthetic and peptidomimetic antimicrobial records; it is an AMP-focused resource, not a complete inventory of all therapeutic peptides.
+- Source combination records may describe a peptide plus antibiotic. They are preserved as source-reported combination observations and are not represented as peptide-peptide synergy. FICI and activity values are not independently reinterpreted by the connector.
+- DBAASP's current data policy permits access, copying, adaptation and redistribution with public acknowledgement. Attribution and the current DBAASP citation are retained in every source response and must be included in downstream public materials.
+- Official API specification: https://dbaasp.org/v3/api-docs. Usage terms: https://dbaasp.dbaasp.niaidprod.net/terms-and-conditions.

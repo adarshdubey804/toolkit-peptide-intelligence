@@ -1779,3 +1779,10 @@ def test_peptide_mechanisms_can_be_submitted_to_independent_curation():
     paths = app.openapi()["paths"]
     assert "/api/v1/enrichment/peptides/{peptide_id}/mechanisms/dailymed" in paths
     assert "post" in paths["/api/v1/enrichment/peptides/{peptide_id}/mechanisms/dailymed"]
+
+
+def test_mechanism_review_submission_is_curation_compatible():
+    schemas = app.openapi()["components"]["schemas"]
+    assert "peptide_mechanism" in schemas["ReviewSubmission"]["properties"]["entity_type"]["enum"]
+    assert "/api/v1/curation/reviews/{review_id}/decisions" in app.openapi()["paths"]
+    assert "/api/v1/enrichment/peptides/{peptide_id}/mechanisms/dailymed" in app.openapi()["paths"]

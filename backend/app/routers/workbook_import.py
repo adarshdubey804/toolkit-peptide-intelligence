@@ -220,6 +220,7 @@ async def import_peptide_workbook(
         "source_sha256": file_hash,
         "imported_count": len(imported),
         "items": imported,
+        "workbook_metadata": workbook_metadata,
         "status": "imported_as_unresolved_source_observations",
         "governance": (
             "Every row has an independent discovery folder. Workbook-provided FDA status, "

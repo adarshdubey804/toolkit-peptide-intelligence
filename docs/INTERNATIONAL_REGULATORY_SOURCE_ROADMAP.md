@@ -15,6 +15,10 @@
 | Singapore | HSA Register of Therapeutic Products | Official Infosearch and government open-data CSV listing | Product name, licence number, active ingredients, dosage form, route, manufacturer, country of origin, approval date and classification where published; post-registration actions require checking HSA | Official link-out only; automated ingestion not integrated |
 | South Korea | MFDS Drug Safety Nara | Official English/Korean public product information and review portal | Product approval information, drug information search, review results and safety/product information | Official link-out only; automated ingestion not integrated |
 | Brazil | ANVISA medicine registration consultation | Official Portuguese-language public search | Registered medicines and simplified-notification medicines; ANVISA also regulates biological products and clinical trials | Official link-out only; automated ingestion not integrated |
+| New Zealand | Medsafe Product/Application Search | Official public product and application search | Product consent and application status including consent given, provisional consent, clinical trial, pending, refused, revoked, withdrawn, not available and lapsed approval | Official link-out only; automated ingestion not integrated |
+| Saudi Arabia | SFDA Drugs List | Official public English/Arabic search portal | Registered human medicines with trade/scientific name, registration number, strength, dosage form, route, manufacturer, marketing company and source-native status fields | Official link-out only; API access and redistribution terms not validated |
+| Mexico | COFEPRIS Sanitary Drug Registry | Official Spanish-language public search and published lists | Authorised medicine sanitary registrations searchable by registration number, distinctive name or generic name; related lists include renewals, revocations and cancellations | Official link-out only; automated ingestion not integrated |
+| South Africa | SAHPRA MedsInfo / Registered Health Products | Official public search portal and regulator e-services | Registered OTC and prescription medicines, product information and patient/professional leaflets where available; product scope must be reconciled with SAHPRA's registered health products list | Official link-out only; automated ingestion not integrated |
 | European Union | EMA Article 57 product snapshot | Public XLSX snapshot | Products with valid marketing authorisations in the EEA at the snapshot date; active substance, route, country and holder fields where published | Integrated read-only snapshot importer |
 | European Union | EMA Product Management Service (PMS) public API | FHIR R5 API with prior registration and OAuth2 | Limited public subset of non-nullified human medicinal products; current/provisional status scope and confidential-field exclusions | Planned; credentials and access scope required |
 | European Union | EMA ePI pilot API | Public API for published pilot product information | Published electronic product information pilot; not a complete register of all EU products | Planned source evaluation |
@@ -134,3 +138,23 @@ For every new jurisdiction, an adapter is accepted only after it has: (1) a sour
 - Official medicine registration consultation: `https://www.gov.br/anvisa/pt-br/sistemas/consulta-a-registro-de-medicamentos`.
 - ANVISA's regulatory scope includes medicines and biological products and authorisation of clinical trials in Brazil.
 - Current platform status: link-out only; Portuguese-language normalization, product identifiers and regulatory status history are not integrated.
+
+### New Zealand — Medsafe Product/Application Search (link-out stage)
+- Official search: `https://www.medsafe.govt.nz/DbSearch/`.
+- The product search distinguishes consent to market from application status and exposes source-native states including consent given, provisional consent, clinical trial, pending, consent refused, consent revoked, withdrawn, not available and approval lapsed.
+- Current platform status: link-out only. Preserve these source-native states; do not collapse them into a generic approved/not-approved boolean.
+
+### Saudi Arabia — SFDA Drugs List (link-out stage)
+- Official SFDA drugs list: `https://www.wideip.sfda.gov.sa/en/drugs-list`.
+- Public records may include scientific/trade name, registration number, strength, dosage form, route, manufacturer, marketing company and authorisation status.
+- Current platform status: link-out only. API access, credentials and redistribution terms require validation before automated use.
+
+### Mexico — COFEPRIS Sanitary Drug Registry (link-out stage)
+- Official search: `https://registros.cofepris.gob.mx/BRSDM/default.aspx`.
+- COFEPRIS also publishes official lists of authorised registrations, renewals, revocations and cancellations and information about clinical-trial authorisation.
+- Current platform status: link-out only. Preserve Spanish-language source identifiers and status history; automated ingestion is not integrated.
+
+### South Africa — SAHPRA registered medicines (link-out stage)
+- Official SAHPRA MedsInfo directory: `https://www.medsinfo.sahpra.org.za/`.
+- SAHPRA provides product information for registered OTC and prescription medicines and links to its registered health products and application-status services.
+- Current platform status: link-out only. Directory scope and completeness must be reconciled with the regulator's registered health products list before ingestion.

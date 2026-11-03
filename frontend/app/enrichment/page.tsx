@@ -39,6 +39,8 @@ export default function EnrichmentPage() {
   const [token, setToken] = useState("");
   const [userLabel, setUserLabel] = useState("");
   const [peptideId, setPeptideId] = useState("");
+  const [dailymedSetId, setDailymedSetId] = useState("");
+  const [mechanismSubmitting, setMechanismSubmitting] = useState(false);
   const [result, setResult] = useState<EnrichmentResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -87,6 +89,29 @@ export default function EnrichmentPage() {
     } finally { setLoading(false); }
   }
 
+
+  async function submitDailyMedMechanism(event: FormEvent) {
+    event.preventDefault();
+    if (!token || peptideId.trim().length !== 36) return;
+    setMechanismSubmitting(true); setError(""); setNotice("");
+    try {
+      const response = await fetch(API_BASE + "/api/v1/enrichment/peptides/" + encodeURIComponent(peptideId.trim()) + "/mechanisms/dailymed", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+        body: JSON.stringify({ set_id: dailymedSetId.trim() })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Could not extract the DailyMed mechanism section.");
+      setNotice(data.already_exists
+        ? "This DailyMed mechanism record already exists in the dossier."
+        : "DailyMed mechanism text was saved as source-reported evidence and submitted to the curator review queue.");
+      await loadQueue();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Mechanism submission failed.");
+    } finally {
+      setMechanismSubmitting(false);
+    }
+  }
 
   async function saveCandidate(item: Candidate) {
     if (!token || !result) return;
@@ -163,6 +188,16 @@ export default function EnrichmentPage() {
         <div><p className="text-sm font-semibold">{userLabel}</p><p className="muted mt-1 text-xs">Authenticated discovery session</p></div>
         <div className="flex gap-2"><button onClick={() => void loadQueue()} className="rounded-full border border-slate-600 px-4 py-2 text-xs">Load curator queue</button><button onClick={() => { setToken(""); setResult(null); setUserLabel(""); setQueue([]); }} className="rounded-full border border-slate-600 px-4 py-2 text-xs">Sign out</button></div>
       </div>
+      <section className="panel mt-5 p-5">
+        <h2 className="text-lg font-semibold">Import a DailyMed mechanism of action</h2>
+        <p className="muted mt-2 text-sm">Paste a DailyMed SPL Set ID from a source-backed discovery record. The system extracts only Section 12.1 and submits it as an unverified mechanism for independent curator review.</p>
+        <form onSubmit={submitDailyMedMechanism} className="mt-4 grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
+          <label className="block"><span className={label}>DailyMed SPL Set ID</span><input className={field} required minLength={36} maxLength={36} value={dailymedSetId} onChange={e => setDailymedSetId(e.target.value)} placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" /></label>
+          <button disabled={mechanismSubmitting || dailymedSetId.trim().length !== 36 || peptideId.trim().length !== 36} className="rounded-full border border-emerald-400/50 px-6 py-3 text-sm font-semibold text-emerald-200 disabled:opacity-50">{mechanismSubmitting ? "Extracting and submitting…" : "Extract MOA and submit for review"}</button>
+        </form>
+        <p className="muted mt-3 text-xs">The peptide dossier UUID above is used to link the mechanism. DailyMed presence is not proof of FDA approval; a reviewer must verify product and label identity before approving the mechanism record.</p>
+      </section>
+
       <section className="panel mt-5 p-5">
         <form onSubmit={discover} className="grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
           <label className="block"><span className={label}>Peptide dossier UUID</span><input className={field} required minLength={36} maxLength={36} value={peptideId} onChange={e => setPeptideId(e.target.value)} placeholder="Paste the peptide record UUID" /></label>

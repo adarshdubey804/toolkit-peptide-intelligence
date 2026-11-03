@@ -110,3 +110,10 @@ All integrations are read-only discovery clients. Results returned from external
 - Source combination records may describe a peptide plus antibiotic. They are preserved as source-reported combination observations and are not represented as peptide-peptide synergy. FICI and activity values are not independently reinterpreted by the connector.
 - DBAASP's current data policy permits access, copying, adaptation and redistribution with public acknowledgement. Attribution and the current DBAASP citation are retained in every source response and must be included in downstream public materials.
 - Official API specification: https://dbaasp.org/v3/api-docs. Usage terms: https://dbaasp.dbaasp.niaidprod.net/terms-and-conditions.
+
+
+## APD6 — external reference only
+- Researcher link: https://aps.unmc.edu/
+- APD6 includes natural, synthetic and predicted antimicrobial peptides and offers search/export features for research.
+- The APD6 website states that fair use does not include copying the APD database to establish a competing database. This platform does not scrape, bulk-download, cache, or redistribute APD6 records or sequences.
+- Revisit automated integration only after explicit written permission and a reviewed data-use agreement. This preserves the option to open the source website directly without creating an unlicensed mirror.

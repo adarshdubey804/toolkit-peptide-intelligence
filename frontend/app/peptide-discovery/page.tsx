@@ -7,6 +7,7 @@ import { getPreferredOrganizationId, setPreferredOrganizationId } from "@/lib/au
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 const AVAILABLE_SOURCES = [
   { id: "fda_drugsfda", label: "FDA Drugs@FDA" },
+  { id: "health_canada_dpd", label: "Health Canada DPD" },
   { id: "dailymed", label: "DailyMed" },
   { id: "clinicaltrials", label: "ClinicalTrials.gov" },
   { id: "pubmed", label: "PubMed" },
@@ -40,7 +41,7 @@ export default function PeptideDiscoveryPage() {
   const [token, setToken] = useState("");
   const [userLabel, setUserLabel] = useState("");
   const [query, setQuery] = useState("");
-  const [sources, setSources] = useState<string[]>(["fda_drugsfda", "dailymed", "clinicaltrials", "pubmed"]);
+  const [sources, setSources] = useState<string[]>(["fda_drugsfda", "health_canada_dpd", "dailymed", "clinicaltrials", "pubmed"]);
   const [status, setStatus] = useState("all");
   const [candidates, setCandidates] = useState<CandidateResponse | null>(null);
   const [loading, setLoading] = useState(false);

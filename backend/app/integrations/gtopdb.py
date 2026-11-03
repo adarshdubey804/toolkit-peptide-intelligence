@@ -70,6 +70,33 @@ def normalize_ligand(record: dict, interactions: list[dict]) -> dict:
 
 
 class GtoPdbProvider:
+    async def get_peptide_ligand(self, ligand_id: int, api_key: str) -> dict:
+        """Retrieve one exact peptide ligand and its expert-curated interactions."""
+        if ligand_id <= 0:
+            raise ValueError("GtoPdb ligand ID must be a positive integer.")
+        if not api_key or not api_key.strip():
+            raise ValueError("A registered GtoPdb API key is required.")
+        timeout = httpx.Timeout(25.0, connect=5.0)
+        headers = {"GTP-API-Key": api_key.strip(), "Accept": "application/json"}
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers=headers) as client:
+            response = await client.get(f"{BASE_URL}/ligands/{ligand_id}")
+            if response.status_code in (204, 404):
+                raise LookupError("GtoPdb peptide ligand was not found.")
+            response.raise_for_status()
+            record = response.json()
+            if not isinstance(record, dict):
+                raise ValueError("GtoPdb ligand detail response was not an object.")
+            interactions_response = await client.get(f"{BASE_URL}/ligands/{ligand_id}/interactions")
+            if interactions_response.status_code in (204, 404):
+                interactions = []
+            else:
+                interactions_response.raise_for_status()
+                interactions = _as_records(interactions_response.json())
+        normalized = normalize_ligand(record, interactions)
+        normalized["source_version"] = "GtoPdb API"
+        normalized["source_locator"] = f"GtoPdb ligand {ligand_id}"
+        return normalized
+
     async def search_peptides(self, query: str, limit: int = 20, api_key: str | None = None) -> dict:
         term = query.strip()
         if len(term) < 2:

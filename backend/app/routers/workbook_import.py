@@ -230,7 +230,7 @@ def list_candidate_dossier_sections(
 ):
     organization_id, _ = _membership(current_user, db)
     rows = db.execute(text("""
-        SELECT id, section_key, content, references, media, revision, updated_at
+        SELECT id, section_key, content, citations, media, revision, updated_at
         FROM peptide_dossier_sections
         WHERE candidate_id=:candidate AND organization_id=:org
         ORDER BY section_key
@@ -260,15 +260,15 @@ def save_candidate_dossier_section(
         INSERT INTO peptide_dossier_sections
             (candidate_id, organization_id, section_key, content, references, media, updated_by)
         VALUES (:candidate, :org, :section_key, CAST(:content AS jsonb),
-                CAST(:references AS jsonb), CAST(:media AS jsonb), :user_id)
+                CAST(:citations AS jsonb), CAST(:media AS jsonb), :user_id)
         ON CONFLICT (candidate_id, organization_id, section_key) DO UPDATE SET
-            content=EXCLUDED.content, references=EXCLUDED.references,
+            content=EXCLUDED.content, citations=EXCLUDED.citations,
             media=EXCLUDED.media, updated_by=EXCLUDED.updated_by
-        RETURNING id, section_key, content, references, media, revision, updated_at
+        RETURNING id, section_key, content, citations, media, revision, updated_at
     """), {
         "candidate": candidate_id, "org": organization_id, "section_key": section_key,
         "content": json.dumps(payload.content, ensure_ascii=False),
-        "references": json.dumps(references, ensure_ascii=False),
+        "citations": json.dumps(references, ensure_ascii=False),
         "media": json.dumps(media, ensure_ascii=False),
         "user_id": current_user["id"],
     }).mappings().one()

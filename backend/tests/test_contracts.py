@@ -1770,3 +1770,12 @@ def test_dailymed_moa_extraction_route_is_registered():
     paths = app.openapi()["paths"]
     route = paths["/api/v1/research/dailymed/{set_id}/mechanism-of-action"]["get"]
     assert route["parameters"][0]["name"] == "set_id"
+
+
+def test_peptide_mechanisms_can_be_submitted_to_independent_curation():
+    schemas = app.openapi()["components"]["schemas"]
+    entity_types = schemas["ReviewSubmission"]["properties"]["entity_type"]["enum"]
+    assert "peptide_mechanism" in entity_types
+    paths = app.openapi()["paths"]
+    assert "/api/v1/enrichment/peptides/{peptide_id}/mechanisms/dailymed" in paths
+    assert "post" in paths["/api/v1/enrichment/peptides/{peptide_id}/mechanisms/dailymed"]

@@ -5,6 +5,7 @@ from app.integrations.clinicaltrials import normalize_study
 from app.integrations.dailymed import extract_mechanism_of_action, normalize_spl
 from app.integrations.fda_drugsfda import normalize_application
 from app.integrations.fda_purple_book import discover_latest_csv_url, normalize_product as normalize_purple_book_product, parse_purple_book_csv
+from app.integrations.gtopdb import GtoPdbProvider, normalize_ligand
 from app.integrations.health_canada_dpd import normalize_product
 from app.main import MIGRATIONS_DIR, app
 
@@ -1812,3 +1813,30 @@ def test_purple_book_research_and_global_discovery_contracts_are_registered():
         sources=["fda_purple_book", "health_canada_dpd"],
     )
     assert len(request.sources) == 2
+
+
+def test_gtopdb_normalization_preserves_peptide_interaction_source_hints():
+    result = normalize_ligand(
+        {"ligandId": 1234, "name": "Example peptide", "type": "Peptide"},
+        [{"type": "Agonist", "targetName": "GLP-1 receptor"}],
+    )
+    assert result["source_identifier"] == "1234"
+    assert result["candidate_name"] == "Example peptide"
+    assert result["reported_target"] == "GLP-1 receptor"
+    assert result["reported_mechanism"] == "Agonist at GLP-1 receptor"
+    assert result["curation_status"] == "not_reviewed"
+
+
+def test_gtopdb_is_gracefully_not_configured_without_api_key():
+    result = asyncio.run(GtoPdbProvider().search_peptides("oxytocin", api_key=None))
+    assert result["status"] == "not_configured"
+    assert result["items"] == []
+
+
+def test_gtopdb_research_and_global_discovery_contracts_are_registered():
+    route = app.openapi()["paths"]["/api/v1/research/gtopdb-peptides"]["get"]
+    params = {item["name"]: item for item in route["parameters"]}
+    assert params["limit"]["schema"]["maximum"] == 30
+    from app.routers.enrichment import PeptideDiscoveryRequest
+    request = PeptideDiscoveryRequest(query="peptide X", sources=["gtopdb"])
+    assert request.sources == ["gtopdb"]

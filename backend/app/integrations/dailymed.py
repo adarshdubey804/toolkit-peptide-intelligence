@@ -81,7 +81,7 @@ def extract_mechanism_of_action(spl_xml: str) -> dict:
     return {
         "found": True,
         "mechanism_text": "\n\n".join(unique_text)[:12000],
-        "section_code": "43679-0",
+        "section_code": sections[0]["loinc_code"],
         "section_title": next((section["title"] for section in sections if section["title"]), "12.1 Mechanism of Action"),
         "extraction_status": "extracted_from_explicit_spl_section",
         "evidence_level": "source_asserted",

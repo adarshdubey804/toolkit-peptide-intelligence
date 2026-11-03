@@ -302,9 +302,18 @@ def decide_review(
     """), {"new_status": new_status, "rationale": payload.rationale.strip(),
            "reviewer": current_user["id"], "review_id": review_id})
 
-    if review["entity_type"] in ("peptide", "evidence_claim", "peptide_mechanism"):
-        table = {"peptide": "peptides", "evidence_claim": "evidence_claims",
-                 "peptide_mechanism": "peptide_mechanisms"}[review["entity_type"]]
+    if review["entity_type"] == "peptide_mechanism":
+        db.execute(text("""
+            UPDATE peptide_mechanisms
+            SET review_status = CAST(:new_status AS review_status),
+                reviewed_by = CASE WHEN :new_status IN ('verified','rejected','archived') THEN :reviewer ELSE NULL END,
+                reviewed_at = CASE WHEN :new_status IN ('verified','rejected','archived') THEN now() ELSE NULL END,
+                updated_at = now()
+            WHERE id = :entity_id
+        """), {"new_status": new_status, "entity_id": review["entity_id"],
+               "reviewer": current_user["id"]})
+    elif review["entity_type"] in ("peptide", "evidence_claim"):
+        table = {"peptide": "peptides", "evidence_claim": "evidence_claims"}[review["entity_type"]]
         db.execute(text(f"""
             UPDATE {table}
             SET review_status = CAST(:new_status AS review_status)

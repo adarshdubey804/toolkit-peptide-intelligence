@@ -15,6 +15,7 @@ from ..integrations.clinicaltrials import ClinicalTrialsProvider
 from ..integrations.dailymed import DailyMedProvider
 from ..integrations.fda_drugsfda import FdaDrugsFdaProvider
 from ..integrations.fda_purple_book import FdaPurpleBookProvider
+from ..integrations.gtopdb import GtoPdbProvider
 from ..integrations.health_canada_dpd import HealthCanadaDpdProvider
 from ..integrations.pubmed import PubMedProvider
 from ..integrations.rcsb import RCSBProvider
@@ -393,7 +394,7 @@ async def discover_and_persist_peptide_candidates(
     if role not in {"organization_admin", "curator", "reviewer", "researcher"}:
         raise HTTPException(status_code=403, detail="Researcher, curator or reviewer membership is required.")
 
-    allowed_sources = {"fda_drugsfda", "fda_purple_book", "dailymed", "health_canada_dpd", "clinicaltrials", "pubmed"}
+    allowed_sources = {"fda_drugsfda", "fda_purple_book", "dailymed", "health_canada_dpd", "clinicaltrials", "pubmed", "gtopdb"}
     selected = list(dict.fromkeys(payload.sources))
     if not selected or not set(selected).issubset(allowed_sources):
         raise HTTPException(status_code=422, detail="Unsupported peptide discovery source.")
@@ -409,6 +410,10 @@ async def discover_and_persist_peptide_candidates(
     if "fda_purple_book" in selected:
         operations["fda_purple_book"] = FdaPurpleBookProvider().search(
             query, min(payload.limit, 100)
+        )
+    if "gtopdb" in selected and settings.gtopdb_api_key:
+        operations["gtopdb"] = GtoPdbProvider().search_peptides(
+            query, min(payload.limit, 30), settings.gtopdb_api_key
         )
     if "dailymed" in selected:
         operations["dailymed"] = DailyMedProvider().search_by_name(query, min(payload.limit, 50), 1)
@@ -492,6 +497,12 @@ async def discover_and_persist_peptide_candidates(
                     title = f"FDA Purple Book {item.get('bla_number') or 'BLA unknown'} · {item.get('proper_name') or query}"
                     candidate_name = item.get("proper_name") or query
                     development_status = item.get("licensure") or item.get("marketing_status") or "licensed_biologic_record_observed"
+                elif source_key == "gtopdb":
+                    identifier = item.get("source_identifier")
+                    source_url = item.get("source_url")
+                    title = f"GtoPdb ligand {identifier or 'unknown'} · {item.get('candidate_name') or query}"
+                    candidate_name = item.get("candidate_name") or query
+                    development_status = item.get("ligand_type") or "curated_peptide_ligand_record"
                 elif source_key == "dailymed":
                     identifier = item.get("set_id")
                     source_url = item.get("source_url")

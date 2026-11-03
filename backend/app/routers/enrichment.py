@@ -14,6 +14,7 @@ from ..db import get_db
 from ..rate_limit_dependencies import authenticated_write_rate_limit
 from ..integrations.clinicaltrials import ClinicalTrialsProvider
 from ..integrations.chembl import ChEMBLProvider
+from ..integrations.hsa_singapore import HsaSingaporeProvider
 from ..integrations.dailymed import DailyMedProvider
 from ..integrations.dbaasp import DbaaspProvider
 from ..integrations.ema_article57 import EmaArticle57Provider
@@ -202,7 +203,7 @@ class ChEMBLMechanismSubmission(BaseModel):
 class PeptideDiscoveryRequest(BaseModel):
     query: str = Field(min_length=2, max_length=160)
     sources: list[str] = Field(
-        default_factory=lambda: ["fda_drugsfda", "fda_purple_book", "ema_article57", "dbaasp", "dramp", "gtopdb", "dailymed", "health_canada_dpd", "chembl", "clinicaltrials", "pubmed"],
+        default_factory=lambda: ["fda_drugsfda", "fda_purple_book", "ema_article57", "dbaasp", "dramp", "gtopdb", "dailymed", "health_canada_dpd", "chembl", "hsa_sg", "clinicaltrials", "pubmed"],
         min_length=1,
         max_length=12,
     )
@@ -790,7 +791,7 @@ async def discover_and_persist_peptide_candidates(
     if role not in {"organization_admin", "curator", "reviewer", "researcher"}:
         raise HTTPException(status_code=403, detail="Researcher, curator or reviewer membership is required.")
 
-    allowed_sources = {"fda_drugsfda", "fda_purple_book", "ema_article57", "dbaasp", "dailymed", "health_canada_dpd", "clinicaltrials", "pubmed", "gtopdb", "dramp", "chembl"}
+    allowed_sources = {"fda_drugsfda", "fda_purple_book", "ema_article57", "dbaasp", "dailymed", "health_canada_dpd", "clinicaltrials", "pubmed", "gtopdb", "dramp", "chembl", "hsa_sg"}
     selected = list(dict.fromkeys(payload.sources))
     if not selected or not set(selected).issubset(allowed_sources):
         raise HTTPException(status_code=422, detail="Unsupported peptide discovery source.")
@@ -809,6 +810,8 @@ async def discover_and_persist_peptide_candidates(
         )
     if "chembl" in selected:
         operations["chembl"] = ChEMBLProvider().search_peptides(query, min(payload.limit, 30))
+    if "hsa_sg" in selected:
+        operations["hsa_sg"] = HsaSingaporeProvider().search_products(query, min(payload.limit, 50))
     if "gtopdb" in selected and settings.gtopdb_api_key:
         operations["gtopdb"] = GtoPdbProvider().search_peptides(
             query, min(payload.limit, 30), settings.gtopdb_api_key
@@ -911,6 +914,12 @@ async def discover_and_persist_peptide_candidates(
                     title = f"FDA Purple Book {item.get('bla_number') or 'BLA unknown'} · {item.get('proper_name') or query}"
                     candidate_name = item.get("proper_name") or query
                     development_status = item.get("licensure") or item.get("marketing_status") or "licensed_biologic_record_observed"
+                elif source_key == "hsa_sg":
+                    identifier = item.get("source_identifier")
+                    source_url = item.get("source_url")
+                    title = f"Singapore HSA licence {identifier or 'unknown'} · {item.get('product_name') or query}"
+                    candidate_name = item.get("active_ingredients") or item.get("product_name") or query
+                    development_status = item.get("source_status") or "registered_product_snapshot_observed"
                 elif source_key == "chembl":
                     identifier = item.get("source_identifier")
                     source_url = item.get("source_url")

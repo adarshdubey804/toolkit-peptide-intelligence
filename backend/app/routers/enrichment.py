@@ -268,6 +268,9 @@ async def discover_and_persist_peptide_candidates(
             try:
                 async with semaphore:
                     extracted = await DailyMedProvider().get_mechanism_of_action(set_id)
+                item["spl_search_result_version"] = item.get("spl_version")
+                if extracted.get("spl_version") is not None:
+                    item["spl_version"] = extracted.get("spl_version")
                 item["mechanism_extraction_status"] = extracted.get("extraction_status")
                 item["mechanism_source_url"] = extracted.get("source_url")
                 item["mechanism_source_locator"] = (

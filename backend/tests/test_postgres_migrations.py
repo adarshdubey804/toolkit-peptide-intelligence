@@ -101,6 +101,9 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             "peptide_discovery_candidates",
             "peptide_discovery_observations",
             "peptide_discovery_decisions",
+            "peptide_discovery_candidates",
+            "peptide_discovery_observations",
+            "peptide_discovery_decisions",
         )
         for table_name in required_tables:
             exists = connection.execute(
@@ -150,6 +153,46 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             )
         """)).scalar_one()
         assert discovery_history_triggers == 2, "Source observations and curation decisions must be immutable"
+
+        discovery_columns = connection.execute(text("""
+            SELECT count(*) FROM information_schema.columns
+            WHERE table_schema='public' AND table_name='peptide_discovery_candidates'
+              AND column_name IN (
+                'source_record_id','source_entity_identifier','candidate_name',
+                'candidate_kind','source_development_status','source_jurisdiction_code',
+                'reported_sequence','reported_chemical_form','reported_target',
+                'reported_mechanism','canonical_peptide_id','identity_match_status',
+                'candidate_status','first_seen_at','last_seen_at','raw_metadata'
+              )
+        """)).scalar_one()
+        assert discovery_columns == 16, "Discovery candidates must preserve source identity, lifecycle observations and canonical matching"
+
+        discovery_triggers = connection.execute(text("""
+            SELECT count(*) FROM pg_trigger
+            WHERE NOT tgisinternal AND tgname IN (
+                'peptide_discovery_observations_append_only',
+                'peptide_discovery_decisions_append_only'
+            )
+        """)).scalar_one()
+        assert discovery_triggers == 2, "Discovery observations and curation decisions must be append-only"
+
+        discovery_status_check = connection.execute(text("""
+            SELECT pg_get_constraintdef(oid)
+            FROM pg_constraint
+            WHERE conrelid='public.peptide_discovery_candidates'::regclass
+              AND conname='peptide_discovery_candidates_identity_match_status_check'
+        """)).scalar_one()
+        for state in ("unresolved", "possible_match", "matched", "new_entity", "ambiguous", "rejected"):
+            assert state in discovery_status_check
+
+        discovery_payload_unique = connection.execute(text("""
+            SELECT EXISTS (
+                SELECT 1 FROM pg_indexes
+                WHERE schemaname='public' AND tablename='peptide_discovery_observations'
+                  AND indexdef ILIKE '%UNIQUE%' AND indexdef ILIKE '%payload_hash%'
+            )
+        """)).scalar_one()
+        assert discovery_payload_unique, "Discovery payloads must be deduplicated by content hash"
 
         regulatory_authorization_columns = connection.execute(text("""
             SELECT count(*) FROM information_schema.columns

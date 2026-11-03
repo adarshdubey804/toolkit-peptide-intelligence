@@ -125,3 +125,12 @@ All integrations are read-only discovery clients. Results returned from external
 - Every imported interaction enters the organization-scoped independent curator queue; no source result is automatically verified.
 - The importer does not infer pathways, affinity, receptor subtype, clinical effects or regulatory authorization.
 - Configure `GTOPDB_API_KEY` only after registering with GtoPdb. Preserve attribution and comply with the database ODbL and content CC BY-SA 4.0 terms.
+
+## ChEMBL peptide biotherapeutic discovery
+
+- The adapter searches the public ChEMBL molecule API and fetches linked biotherapeutic records and mechanism records by exact ChEMBL molecule ID.
+- It retains only biotherapeutic records whose HELM notation explicitly begins with `PEPTIDE1{`; antibodies and other protein biotherapeutics are not misclassified as peptide candidates.
+- HELM notation is preserved verbatim. It is not converted into an unmodified one-letter amino-acid sequence or used to infer chemical identity.
+- ChEMBL mechanism records are retained as source-reported hints; they do not establish regulatory approval, clinical benefit or a complete pathway mechanism.
+- Preserve ChEMBL molecule ID, source URL, source release where returned and source payload.
+- ChEMBL data are licensed under CC BY-SA 3.0. Attribute EMBL-EBI/ChEMBL and redistribute adaptations under the same licence.

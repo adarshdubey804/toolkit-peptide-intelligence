@@ -13,6 +13,7 @@ from ..config import settings
 from ..db import get_db
 from ..rate_limit_dependencies import authenticated_write_rate_limit
 from ..integrations.clinicaltrials import ClinicalTrialsProvider
+from ..integrations.chembl import ChEMBLProvider
 from ..integrations.dailymed import DailyMedProvider
 from ..integrations.dbaasp import DbaaspProvider
 from ..integrations.ema_article57 import EmaArticle57Provider
@@ -197,7 +198,7 @@ class GtoPdbMechanismSubmission(BaseModel):
 class PeptideDiscoveryRequest(BaseModel):
     query: str = Field(min_length=2, max_length=160)
     sources: list[str] = Field(
-        default_factory=lambda: ["fda_drugsfda", "fda_purple_book", "ema_article57", "dbaasp", "dailymed", "health_canada_dpd", "clinicaltrials", "pubmed"],
+        default_factory=lambda: ["fda_drugsfda", "fda_purple_book", "ema_article57", "dbaasp", "dailymed", "health_canada_dpd", "chembl", "clinicaltrials", "pubmed"],
         min_length=1,
         max_length=10,
     )
@@ -606,7 +607,7 @@ async def discover_and_persist_peptide_candidates(
     if role not in {"organization_admin", "curator", "reviewer", "researcher"}:
         raise HTTPException(status_code=403, detail="Researcher, curator or reviewer membership is required.")
 
-    allowed_sources = {"fda_drugsfda", "fda_purple_book", "ema_article57", "dbaasp", "dailymed", "health_canada_dpd", "clinicaltrials", "pubmed", "gtopdb", "dramp"}
+    allowed_sources = {"fda_drugsfda", "fda_purple_book", "ema_article57", "dbaasp", "dailymed", "health_canada_dpd", "clinicaltrials", "pubmed", "gtopdb", "dramp", "chembl"}
     selected = list(dict.fromkeys(payload.sources))
     if not selected or not set(selected).issubset(allowed_sources):
         raise HTTPException(status_code=422, detail="Unsupported peptide discovery source.")
@@ -623,6 +624,8 @@ async def discover_and_persist_peptide_candidates(
         operations["fda_purple_book"] = FdaPurpleBookProvider().search(
             query, min(payload.limit, 100)
         )
+    if "chembl" in selected:
+        operations["chembl"] = ChEMBLProvider().search_peptides(query, min(payload.limit, 30))
     if "gtopdb" in selected and settings.gtopdb_api_key:
         operations["gtopdb"] = GtoPdbProvider().search_peptides(
             query, min(payload.limit, 30), settings.gtopdb_api_key
@@ -725,6 +728,15 @@ async def discover_and_persist_peptide_candidates(
                     title = f"FDA Purple Book {item.get('bla_number') or 'BLA unknown'} · {item.get('proper_name') or query}"
                     candidate_name = item.get("proper_name") or query
                     development_status = item.get("licensure") or item.get("marketing_status") or "licensed_biologic_record_observed"
+                elif source_key == "chembl":
+                    identifier = item.get("source_identifier")
+                    source_url = item.get("source_url")
+                    title = f"ChEMBL peptide biotherapeutic {identifier or 'unknown'} · {item.get('candidate_name') or query}"
+                    candidate_name = item.get("candidate_name") or query
+                    development_status = (
+                        f"ChEMBL max phase {item.get('max_phase')}"
+                        if item.get("max_phase") is not None else "ChEMBL biotherapeutic record; phase not stated"
+                    )
                 elif source_key == "gtopdb":
                     identifier = item.get("source_identifier")
                     source_url = item.get("source_url")

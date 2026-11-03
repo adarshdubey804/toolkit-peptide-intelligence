@@ -17,6 +17,7 @@ from ..services.source_persistence import persist_normalized_source_record
 from ..rate_limit import enforce_rate_limit, request_client_identity
 from ..integrations.alphafold import AlphaFoldProvider
 from ..integrations.clinicaltrials import ClinicalTrialsProvider
+from ..integrations.chembl import ChEMBLProvider
 from ..integrations.dailymed import DailyMedProvider
 from ..integrations.dbaasp import DbaaspProvider
 from ..integrations.ema_article57 import EmaArticle57Provider
@@ -97,6 +98,18 @@ async def search_ema_article57(
         return await EmaArticle57Provider().search(q, limit)
     except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
         raise HTTPException(status_code=502, detail="EMA Article 57 could not be retrieved or parsed.") from exc
+
+
+@router.get("/chembl-peptides")
+async def search_chembl_peptides(
+    q: str = Query(min_length=2, max_length=160),
+    limit: int = Query(default=20, ge=1, le=30),
+):
+    """Search ChEMBL for explicitly peptide-typed HELM biotherapeutic records."""
+    try:
+        return await ChEMBLProvider().search_peptides(q, limit)
+    except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(status_code=502, detail="ChEMBL could not be reached or returned an invalid response.") from exc
 
 
 @router.get("/gtopdb-peptides")

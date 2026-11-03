@@ -2,6 +2,7 @@ from pathlib import Path
 import asyncio
 
 from app.integrations.clinicaltrials import normalize_study
+from app.integrations.chembl import normalize_peptide_biotherapeutic
 from app.integrations.dailymed import extract_mechanism_of_action, normalize_spl
 from app.integrations.dbaasp import DbaaspProvider, normalize_peptide
 from app.integrations.fda_drugsfda import normalize_application
@@ -2126,3 +2127,51 @@ def test_gtopdb_mechanism_curation_route_is_registered():
     route = paths["/api/v1/enrichment/peptides/{peptide_id}/mechanisms/gtopdb"]["post"]
     assert route["requestBody"]["required"] is True
     assert "/api/v1/curation/reviews/{review_id}/mechanism" in paths
+
+
+def test_chembl_peptide_helm_biotherapeutic_normalization_preserves_source_moa():
+    result = normalize_peptide_biotherapeutic(
+        {
+            "molecule_chembl_id": "CHEMBL448105",
+            "pref_name": "Example peptide",
+            "molecule_type": "Protein",
+            "max_phase": 4,
+        },
+        {
+            "helm_notation": "PEPTIDE1{A.L.Y.A.S.K.L.S.[am]}$$$$",
+            "description": "Synthetic peptide biotherapeutic",
+        },
+        [{
+            "mechanism_of_action": "Agonist at GLP-1 receptor",
+            "action_type": "AGONIST",
+            "target_chembl_id": "CHEMBL1784",
+            "target_name": "GLP-1 receptor",
+        }],
+        "ChEMBL_37",
+    )
+    assert result["source_identifier"] == "CHEMBL448105"
+    assert result["reported_sequence"].startswith("PEPTIDE1{")
+    assert result["reported_sequence_type"] == "HELM peptide polymer notation"
+    assert result["reported_target"] == "GLP-1 receptor"
+    assert "Agonist at GLP-1 receptor" in result["reported_mechanism"]
+    assert result["license"] == "CC BY-SA 3.0"
+    assert result["curation_status"] == "not_reviewed"
+
+
+def test_chembl_adapter_excludes_non_peptide_biotherapeutic_helm():
+    result = normalize_peptide_biotherapeutic(
+        {"molecule_chembl_id": "CHEMBL999", "pref_name": "Example antibody"},
+        {"helm_notation": "PROTEIN1{A.G.C}$$$$"},
+        [],
+        "ChEMBL_37",
+    )
+    assert result is None
+
+
+def test_chembl_peptide_discovery_route_and_source_contract_are_registered():
+    route = app.openapi()["paths"]["/api/v1/research/chembl-peptides"]["get"]
+    params = {item["name"]: item for item in route["parameters"]}
+    assert params["limit"]["schema"]["maximum"] == 30
+    from app.routers.enrichment import PeptideDiscoveryRequest
+    request = PeptideDiscoveryRequest(query="tirzepatide", sources=["chembl"])
+    assert request.sources == ["chembl"]

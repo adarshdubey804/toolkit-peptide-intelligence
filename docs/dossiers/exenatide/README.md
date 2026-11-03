@@ -144,9 +144,9 @@ Patent families, exclusivity, generic/biosimilar status, manufacturers, and curr
 ## 16. Evidence and references
 
 1. **DailyMed — BYETTA (exenatide) prescribing information.** Active substance description, sequence/chemical information, mechanism, PK, indications, and safety.  
-   https://dailymed.nlm.nih.gov/dailymed/search.cfm?query=BYETTA
+   https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=53d03c03-ebf7-418d-88a8-533eabd2ee4f
 2. **FDA — BYETTA 2020 prescribing information.** Immediate-release formulation, clinical pharmacology, warnings, and administration.  
-   https://www.accessdata.fda.gov/drugsatfda_docs/label/2020/021773s delta? 
+   https://www.accessdata.fda.gov/drugsatfda_docs/label/2020/021773s043lbl.pdf
 3. **DailyMed — BYDUREON BCISE (exenatide extended-release) prescribing information.** Extended-release formulation, microsphere delivery, weekly PK, and product-specific warnings.  
    https://dailymed.nlm.nih.gov/dailymed/search.cfm?query=BYDUREON%20BCISE
 4. **FDA Drugs@FDA — NDA 021773 (Byetta).** US approval history and regulatory documents.  
@@ -156,7 +156,7 @@ Patent families, exclusivity, generic/biosimilar status, manufacturers, and curr
 6. **PubChem — Exenatide.** Chemical identity and structure record; verify salt/solvate and stereochemical details before canonical import.  
    https://pubchem.ncbi.nlm.nih.gov/#query=exenatide
 
-**Source hygiene note:** the FDA label URL for Byetta must be replaced with a verified exact label document URL before this dossier is considered fully referenced. Do not treat the search landing page as the final evidence record.
+**Source note:** the 2020 FDA label is a historical label; the DailyMed record is updated 2 September 2025. Recheck the current FDA/DailyMed version when updating label-derived fields.
 
 ## 17. Outstanding curation checklist
 

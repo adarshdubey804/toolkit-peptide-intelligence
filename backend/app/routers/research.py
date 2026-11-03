@@ -19,6 +19,7 @@ from ..integrations.alphafold import AlphaFoldProvider
 from ..integrations.clinicaltrials import ClinicalTrialsProvider
 from ..integrations.dailymed import DailyMedProvider
 from ..integrations.fda_drugsfda import FdaDrugsFdaProvider
+from ..integrations.health_canada_dpd import HealthCanadaDpdProvider
 from ..integrations.pubchem import PubChemProvider
 from ..integrations.pubmed import PubMedProvider
 from ..integrations.rcsb import RCSBProvider
@@ -43,6 +44,18 @@ router = APIRouter(
     tags=["research"],
     dependencies=[Depends(limit_public_research_discovery)],
 )
+
+
+@router.get("/health-canada-dpd")
+async def search_health_canada_dpd(
+    q: str = Query(min_length=2, max_length=160),
+    limit: int = Query(default=20, ge=1, le=50),
+):
+    """Read-only Health Canada DPD search; source product status remains unreviewed."""
+    try:
+        return await HealthCanadaDpdProvider().search_by_ingredient(q, limit)
+    except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(status_code=502, detail="Health Canada DPD could not be reached or returned an invalid response.") from exc
 
 
 @router.get("/fda-drugsfda")

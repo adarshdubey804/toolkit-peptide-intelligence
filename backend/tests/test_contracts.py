@@ -4,6 +4,7 @@ import asyncio
 from app.integrations.clinicaltrials import normalize_study
 from app.integrations.dailymed import normalize_spl
 from app.integrations.fda_drugsfda import normalize_application
+from app.integrations.health_canada_dpd import normalize_product
 from app.main import MIGRATIONS_DIR, app
 
 
@@ -1683,3 +1684,36 @@ def test_global_peptide_discovery_browser_route_is_registered():
     parameters = {item["name"]: item for item in route["parameters"]}
     assert parameters["limit"]["schema"]["default"] == 50
     assert parameters["offset"]["schema"]["default"] == 0
+
+
+def test_health_canada_dpd_normalization_preserves_canadian_product_status():
+    result = normalize_product(
+        {
+            "drug_code": 12345,
+            "drug_identification_number": "01234567",
+            "brand_name": "Example Peptide",
+            "company_name": "Example Manufacturer",
+            "class_name": "Human",
+        },
+        [{"ingredient_name": "PEPTIDE X", "strength": "1", "strength_unit": "MG"}],
+        [{"status": "Approved"}],
+        [{"pharmaceutical_form_name": "Solution"}],
+        [{"route_of_administration_name": "Subcutaneous"}],
+    )
+    assert result["drug_identification_number"] == "01234567"
+    assert result["active_ingredients"][0]["ingredient_name"] == "PEPTIDE X"
+    assert result["source_status_records"][0]["status"] == "Approved"
+    assert result["jurisdiction"] == "CA"
+    assert result["curation_status"] == "not_reviewed"
+
+
+def test_health_canada_dpd_research_route_is_registered_and_bounded():
+    route = app.openapi()["paths"]["/api/v1/research/health-canada-dpd"]["get"]
+    params = {item["name"]: item for item in route["parameters"]}
+    assert params["limit"]["schema"]["maximum"] == 50
+
+
+def test_global_peptide_discovery_accepts_canada_as_a_source():
+    from app.routers.enrichment import PeptideDiscoveryRequest
+    request = PeptideDiscoveryRequest(query="peptide X", sources=["health_canada_dpd"])
+    assert request.sources == ["health_canada_dpd"]

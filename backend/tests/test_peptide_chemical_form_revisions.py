@@ -90,6 +90,29 @@ def test_peptide_chemical_form_revisions_are_immutable_and_content_sensitive():
             assert revisions[1]["supersedes_revision_id"] == revisions[0]["id"]
             assert revisions[1]["content_hash"] != revisions[0]["content_hash"]
 
+            # Reverting to an earlier snapshot is a new change, not a no-op.
+            connection.execute(
+                text("""
+                    UPDATE peptide_chemical_forms
+                    SET form_name='Initial form'
+                    WHERE id=:form_id
+                """),
+                {"form_id": form_id},
+            )
+            revisions = connection.execute(
+                text("""
+                    SELECT revision_number, snapshot, supersedes_revision_id
+                    FROM peptide_chemical_form_revisions
+                    WHERE chemical_form_id=:form_id
+                    ORDER BY revision_number
+                """),
+                {"form_id": form_id},
+            ).mappings().all()
+            assert len(revisions) == 3
+            assert revisions[2]["revision_number"] == 3
+            assert revisions[2]["snapshot"]["form_name"] == "Initial form"
+            assert revisions[2]["supersedes_revision_id"] == revisions[1]["id"]
+
             with pytest.raises(DBAPIError):
                 with connection.begin_nested():
                     connection.execute(

@@ -2253,3 +2253,19 @@ def test_private_workbook_discovery_records_are_tenant_scoped():
     assert "peptide_discovery_observations FORCE ROW LEVEL SECURITY" in sql
     assert "peptide_workbook_import_batches FORCE ROW LEVEL SECURITY" in sql
     assert "peptide_workbook_import_rows FORCE ROW LEVEL SECURITY" in sql
+
+
+def test_workbook_import_recognizes_common_peptide_column_header_variants():
+    from app.routers.workbook_import import _first_header, _normalise_header, NAME_HEADERS
+    assert _normalise_header("Peptide (generic / common name)") == "peptide generic common name"
+    assert _first_header(("Brand", "Peptide Name", "FDA Status"), NAME_HEADERS) == "Peptide Name"
+    assert _first_header(("Drug", "Common Name"), NAME_HEADERS) == "Common Name"
+
+
+def test_workbook_import_preserves_companion_worksheet_metadata():
+    sql = (MIGRATIONS_DIR / "071_peptide_workbook_imports.sql").read_text(encoding="utf-8")
+    assert "workbook_metadata JSONB" in sql
+    assert "source_row JSONB" in sql
+    assert "Expected 128 populated peptide rows" in (
+        (MIGRATIONS_DIR.parent.parent / "app" / "routers" / "workbook_import.py").read_text(encoding="utf-8")
+    )

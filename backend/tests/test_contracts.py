@@ -1812,3 +1812,22 @@ def test_purple_book_research_and_global_discovery_contracts_are_registered():
         sources=["fda_purple_book", "health_canada_dpd"],
     )
     assert len(request.sources) == 2
+
+
+def test_peptide_mechanisms_can_be_submitted_to_independent_curation():
+    schemas = app.openapi()["components"]["schemas"]
+    entity_types = schemas["ReviewSubmission"]["properties"]["entity_type"]["enum"]
+    assert "peptide_mechanism" in entity_types
+    paths = app.openapi()["paths"]
+    assert "/api/v1/enrichment/peptides/{peptide_id}/mechanisms/dailymed" in paths
+    assert "post" in paths["/api/v1/enrichment/peptides/{peptide_id}/mechanisms/dailymed"]
+
+def test_mechanism_review_submission_is_curation_compatible():
+    schemas = app.openapi()["components"]["schemas"]
+    assert "peptide_mechanism" in schemas["ReviewSubmission"]["properties"]["entity_type"]["enum"]
+    assert "/api/v1/curation/reviews/{review_id}/decisions" in app.openapi()["paths"]
+    assert "/api/v1/enrichment/peptides/{peptide_id}/mechanisms/dailymed" in app.openapi()["paths"]
+
+def test_curators_can_retrieve_source_backed_mechanism_review_details():
+    route = app.openapi()["paths"]["/api/v1/curation/reviews/{review_id}/mechanism"]["get"]
+    assert route["parameters"][0]["name"] == "review_id"

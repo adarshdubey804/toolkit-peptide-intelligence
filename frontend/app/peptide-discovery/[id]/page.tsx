@@ -172,6 +172,12 @@ export default function DiscoveryCandidateDossierPage() {
 
   if (!data) return null;
   const candidate = data.candidate;
+  const visualAssets: (JsonRecord & { section_key: string; key: string })[] = savedSections.flatMap(section =>
+    section.media.map((asset, index) => ({ ...asset, section_key: section.section_key, key: section.section_key + "-" + index }))
+  );
+  const dossierCitations: (JsonRecord & { section_key: string; key: string })[] = savedSections.flatMap(section =>
+    section.citations.map((citation, index) => ({ ...citation, section_key: section.section_key, key: section.section_key + "-citation-" + index }))
+  );
   const sourceRecord = asRecord(candidate.raw_metadata.source_record);
   const dbaaspActivities = asRecords(sourceRecord.target_activities);
   const dbaaspAntibiofilm = asRecords(sourceRecord.antibiofilm_activities);
@@ -226,7 +232,7 @@ export default function DiscoveryCandidateDossierPage() {
       <p className="accent text-xs tracking-widest">CURATED SOURCES & VISUAL ASSETS</p>
       <h2 className="mt-2 text-xl font-semibold">References and scientific images</h2>
       <div className="mt-5 grid gap-5 lg:grid-cols-2">
-        {savedSections.flatMap(section => section.media.map((asset, index) => ({...asset, section_key: section.section_key, key: section.section_key + "-" + index}))).map(asset => {
+        {visualAssets.map(asset => {
           const imageUrl = typeof asset.image_url === "string" && asset.image_url.startsWith("https://") ? asset.image_url : "";
           return <article key={asset.key} className="rounded-xl border border-slate-700 p-4">
             {imageUrl && <a href={imageUrl} target="_blank" rel="noreferrer"><img src={imageUrl} loading="lazy" referrerPolicy="no-referrer" alt={String(asset.alt_text || asset.title || "Peptide scientific visual")} className="mb-3 max-h-64 w-full rounded-lg object-contain bg-slate-950" /></a>}
@@ -237,7 +243,7 @@ export default function DiscoveryCandidateDossierPage() {
             {imageUrl && <a className="mt-2 inline-block text-xs text-emerald-300" href={imageUrl} target="_blank" rel="noreferrer">Open original asset →</a>}
           </article>;
         })}
-        {savedSections.flatMap(section => section.citations.map((citation, index) => ({...citation, section_key: section.section_key, key: section.section_key + "-citation-" + index}))).map(citation => {
+        {dossierCitations.map(citation => {
           const url = typeof citation.url === "string" && citation.url.startsWith("https://") ? citation.url : "";
           return <article key={citation.key} className="rounded-xl border border-slate-700 p-4">
             <h3 className="font-medium">{displayValue(citation.title)}</h3>

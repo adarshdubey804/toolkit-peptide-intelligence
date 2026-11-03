@@ -41,8 +41,10 @@ export default function EnrichmentPage() {
   const [peptideId, setPeptideId] = useState("");
   const [dailymedSetId, setDailymedSetId] = useState("");
   const [gtopdbLigandId, setGtopdbLigandId] = useState("");
+  const [chemblId, setChemblId] = useState("");
   const [mechanismSubmitting, setMechanismSubmitting] = useState(false);
   const [gtopdbSubmitting, setGtopdbSubmitting] = useState(false);
+  const [chemblSubmitting, setChemblSubmitting] = useState(false);
   const [result, setResult] = useState<EnrichmentResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -138,6 +140,29 @@ export default function EnrichmentPage() {
     }
   }
 
+  async function submitChEMBLMechanism(event: FormEvent) {
+    event.preventDefault();
+    if (!token || peptideId.trim().length !== 36 || !chemblId.trim()) return;
+    setChemblSubmitting(true); setError(""); setNotice("");
+    try {
+      const response = await fetch(API_BASE + "/api/v1/enrichment/peptides/" + encodeURIComponent(peptideId.trim()) + "/mechanisms/chembl", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+        body: JSON.stringify({ chembl_id: chemblId.trim() })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Could not import ChEMBL mechanism records.");
+      setNotice(data.created_count
+        ? data.created_count + " ChEMBL mechanism record(s) were saved as source-reported evidence and submitted for independent curator review."
+        : "These ChEMBL mechanism records were already submitted for review.");
+      await loadQueue();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "ChEMBL mechanism submission failed.");
+    } finally {
+      setChemblSubmitting(false);
+    }
+  }
+
   async function saveCandidate(item: Candidate) {
     if (!token || !result) return;
     setError(""); setNotice("");
@@ -228,6 +253,16 @@ export default function EnrichmentPage() {
           <button disabled={mechanismSubmitting || dailymedSetId.trim().length !== 36 || peptideId.trim().length !== 36} className="rounded-full border border-emerald-400/50 px-6 py-3 text-sm font-semibold text-emerald-200 disabled:opacity-50">{mechanismSubmitting ? "Extracting and submitting…" : "Extract MOA and submit for review"}</button>
         </form>
         <p className="muted mt-3 text-xs">The peptide dossier UUID above is used to link the mechanism. DailyMed presence is not proof of FDA approval; a reviewer must verify product and label identity before approving the mechanism record.</p>
+      </section>
+
+      <section className="panel mt-5 p-5">
+        <h2 className="text-lg font-semibold">Import ChEMBL peptide mechanism records</h2>
+        <p className="muted mt-2 text-sm">Enter an exact ChEMBL molecule ID. The system verifies an explicit peptide HELM biotherapeutic record and imports only mechanism entries that include a target identifier and mechanism statement.</p>
+        <form onSubmit={submitChEMBLMechanism} className="mt-4 grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
+          <label className="block"><span className={label}>ChEMBL molecule ID</span><input className={field} required minLength={7} maxLength={20} pattern="(?i)CHEMBL[0-9]+" value={chemblId} onChange={e => setChemblId(e.target.value)} placeholder="CHEMBL448105" /></label>
+          <button disabled={chemblSubmitting || !/^CHEMBL[0-9]+$/i.test(chemblId.trim()) || peptideId.trim().length !== 36} className="rounded-full border border-emerald-400/50 px-6 py-3 text-sm font-semibold text-emerald-200 disabled:opacity-50">{chemblSubmitting ? "Importing mechanism records…" : "Import MOA for review"}</button>
+        </form>
+        <p className="muted mt-3 text-xs">Each mechanism remains source-reported until an independent curator reviews the peptide HELM identity, target and action. ChEMBL is CC BY-SA 3.0; attribution and share-alike obligations apply.</p>
       </section>
 
       <section className="panel mt-5 p-5">

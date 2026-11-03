@@ -358,6 +358,7 @@ async def discover_and_persist_peptide_candidates(
                     source_url=source_url,
                     title=title,
                     payload=item,
+                    source_version=str(item.get("spl_version")) if item.get("spl_version") is not None else None,
                 )
                 candidate = db.execute(text("""
                     INSERT INTO peptide_discovery_candidates (

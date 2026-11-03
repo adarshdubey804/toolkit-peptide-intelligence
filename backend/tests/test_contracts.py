@@ -2190,3 +2190,9 @@ def test_chembl_mechanism_import_route_is_registered():
     assert route["requestBody"]["required"] is True
     schemas = app.openapi()["components"]["schemas"]
     assert "chembl_id" in schemas["ChEMBLMechanismSubmission"]["properties"]
+
+
+def test_chembl_exact_peptide_lookup_rejects_invalid_identifier_without_network():
+    from app.integrations.chembl import ChEMBLProvider
+    with pytest.raises(ValueError):
+        asyncio.run(ChEMBLProvider().get_peptide_molecule("not-a-chembl-id"))

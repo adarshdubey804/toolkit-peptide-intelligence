@@ -41,6 +41,8 @@ All integrations are read-only discovery clients. Results returned from external
 - Uses NLM DailyMed SPL v2 search and returns label Set ID, version, title, published date and stable source links.
 - DailyMed provides current SPL information. Current SPL content is not necessarily identical to the last FDA-approved labeling in Drugs@FDA. DailyMed presence is not itself proof of FDA approval.
 - Use the exact SPL version and label section when curating mechanism-of-action evidence; retain label publication/version history.
+- Mechanism extraction endpoint: `GET /api/v1/research/dailymed/{set_id}/mechanism-of-action`; discovery ingestion also extracts the explicit SPL 12.1 section when available.
+- Only LOINC `43679-0` (12.1 Mechanism of Action) is extracted. 12.2 pharmacodynamics and 12.3 pharmacokinetics are not used as substitutes. Extracted text remains `source_asserted` until the exact product and approval label are curator-verified.
 
 ## Regulatory interpretation
 - FDA Drugs@FDA, FDA Purple Book, FDA labeling resources and DailyMed answer different questions and have different coverage. They are complementary, not interchangeable.

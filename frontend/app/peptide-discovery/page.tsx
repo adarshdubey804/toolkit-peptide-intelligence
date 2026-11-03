@@ -74,6 +74,11 @@ export default function PeptideDiscoveryPage() {
   }, [status]);
 
   useEffect(() => {
+    const initialQuery = new URLSearchParams(window.location.search).get("q");
+    if (initialQuery) setQuery(initialQuery.slice(0, 160));
+  }, []);
+
+  useEffect(() => {
     const storedToken = getAccessToken();
     if (storedToken) {
       setToken(storedToken);

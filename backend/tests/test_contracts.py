@@ -2,6 +2,8 @@ from pathlib import Path
 import asyncio
 
 from app.integrations.clinicaltrials import normalize_study
+from app.integrations.dailymed import normalize_spl
+from app.integrations.fda_drugsfda import normalize_application
 from app.main import MIGRATIONS_DIR, app
 
 
@@ -1609,3 +1611,51 @@ def test_peptide_mechanism_of_action_profile_contract_is_registered():
     paths = app.openapi()["paths"]
     assert "/api/v1/peptides/{peptide_id}" in paths
     assert "get" in paths["/api/v1/peptides/{peptide_id}"]
+
+
+def test_fda_drugsfda_normalization_preserves_product_and_submission_scope():
+    record = {
+        "application_number": "NDA000001",
+        "sponsor_name": "Example Sponsor",
+        "products": [{
+            "product_number": "001",
+            "dosage_form": "INJECTION",
+            "route": "SUBCUTANEOUS",
+            "marketing_status": "Prescription",
+            "active_ingredients": [{"name": "PEPTIDE X", "strength": "1 MG"}],
+        }],
+        "submissions": [{
+            "submission_type": "ORIG",
+            "submission_status": "AP",
+            "submission_status_date": "20250101",
+        }],
+    }
+    result = normalize_application(record)
+    assert result["application_number"] == "NDA000001"
+    assert result["products"][0]["active_ingredients"][0]["name"] == "PEPTIDE X"
+    assert result["approved_submission_actions_observed"][0]["submission_status"] == "AP"
+    assert result["curation_status"] == "not_reviewed"
+    assert result["jurisdiction"] == "US"
+
+
+def test_dailymed_normalization_does_not_claim_approval():
+    result = normalize_spl({
+        "setid": "00000000-0000-0000-0000-000000000001",
+        "spl_version": "4",
+        "title": "PEPTIDE X INJECTION",
+        "published_date": "Jan 01, 2025",
+    })
+    assert result["set_id"] == "00000000-0000-0000-0000-000000000001"
+    assert "dailymed.nlm.nih.gov" in result["source_url"]
+    assert result["curation_status"] == "not_reviewed"
+    assert "not necessarily identical" in result["label_notice"]
+
+
+def test_fda_and_dailymed_research_routes_are_registered_and_bounded():
+    paths = app.openapi()["paths"]
+    for route in ("/api/v1/research/fda-drugsfda", "/api/v1/research/dailymed"):
+        assert "get" in paths[route]
+    fda_params = {item["name"]: item for item in paths["/api/v1/research/fda-drugsfda"]["get"]["parameters"]}
+    daily_params = {item["name"]: item for item in paths["/api/v1/research/dailymed"]["get"]["parameters"]}
+    assert fda_params["limit"]["schema"]["maximum"] == 99
+    assert daily_params["limit"]["schema"]["maximum"] == 100

@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     enrichment_rate_limit_per_window: int = Field(default=10, ge=1)
     ncbi_email: str | None = None
     ncbi_api_key: str | None = None
+    openfda_api_key: str | None = None
     ai_synthesis_enabled: bool = False
     ai_api_key: str | None = None
     ai_api_base_url: str = "https://api.openai.com/v1"

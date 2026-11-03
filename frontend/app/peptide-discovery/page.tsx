@@ -10,8 +10,6 @@ const AVAILABLE_SOURCES = [
   { id: "dailymed", label: "DailyMed" },
   { id: "fda_purple_book", label: "FDA Purple Book" },
   { id: "health_canada_dpd", label: "Health Canada DPD" },
-  { id: "fda_purple_book", label: "FDA Purple Book" },
-  { id: "health_canada_dpd", label: "Health Canada DPD" },
   { id: "clinicaltrials", label: "ClinicalTrials.gov" },
   { id: "pubmed", label: "PubMed" },
 ] as const;

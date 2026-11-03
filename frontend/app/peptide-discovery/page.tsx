@@ -9,6 +9,7 @@ const AVAILABLE_SOURCES = [
   { id: "fda_drugsfda", label: "FDA Drugs@FDA" },
   { id: "fda_purple_book", label: "FDA Purple Book" },
   { id: "ema_article57", label: "EMA Article 57 (EEA authorised products)" },
+  { id: "dbaasp", label: "DBAASP v4 (experimental AMP evidence)" },
   { id: "gtopdb", label: "IUPHAR/BPS Guide to PHARMACOLOGY (API key required)" },
   { id: "dramp", label: "DRAMP 5.0 (Antimicrobial peptides)" },
   { id: "dailymed", label: "DailyMed" },
@@ -45,7 +46,7 @@ export default function PeptideDiscoveryPage() {
   const [token, setToken] = useState("");
   const [userLabel, setUserLabel] = useState("");
   const [query, setQuery] = useState("");
-  const [sources, setSources] = useState<string[]>(["fda_drugsfda", "fda_purple_book", "ema_article57", "dailymed", "health_canada_dpd", "clinicaltrials", "pubmed"]);
+  const [sources, setSources] = useState<string[]>(["fda_drugsfda", "fda_purple_book", "ema_article57", "dbaasp", "dailymed", "health_canada_dpd", "clinicaltrials", "pubmed"]);
   const [status, setStatus] = useState("all");
   const [candidates, setCandidates] = useState<CandidateResponse | null>(null);
   const [loading, setLoading] = useState(false);

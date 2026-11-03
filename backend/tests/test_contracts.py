@@ -3,6 +3,7 @@ import asyncio
 
 from app.integrations.clinicaltrials import normalize_study
 from app.integrations.dailymed import extract_mechanism_of_action, normalize_spl
+from app.integrations.dbaasp import DbaaspProvider, normalize_peptide
 from app.integrations.fda_drugsfda import normalize_application
 from app.integrations.fda_purple_book import discover_latest_csv_url, normalize_product as normalize_purple_book_product, parse_purple_book_csv
 from app.integrations.ema_article57 import parse_article57_workbook
@@ -1996,3 +1997,63 @@ def test_ema_article57_research_and_discovery_contracts_are_registered():
     request = PeptideDiscoveryRequest(query="peptide X", sources=["ema_article57"])
     assert request.sources == ["ema_article57"]
 
+
+def test_dbaasp_normalization_preserves_modified_sequence_and_assay_context():
+    result = normalize_peptide({
+        "id": 107,
+        "dbaaspId": "DBAASPR_000107",
+        "name": "Example antimicrobial peptide",
+        "majorName": "Example AMP",
+        "sequence": "KWRR-modified",
+        "sequenceLength": 12,
+        "synthesisType": {"name": "Synthetic"},
+        "complexity": {"name": "monomer"},
+        "targetActivities": [{
+            "targetSpecies": {"name": "Escherichia coli"},
+            "activityMeasureGroup": {"name": "MIC"},
+            "activityMeasureValue": "4",
+            "concentration": "4",
+            "unit": {"name": "µM"},
+            "medium": {"name": "MHB"},
+            "ph": "7.2",
+            "ionicStrength": "150 mM",
+            "reference": "PMID:12345678",
+        }],
+        "hemoliticCytotoxicActivities": [{"activity": 5, "reference": "PMID:12345678"}],
+        "synergies": [{
+            "antibioticId": 12,
+            "antibioticName": "Example antibiotic",
+            "peptideActivity": "8",
+            "peptideAntibioticActivity": "2",
+            "antibioticActivity": "16",
+            "fici": "0.5",
+            "reference": "PMID:12345678",
+        }],
+        "articles": [{"title": "Example article", "pubmed": {"pubmedId": "12345678"}}],
+        "unusualAminoAcids": [{"position": 4, "beforeModification": "K"}],
+        "smiles": [{"smiles": "CCN"}],
+    })
+    assert result["source_identifier"] == "DBAASPR_000107"
+    assert result["sequence"] == "KWRR-modified"
+    assert result["target_activities"][0]["activityMeasureValue"] == "4"
+    assert result["hemolytic_cytotoxic_activities"][0]["activity"] == 5
+    assert result["reported_combination_activity"][0]["antibioticName"] == "Example antibiotic"
+    assert result["reported_combination_activity"][0]["fici"] == "0.5"
+    assert result["evidence_level"] == "source_asserted"
+    assert "peptide-peptide synergy" in result["evidence_notice"]
+    assert result["curation_status"] == "not_reviewed_in_peptide_intelligence"
+
+
+def test_dbaasp_requires_stable_record_identifier():
+    import pytest
+    with pytest.raises(ValueError, match="stable identifier"):
+        normalize_peptide({"name": "Missing identifier", "sequence": "GIGKFL"})
+
+
+def test_dbaasp_research_and_global_discovery_contracts_are_registered():
+    route = app.openapi()["paths"]["/api/v1/research/dbaasp-peptides"]["get"]
+    params = {item["name"]: item for item in route["parameters"]}
+    assert params["limit"]["schema"]["maximum"] == 25
+    from app.routers.enrichment import PeptideDiscoveryRequest
+    request = PeptideDiscoveryRequest(query="magainin", sources=["dbaasp"])
+    assert request.sources == ["dbaasp"]

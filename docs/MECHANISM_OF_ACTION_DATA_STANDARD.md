@@ -97,3 +97,10 @@ Researchers can submit a DailyMed SPL Set ID against an existing peptide dossier
 The mechanism remains `in_review` and is not shown in the public dossier's verified MOA section until an independent curator verifies it. A reviewer cannot approve their own submission. Verification records reviewer identity and timestamp; corrections create immutable mechanism revisions.
 
 A source record is not automatically classified as a regulatory-label mechanism. Upgrading to `regulatory_label` requires separate verification of the exact product authorization, active ingredient/chemical form, jurisdiction and label version.
+
+
+## DBAASP activity and combination evidence
+
+DBAASP v4 source records can contribute experimentally reported antimicrobial target activity, antibiofilm activity, hemolytic/cytotoxic measurements and peptide-antibiotic combination observations. The connector preserves the source's values and conditions rather than converting them into a normalized efficacy score.
+
+Combination records are not automatically classified as peptide-peptide synergy. A DBAASP record may describe one peptide combined with an antibiotic; the source's FICI and component activity fields are preserved with the organism/strain and publication reference when available. Any future quantitative analysis must first verify compatible assay design, units, endpoints, concentrations, controls and component identities. A source-reported FICI alone is not evidence for a different pair of peptides or a clinical interaction.

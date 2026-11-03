@@ -116,6 +116,7 @@ def merge_records(dataset_records: list[tuple[dict, str]]) -> list[dict]:
             existing["reported_sequence"] = record["reported_sequence"]
         if record.get("reported_chemical_form"):
             existing["reported_chemical_form"] = record["reported_chemical_form"]
+            existing["chemical_form"] = record["reported_chemical_form"]
         if record.get("candidate_name") and existing["candidate_name"] == identifier:
             if record["candidate_name"] != identifier:
                 existing["candidate_name"] = record["candidate_name"]

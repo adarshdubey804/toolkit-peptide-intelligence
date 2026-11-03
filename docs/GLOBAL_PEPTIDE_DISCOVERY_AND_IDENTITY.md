@@ -44,6 +44,7 @@ The endpoint is authenticated and rate-limited. It does not create a canonical p
 | IUPHAR/BPS Guide to PHARMACOLOGY | Expert-curated peptide/endogenous-peptide ligands and source-reported target interactions | Requires registration/API key; not a complete peptide inventory; license and commercial-use terms apply |
 | EMA Article 57 public product data | EEA human medicinal product snapshot: product name, active substance, route, authorisation country and MAH | Only valid authorisations in the snapshot; periodic update; no peptide identity assertion; verify with relevant national authority |
 | DRAMP 5.0 | Antimicrobial peptide sequences, activity classifications, clinical/stability categories and FASTS sequence/SMILES records | AMP-focused subset, not all peptides; patent exports excluded pending permission; source modifications require careful identity curation |
+| DBAASP v4 | Experimentally curated antimicrobial peptide/peptidomimetic sequences, chemical modifications, MIC/target activity, antibiofilm, hemolysis/cytotoxicity, structure and reported combination data | AMP-focused; retain assay conditions and attribution; combination records may be peptide-antibiotic, not peptide-peptide |
 | ClinicalTrials.gov | Study identifiers, status, phase, sponsor, interventions and summaries | An intervention name does not prove the investigational product is a peptide |
 | PubMed | Publication metadata, abstracts and identifiers | A paper may mention a peptide without studying it |
 

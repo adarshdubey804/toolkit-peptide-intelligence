@@ -19,6 +19,7 @@ from ..integrations.alphafold import AlphaFoldProvider
 from ..integrations.clinicaltrials import ClinicalTrialsProvider
 from ..integrations.dailymed import DailyMedProvider
 from ..integrations.fda_drugsfda import FdaDrugsFdaProvider
+from ..integrations.fda_purple_book import FdaPurpleBookProvider
 from ..integrations.health_canada_dpd import HealthCanadaDpdProvider
 from ..integrations.pubchem import PubChemProvider
 from ..integrations.pubmed import PubMedProvider
@@ -56,6 +57,18 @@ async def search_health_canada_dpd(
         return await HealthCanadaDpdProvider().search_by_ingredient(q, limit)
     except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
         raise HTTPException(status_code=502, detail="Health Canada DPD could not be reached or returned an invalid response.") from exc
+
+
+@router.get("/fda-purple-book")
+async def search_fda_purple_book(
+    q: str = Query(min_length=2, max_length=160),
+    limit: int = Query(default=20, ge=1, le=100),
+):
+    """Read-only search of the latest FDA Purple Book monthly biologics snapshot."""
+    try:
+        return await FdaPurpleBookProvider().search(q, limit)
+    except (httpx.HTTPError, ValueError, KeyError, TypeError, UnicodeError) as exc:
+        raise HTTPException(status_code=502, detail="FDA Purple Book could not be reached or its snapshot could not be parsed.") from exc
 
 
 @router.get("/fda-drugsfda")

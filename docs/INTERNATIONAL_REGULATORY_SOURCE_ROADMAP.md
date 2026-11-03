@@ -10,6 +10,7 @@
 | United Kingdom | MHRA Products | Official public product information search | Nationally licensed medicine information, active-substance and Product Licence search, SPCs, PILs and selected assessment reports; EMA centrally authorised products are a separate source scope | Official link-out only; automated ingestion not integrated |
 | Australia | TGA Australian Register of Therapeutic Goods (ARTG) | Official public search | Public register for therapeutic goods that may legally be supplied in Australia; product/formulation and sponsor/manufacturer details where published; exemptions exist | Official link-out only; automated ingestion not integrated |
 | Japan | PMDA approved-product lists and product information search | Official public lists and search | Published approved drug product lists, selected review reports and Japanese product information; English translations are selective | Official link-out only; automated ingestion not integrated |
+| China | NMPA information-center drug product databases | Official Chinese-language data query portal and published records | Domestic and imported drug product databases; source documentation describes approval/registration numbers, product names, dosage forms, specifications, holders/manufacturers and approval dates | Official link-out only; automated ingestion not integrated |
 | European Union | EMA Article 57 product snapshot | Public XLSX snapshot | Products with valid marketing authorisations in the EEA at the snapshot date; active substance, route, country and holder fields where published | Integrated read-only snapshot importer |
 | European Union | EMA Product Management Service (PMS) public API | FHIR R5 API with prior registration and OAuth2 | Limited public subset of non-nullified human medicinal products; current/provisional status scope and confidential-field exclusions | Planned; credentials and access scope required |
 | European Union | EMA ePI pilot API | Public API for published pilot product information | Published electronic product information pilot; not a complete register of all EU products | Planned source evaluation |
@@ -74,7 +75,7 @@ The following jurisdictions are priority gaps. They are not production integrati
 | United Kingdom | MHRA Products | Official product information link-out is available; evaluate documented bulk/API access, status history, product identifiers and licence terms before ingestion |
 | Australia | TGA ARTG | Official public search link-out is available; evaluate permitted export/API access, biologic/peptide coverage, ARTG identifiers and status history before ingestion |
 | Japan | PMDA approved-product lists and product information search | Official link-outs are available; evaluate bulk/API access, Japanese/English reconciliation, approval identifiers, product forms and historical status before ingestion |
-| China | NMPA drug and biologic registration sources | Confirm official publication channels, stable identifiers, access restrictions, product status semantics and update cadence |
+| China | NMPA information-center drug product databases | Official link-out available; evaluate permitted query/export access, CAPTCHA and access controls, Chinese-language normalization, stable identifiers, status history and update cadence before ingestion |
 
 For every new jurisdiction, an adapter is accepted only after it has: (1) a source-access and licence assessment; (2) a documented source-native schema/status map; (3) pagination/completeness checks; (4) source retrieval timestamps and payload hashes; (5) normalization and identity tests; (6) failure/retry tests; and (7) explicit no-result and ambiguity semantics. A national source being absent from the integration list is not evidence that no peptide products are authorised there.
 
@@ -101,3 +102,9 @@ For every new jurisdiction, an adapter is accepted only after it has: (1) a sour
 - PMDA Japanese product information search: `https://www.pmda.go.jp/PmdaSearch/iyakuSearch/`.
 - PMDA publishes approved-product lists and product information; English review reports are selective translations and Japanese originals prevail if translations differ.
 - Current platform status: link-out only; automated ingestion requires bilingual normalization, product identifier mapping and source-status review.
+
+### China — NMPA drug product databases (link-out stage)
+- Official NMPA Information Center: `https://www.nmpaic.org.cn/`.
+- Official NMPA public service window: `https://www.nmpa.gov.cn/zwfwqjd/index.html`.
+- NMPA's drug base-code guidance describes separate domestic and imported drug databases and fields such as approval/registration number, product name, dosage form, specification, marketing authorisation holder/manufacturer, approval date and validity information.
+- Current platform status: link-out only. The public query workflow, language normalization, CAPTCHA/access controls and historical status completeness have not been validated for automated ingestion.

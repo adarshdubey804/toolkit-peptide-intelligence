@@ -104,3 +104,15 @@ A source record is not automatically classified as a regulatory-label mechanism.
 DBAASP v4 source records can contribute experimentally reported antimicrobial target activity, antibiofilm activity, hemolytic/cytotoxic measurements and peptide-antibiotic combination observations. The connector preserves the source's values and conditions rather than converting them into a normalized efficacy score.
 
 Combination records are not automatically classified as peptide-peptide synergy. A DBAASP record may describe one peptide combined with an antibiotic; the source's FICI and component activity fields are preserved with the organism/strain and publication reference when available. Any future quantitative analysis must first verify compatible assay design, units, endpoints, concentrations, controls and component identities. A source-reported FICI alone is not evidence for a different pair of peptides or a clinical interaction.
+
+## Importing GtoPdb peptide-target interactions
+
+The enrichment workspace can retrieve an exact peptide ligand by its GtoPdb ligand ID when the registered API key is configured. Each explicit target/action interaction is submitted as a separate mechanism evidence record:
+- `evidence_level=source_asserted`, `evidence_type=unknown`, `mechanism_class=unknown`;
+- preserve the source interaction payload, exact ligand identifier, target, action, source locator and source version;
+- submit each interaction to independent curator review;
+- do not infer binding affinity, receptor subtype, downstream signalling, pathway activation, clinical effect or regulatory status when those fields are not explicitly supported.
+
+GtoPdb interaction types such as “agonist” or “antagonist” are source-reported pharmacological interaction labels. They are not, by themselves, a complete molecular mechanism or proof of clinical effect. Verify the exact peptide and chemical form, target subtype, species, assay context, interaction direction and supporting literature before approval.
+
+GtoPdb licensing must be respected: the database is ODbL and its content is CC BY-SA 4.0. Attribution and share-alike obligations must be assessed before redistribution or commercial reuse.

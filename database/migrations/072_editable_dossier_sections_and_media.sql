@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS peptide_dossier_sections (
     organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE RESTRICT,
     section_key TEXT NOT NULL CHECK (section_key ~ '^[a-z0-9][a-z0-9_-]{1,79}$'),
     content JSONB NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(content) = 'object'),
-    references JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(references) = 'array'),
+    citations JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(references) = 'array'),
     media JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(media) = 'array'),
     revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
     updated_by UUID NOT NULL REFERENCES user_profiles(id) ON DELETE RESTRICT,
@@ -46,7 +46,7 @@ BEGIN
     snapshot_value := jsonb_build_object(
         'section_key', NEW.section_key,
         'content', NEW.content,
-        'references', NEW.references,
+        'references', NEW.citations,
         'media', NEW.media
     );
     INSERT INTO peptide_dossier_section_revisions (
@@ -99,7 +99,7 @@ CREATE POLICY peptide_dossier_section_revisions_insert_scope ON peptide_dossier_
 
 COMMENT ON TABLE peptide_dossier_sections IS
     'Organization-scoped editable dossier sections. References and media are stored with each section and every save creates an immutable revision.';
-COMMENT ON COLUMN peptide_dossier_sections.references IS
+COMMENT ON COLUMN peptide_dossier_sections.citations IS
     'Claim-supporting references with DOI/PMID/registry identifiers, exact URLs and source locators.';
 COMMENT ON COLUMN peptide_dossier_sections.media IS
     'Source-attributed images/structures with alt text, caption, attribution and reuse/licence metadata.';

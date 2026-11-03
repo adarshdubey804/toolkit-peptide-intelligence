@@ -10,7 +10,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from openpyxl import load_workbook
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, field_validator
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -230,6 +230,8 @@ async def import_peptide_workbook(
 
 
 class DossierReferenceInput(BaseModel):
+    claim_text: str = Field(min_length=5, max_length=2000)
+    claim_key: str | None = Field(default=None, max_length=120)
     title: str = Field(min_length=3, max_length=500)
     source_name: str = Field(min_length=2, max_length=160)
     url: HttpUrl
@@ -239,6 +241,13 @@ class DossierReferenceInput(BaseModel):
     locator: str | None = Field(default=None, max_length=500)
     evidence_type: str = Field(default="unknown", max_length=60)
     notes: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("url")
+    @classmethod
+    def require_https_source(cls, value):
+        if value.scheme != "https":
+            raise ValueError("Scientific references must use HTTPS URLs.")
+        return value
 
 
 class DossierMediaInput(BaseModel):
@@ -252,6 +261,13 @@ class DossierMediaInput(BaseModel):
     attribution: str | None = Field(default=None, max_length=500)
     license_or_reuse_terms: str = Field(min_length=3, max_length=1000)
     is_prediction: bool = False
+
+    @field_validator("image_url")
+    @classmethod
+    def require_https_image(cls, value):
+        if value.scheme != "https":
+            raise ValueError("Scientific image assets must use HTTPS URLs.")
+        return value
 
 
 class DossierSectionInput(BaseModel):

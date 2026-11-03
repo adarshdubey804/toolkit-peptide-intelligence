@@ -71,36 +71,39 @@ class HealthCanadaDpdProvider:
 
             codes = list(by_code)[:limit]
 
-            async def fetch_product(code: str) -> dict | None:
-                async def get_list(endpoint: str) -> list[dict]:
-                    result = await client.get(
-                        f"{BASE_URL}/{endpoint}/",
-                        params={"id": code, "lang": "en", "type": "json"},
-                    )
-                    if result.status_code == 404:
-                        return []
-                    result.raise_for_status()
-                    payload = result.json()
-                    if payload is None:
-                        return []
-                    if isinstance(payload, dict):
-                        return [payload]
-                    if not isinstance(payload, list):
-                        raise ValueError(f"Unexpected Health Canada DPD {endpoint} payload.")
-                    return payload
+            semaphore = asyncio.Semaphore(5)
 
-                product_rows, status_rows, form_rows, route_rows = await asyncio.gather(
-                    get_list("drugproduct"),
-                    get_list("status"),
-                    get_list("form"),
-                    get_list("route"),
-                )
-                if not product_rows:
-                    return None
-                return normalize_product(
-                    product_rows[0], by_code.get(code, []),
-                    status_rows, form_rows, route_rows,
-                )
+            async def fetch_product(code: str) -> dict | None:
+                async with semaphore:
+                    async def get_list(endpoint: str) -> list[dict]:
+                        result = await client.get(
+                            f"{BASE_URL}/{endpoint}/",
+                            params={"id": code, "lang": "en", "type": "json"},
+                        )
+                        if result.status_code == 404:
+                            return []
+                        result.raise_for_status()
+                        payload = result.json()
+                        if payload is None:
+                            return []
+                        if isinstance(payload, dict):
+                            return [payload]
+                        if not isinstance(payload, list):
+                            raise ValueError(f"Unexpected Health Canada DPD {endpoint} payload.")
+                        return payload
+
+                    product_rows, status_rows, form_rows, route_rows = await asyncio.gather(
+                        get_list("drugproduct"),
+                        get_list("status"),
+                        get_list("form"),
+                        get_list("route"),
+                    )
+                    if not product_rows:
+                        return None
+                    return normalize_product(
+                        product_rows[0], by_code.get(code, []),
+                        status_rows, form_rows, route_rows,
+                    )
 
             products = await asyncio.gather(*(fetch_product(code) for code in codes))
 

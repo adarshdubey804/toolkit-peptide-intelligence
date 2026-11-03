@@ -2091,3 +2091,23 @@ def test_global_discovery_decision_requires_canonical_link_only_for_existing_pep
             decision="rejected",
             rationale="                    ",
         )
+
+
+def test_gtopdb_peptide_ligand_detail_normalization_preserves_interactions():
+    from app.integrations.gtopdb import normalize_ligand
+    result = normalize_ligand(
+        {"ligandId": 1234, "name": "Example peptide", "type": "Peptide"},
+        [{"targetName": "GLP-1 receptor", "type": "Agonist", "targetId": 10}],
+    )
+    assert result["source_identifier"] == "1234"
+    assert result["reported_target"] == "GLP-1 receptor"
+    assert result["reported_mechanism"] == "Agonist at GLP-1 receptor"
+    assert result["curation_status"] == "not_reviewed"
+
+
+def test_gtopdb_mechanism_import_route_is_registered_and_bounded():
+    route = app.openapi()["paths"]["/api/v1/enrichment/peptides/{peptide_id}/mechanisms/gtopdb"]["post"]
+    assert route["requestBody"]["required"] is True
+    schemas = app.openapi()["components"]["schemas"]
+    ligand_id = schemas["GtoPdbMechanismSubmission"]["properties"]["ligand_id"]
+    assert ligand_id["exclusiveMinimum"] == 0

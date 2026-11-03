@@ -1897,7 +1897,9 @@ def test_ema_article57_parser_rejects_workbooks_without_required_headers():
     output = BytesIO()
     workbook.save(output)
     workbook.close()
-    assert parse_article57_workbook(output.getvalue(), "peptide", 10) == []
+    import pytest
+    with pytest.raises(ValueError, match="schema changed"):
+        parse_article57_workbook(output.getvalue(), "peptide", 10)
 
 
 def test_ema_article57_research_and_discovery_contracts_are_registered():

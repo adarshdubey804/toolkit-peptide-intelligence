@@ -14,6 +14,7 @@ from ..rate_limit_dependencies import authenticated_write_rate_limit
 from ..integrations.clinicaltrials import ClinicalTrialsProvider
 from ..integrations.dailymed import DailyMedProvider
 from ..integrations.fda_drugsfda import FdaDrugsFdaProvider
+from ..integrations.fda_purple_book import FdaPurpleBookProvider
 from ..integrations.health_canada_dpd import HealthCanadaDpdProvider
 from ..integrations.pubmed import PubMedProvider
 from ..integrations.rcsb import RCSBProvider
@@ -183,9 +184,9 @@ class CandidateDecision(BaseModel):
 class PeptideDiscoveryRequest(BaseModel):
     query: str = Field(min_length=2, max_length=160)
     sources: list[str] = Field(
-        default_factory=lambda: ["fda_drugsfda", "dailymed", "health_canada_dpd", "clinicaltrials", "pubmed"],
+        default_factory=lambda: ["fda_drugsfda", "fda_purple_book", "dailymed", "health_canada_dpd", "clinicaltrials", "pubmed"],
         min_length=1,
-        max_length=5,
+        max_length=6,
     )
     limit: int = Field(default=20, ge=1, le=50)
 
@@ -223,7 +224,7 @@ async def discover_and_persist_peptide_candidates(
     if role not in {"organization_admin", "curator", "reviewer", "researcher"}:
         raise HTTPException(status_code=403, detail="Researcher, curator or reviewer membership is required.")
 
-    allowed_sources = {"fda_drugsfda", "dailymed", "health_canada_dpd", "clinicaltrials", "pubmed"}
+    allowed_sources = {"fda_drugsfda", "fda_purple_book", "dailymed", "health_canada_dpd", "clinicaltrials", "pubmed"}
     selected = list(dict.fromkeys(payload.sources))
     if not selected or not set(selected).issubset(allowed_sources):
         raise HTTPException(status_code=422, detail="Unsupported peptide discovery source.")
@@ -235,6 +236,10 @@ async def discover_and_persist_peptide_candidates(
     if "fda_drugsfda" in selected:
         operations["fda_drugsfda"] = FdaDrugsFdaProvider().search_by_ingredient(
             query, min(payload.limit, 50), settings.openfda_api_key
+        )
+    if "fda_purple_book" in selected:
+        operations["fda_purple_book"] = FdaPurpleBookProvider().search(
+            query, min(payload.limit, 100)
         )
     if "dailymed" in selected:
         operations["dailymed"] = DailyMedProvider().search_by_name(query, min(payload.limit, 50), 1)
@@ -281,6 +286,12 @@ async def discover_and_persist_peptide_candidates(
                         query,
                     )
                     development_status = item.get("approval_state_interpretation")
+                elif source_key == "fda_purple_book":
+                    identifier = item.get("source_identifier")
+                    source_url = item.get("source_url")
+                    title = f"FDA Purple Book {item.get('bla_number') or 'BLA unknown'} · {item.get('proper_name') or query}"
+                    candidate_name = item.get("proper_name") or query
+                    development_status = item.get("licensure") or item.get("marketing_status") or "licensed_biologic_record_observed"
                 elif source_key == "dailymed":
                     identifier = item.get("set_id")
                     source_url = item.get("source_url")
@@ -360,7 +371,7 @@ async def discover_and_persist_peptide_candidates(
                     "url": source_url,
                     "name": candidate_name,
                     "development_status": development_status,
-                    "jurisdiction": "US" if source_key in {"fda_drugsfda", "dailymed"} else "CA" if source_key == "health_canada_dpd" else None,
+                    "jurisdiction": "US" if source_key in {"fda_drugsfda", "fda_purple_book", "dailymed"} else "CA" if source_key == "health_canada_dpd" else None,
                     "sequence": item.get("sequence"),
                     "sequence_type": item.get("sequence_type"),
                     "chemical_form": item.get("chemical_form"),

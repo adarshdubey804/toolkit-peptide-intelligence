@@ -70,6 +70,15 @@ async def search_fda_drugsfda(
         raise HTTPException(status_code=502, detail="FDA Drugs@FDA could not be reached or returned an invalid response.") from exc
 
 
+@router.get("/dailymed/{set_id}/mechanism-of-action")
+async def extract_dailymed_mechanism_of_action(set_id: str):
+    """Extract only DailyMed SPL section 12.1; this is unreviewed source text, not an approval claim."""
+    try:
+        return await DailyMedProvider().get_mechanism_of_action(set_id)
+    except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(status_code=502, detail="DailyMed SPL could not be retrieved or parsed.") from exc
+
+
 @router.get("/dailymed")
 async def search_dailymed(
     q: str = Query(min_length=2, max_length=160),

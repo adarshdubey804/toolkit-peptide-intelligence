@@ -115,6 +115,8 @@ async def import_peptide_workbook(
         rows.append((row_number, row, str(name).strip(), str(reported_status or "Not stated")))
     if not rows:
         raise HTTPException(status_code=422, detail="No peptide rows were found.")
+    if len(rows) != 128:
+        raise HTTPException(status_code=422, detail=f"Expected 128 populated peptide rows; found {len(rows)}. Check the workbook before importing.")
     if len(rows) > 1000:
         raise HTTPException(status_code=422, detail="A single workbook import is limited to 1,000 rows.")
 

@@ -5,6 +5,7 @@ import hashlib
 import json
 from io import BytesIO
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from openpyxl import load_workbook
@@ -224,7 +225,7 @@ class DossierSectionInput(BaseModel):
 
 @router.get("/candidates/{candidate_id}/sections")
 def list_candidate_dossier_sections(
-    candidate_id: str,
+    candidate_id: UUID,
     current_user: Annotated[dict, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ):
@@ -240,14 +241,14 @@ def list_candidate_dossier_sections(
 
 @router.put("/candidates/{candidate_id}/sections/{section_key}")
 def save_candidate_dossier_section(
-    candidate_id: str,
+    candidate_id: UUID,
     section_key: str,
     payload: DossierSectionInput,
     current_user: Annotated[dict, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ):
     organization_id, _ = _membership(current_user, db)
-    if not section_key or len(section_key) > 80 or not section_key.replace("-", "").replace("_", "").isalnum():
+    if not section_key or len(section_key) > 80 or section_key != section_key.lower() or not section_key.replace("-", "").replace("_", "").isalnum():
         raise HTTPException(status_code=422, detail="Section key must be a short lowercase slug.")
     candidate_exists = db.execute(text("""
         SELECT 1 FROM peptide_discovery_candidates WHERE id=:candidate
@@ -263,7 +264,7 @@ def save_candidate_dossier_section(
                 CAST(:citations AS jsonb), CAST(:media AS jsonb), :user_id)
         ON CONFLICT (candidate_id, organization_id, section_key) DO UPDATE SET
             content=EXCLUDED.content, citations=EXCLUDED.citations,
-            media=EXCLUDED.media, updated_by=EXCLUDED.updated_by, revision=peptide_dossier_sections.revision + 1
+            media=EXCLUDED.media, updated_by=EXCLUDED.updated_by, revision=peptide_dossier_sections.revision + 1, updated_at=now()
         RETURNING id, section_key, content, citations, media, revision, updated_at
     """), {
         "candidate": candidate_id, "org": organization_id, "section_key": section_key,

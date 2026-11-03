@@ -1797,6 +1797,7 @@ def test_purple_book_parser_uses_full_snapshot_table_not_monthly_change_table():
     normalized = normalize_purple_book_product(rows[0], "https://example.test/purplebook.csv")
     assert normalized["source_identifier"] == "123:001"
     assert normalized["jurisdiction"] == "US"
+    assert normalized["source_version"] == "purplebook.csv"
     assert normalized["curation_status"] == "not_reviewed"
     assert "not proof" in normalized["coverage_notice"]
 

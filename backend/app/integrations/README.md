@@ -59,3 +59,12 @@ All integrations are read-only discovery clients. Results returned from external
 - The public PMS API exposes a limited FHIR R5 dataset for human medicinal products, including provisional/current records; it excludes nullified products and some confidential fields.
 - API access requires prior registration and OAuth2 credentials. The connector is planned but must not be activated until credentials, data terms and supported FHIR resource scopes are configured.
 - Official API documentation: https://api.pms.ema.europa.eu/public/v1/swagger
+
+
+## FDA Purple Book
+- Read-only endpoint: `GET /api/v1/research/fda-purple-book?q=...`.
+- Discovers the latest monthly CSV from the official FDA Purple Book downloads page and parses the complete product snapshot (the second/full table, not only monthly change rows).
+- Preserves BLA number, product number, proper/proprietary names, applicant, license type, strength, dosage form, route, marketing status, licensure and reference-product fields.
+- The Purple Book covers FDA-licensed biological products regulated by CDER and CBER, including reference products and biosimilars. It complements Drugs@FDA and is not interchangeable with it.
+- A Purple Book match does not establish that the matched biological product is a peptide. Candidate identity remains unresolved until curator review.
+- Official downloads: https://purplebooksearch.fda.gov/downloads

@@ -5,6 +5,7 @@ from app.integrations.clinicaltrials import normalize_study
 from app.integrations.dailymed import extract_mechanism_of_action, normalize_spl
 from app.integrations.fda_drugsfda import normalize_application
 from app.integrations.fda_purple_book import discover_latest_csv_url, normalize_product as normalize_purple_book_product, parse_purple_book_csv
+from app.integrations.ema_article57 import EmaArticle57Provider, parse_article57_workbook
 from app.integrations.gtopdb import GtoPdbProvider, normalize_ligand
 from app.integrations.health_canada_dpd import normalize_product
 from app.main import MIGRATIONS_DIR, app
@@ -1859,3 +1860,51 @@ def test_gtopdb_research_and_global_discovery_contracts_are_registered():
     from app.routers.enrichment import PeptideDiscoveryRequest
     request = PeptideDiscoveryRequest(query="peptide X", sources=["gtopdb"])
     assert request.sources == ["gtopdb"]
+
+def _article57_test_workbook() -> bytes:
+    from io import BytesIO
+    from openpyxl import Workbook
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Article 57"
+    sheet.append(["EMA Article 57 public product data"])
+    sheet.append(["Product name", "Active substance", "Route of administration", "Country of authorisation", "Marketing authorisation holder"])
+    sheet.append(["Example peptide injection", "Example peptide", "Subcutaneous", "DE", "Example Pharma GmbH"])
+    sheet.append(["Unrelated tablet", "Unrelated small molecule", "Oral", "FR", "Example Labs"])
+    output = BytesIO()
+    workbook.save(output)
+    workbook.close()
+    return output.getvalue()
+
+
+def test_ema_article57_parser_extracts_source_fields_without_claiming_peptide_identity():
+    rows = parse_article57_workbook(_article57_test_workbook(), "example peptide", 10)
+    assert len(rows) == 1
+    assert rows[0]["product_name"] == "Example peptide injection"
+    assert rows[0]["active_substance"] == "Example peptide"
+    assert rows[0]["country_of_authorisation"] == "DE"
+    assert rows[0]["jurisdiction"] == "EEA"
+    assert rows[0]["source_status"] == "valid_marketing_authorisation_in_article57_snapshot"
+    assert rows[0]["curation_status"] == "not_reviewed"
+    assert "not a peptide identity match" in rows[0]["coverage_notice"]
+
+
+def test_ema_article57_parser_rejects_workbooks_without_required_headers():
+    from io import BytesIO
+    from openpyxl import Workbook
+    workbook = Workbook()
+    workbook.active.append(["Name", "Substance"])
+    output = BytesIO()
+    workbook.save(output)
+    workbook.close()
+    assert parse_article57_workbook(output.getvalue(), "peptide", 10) == []
+
+
+def test_ema_article57_research_and_discovery_contracts_are_registered():
+    route = app.openapi()["paths"]["/api/v1/research/ema-article57"]["get"]
+    params = {item["name"]: item for item in route["parameters"]}
+    assert params["limit"]["schema"]["maximum"] == 50
+    from app.routers.enrichment import PeptideDiscoveryRequest
+    request = PeptideDiscoveryRequest(query="peptide X", sources=["ema_article57"])
+    assert request.sources == ["ema_article57"]
+

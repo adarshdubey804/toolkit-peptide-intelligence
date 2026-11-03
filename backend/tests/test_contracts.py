@@ -2091,3 +2091,10 @@ def test_global_discovery_decision_requires_canonical_link_only_for_existing_pep
             decision="rejected",
             rationale="                    ",
         )
+
+
+def test_discovery_candidate_can_create_canonical_dossier_draft():
+    path = app.openapi()["paths"]["/api/v1/dossiers/from-discovery-candidate/{candidate_id}"]
+    assert "post" in path
+    params = {item["name"]: item for item in path["post"]["parameters"]}
+    assert params["candidate_id"]["in"] == "path"

@@ -57,6 +57,11 @@ export default function PeptideDirectoryPage() {
         <p className="accent text-xs tracking-[.2em]">SCIENTIFIC CATALOGUE</p>
         <h1 className="mt-3 text-4xl font-semibold md:text-5xl">Peptide database</h1>
         <p className="muted mt-4 leading-7">Explore curator-verified peptide records. Search results are limited to records that have passed scientific review.</p>
+        <div className="mt-5 flex flex-wrap gap-3">
+          <Link href="/peptide-discovery" className="rounded-full bg-emerald-400 px-5 py-3 text-sm font-semibold text-slate-950">Browse all source-discovered peptides →</Link>
+          <Link href="/peptide-discovery?q=BPC-157" className="rounded-full border border-slate-600 px-5 py-3 text-sm text-emerald-300">Find BPC-157 in global sources</Link>
+        </div>
+        <p className="muted mt-3 text-xs">The discovery workspace includes investigational, research, preclinical and source-reported candidates that are not yet curator-verified. A missing result is not proof that a peptide does not exist.</p>
       </div>
 
       <section className="panel mt-9 grid gap-3 p-4 md:grid-cols-[1fr_220px]">

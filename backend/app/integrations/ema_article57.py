@@ -119,7 +119,7 @@ def parse_article57_workbook(content: bytes, query: str, limit: int = 30) -> lis
                     ),
                 }
                 stable_material = "|".join(
-                    [product_name, active_substance, value("country") or "", value("route") or ""]
+                    [product_name, active_substance, value("country") or "", value("route") or "", value("holder") or ""]
                 ).casefold()
                 identifier = sha256(stable_material.encode("utf-8")).hexdigest()[:24]
                 normalized["source_identifier"] = identifier

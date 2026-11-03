@@ -116,7 +116,7 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
                                   'evidence_level','evidence_type','source_record_id',
                                   'source_locator','limitations','review_status')
         """)).scalar_one()
-        assert mechanism_columns == 15, "Mechanism records must capture target, pathway, context, evidence and provenance"
+        assert mechanism_columns == 16, "Mechanism records must capture target, pathway, context, evidence and provenance"
 
         mechanism_triggers = connection.execute(text("""
             SELECT count(*) FROM pg_trigger

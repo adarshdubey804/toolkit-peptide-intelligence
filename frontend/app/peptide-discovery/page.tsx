@@ -15,6 +15,7 @@ const AVAILABLE_SOURCES = [
   { id: "dramp", label: "DRAMP 5.0 (Antimicrobial peptides)" },
   { id: "dailymed", label: "DailyMed" },
   { id: "health_canada_dpd", label: "Health Canada DPD" },
+  { id: "hsa_sg", label: "Singapore HSA registered products" },
   { id: "clinicaltrials", label: "ClinicalTrials.gov" },
   { id: "pubmed", label: "PubMed" },
 ] as const;
@@ -47,7 +48,7 @@ export default function PeptideDiscoveryPage() {
   const [token, setToken] = useState("");
   const [userLabel, setUserLabel] = useState("");
   const [query, setQuery] = useState("");
-  const [sources, setSources] = useState<string[]>(["fda_drugsfda", "fda_purple_book", "ema_article57", "dbaasp", "dramp", "gtopdb", "chembl", "dailymed", "health_canada_dpd", "clinicaltrials", "pubmed"]);
+  const [sources, setSources] = useState<string[]>(["fda_drugsfda", "fda_purple_book", "ema_article57", "dbaasp", "dramp", "gtopdb", "chembl", "dailymed", "health_canada_dpd", "hsa_sg", "clinicaltrials", "pubmed"]);
   const [status, setStatus] = useState("all");
   const [candidates, setCandidates] = useState<CandidateResponse | null>(null);
   const [loading, setLoading] = useState(false);

@@ -75,3 +75,15 @@ The user-facing catalogue will have one navigable dossier for each canonical pep
 ## Coverage and completeness
 
 A worldwide inventory is an ongoing evidence-coverage programme, not a one-time scrape. The platform must record source coverage, query terms, retrieval time, pagination, API limitations, failed sources, duplicate rates and curator outcomes. It must never claim that a peptide does not exist or is not approved merely because it was absent from the sources searched.
+
+
+## Additional peptide-source coverage candidates (planned, not yet integrated)
+
+| Source | Potential contribution | Access / governance consideration |
+|---|---|---|
+| APD6 | Curated natural antimicrobial peptide sequence datasets with organism/source categories | Public FASTA downloads; preserve release date and citation |
+| DBAASP | Antimicrobial peptide sequences, experimental activity, MIC and target-organism annotations | Verify current download/API access and field-level reuse terms before ingestion |
+| PeptideAtlas | Mass-spectrometry-supported endogenous peptide/proteomics observations across organisms | Data products are CC BY-NC 4.0; restrict to non-commercial use unless separately licensed |
+| IEDB | Peptide epitopes and immune assay evidence | Epitope evidence is not a comprehensive peptide inventory or proof of therapeutic status |
+
+These sources cover different biological domains and must remain separately attributed. A peptide sequence observed in a proteomics or epitope dataset is not automatically a mature, stable, independently existing therapeutic peptide entity.

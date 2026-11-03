@@ -121,6 +121,7 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             JOIN peptide_discovery_observations observation ON observation.candidate_id=candidate.id
             WHERE source.source_name='FDA Compounding Safety Risks'
               AND source.source_identifier='BPC-157'
+              AND observation.source_record_id=source.id
         """)).mappings().one()
         assert bpc157["candidate_name"] == "BPC-157"
         assert bpc157["candidate_status"] == "needs_review"
@@ -128,6 +129,24 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
         assert bpc157["source_jurisdiction_code"] == "US"
         assert bpc157["payload_hash"] == "fa393e852e3cce8b833bf4dabb82ff769e568aa82d3d321a5253705f03b4dade"
         assert bpc157["source_url"].startswith("https://www.fda.gov/")
+
+        bpc157_literature = connection.execute(text("""
+            SELECT candidate.reported_mechanism, observation.payload_hash,
+                   source.source_url, source.source_identifier,
+                   observation.payload->>'evidence_scope' AS evidence_scope
+            FROM peptide_discovery_candidates candidate
+            JOIN source_records fda_source ON fda_source.id=candidate.source_record_id
+            JOIN peptide_discovery_observations observation ON observation.candidate_id=candidate.id
+            JOIN source_records source ON source.id=observation.source_record_id
+            WHERE fda_source.source_name='FDA Compounding Safety Risks'
+              AND fda_source.source_identifier='BPC-157'
+              AND source.source_name='PubMed'
+              AND source.source_identifier='40005999'
+        """)).mappings().one()
+        assert "nitric oxide synthase" in bpc157_literature["reported_mechanism"]
+        assert bpc157_literature["payload_hash"] == "c97130e5f8cdef11d075c1ea139d396ee0ff2ec40c61dca8d35868450f4c7868"
+        assert bpc157_literature["source_url"] == "https://pubmed.ncbi.nlm.nih.gov/40005999/"
+        assert "predominantly preclinical" in bpc157_literature["evidence_scope"]
 
         mechanism_columns = connection.execute(text("""
             SELECT count(*) FROM information_schema.columns

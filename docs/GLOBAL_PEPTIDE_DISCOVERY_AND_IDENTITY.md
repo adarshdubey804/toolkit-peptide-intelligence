@@ -42,6 +42,7 @@ The endpoint is authenticated and rate-limited. It does not create a canonical p
 | NLM DailyMed | Structured Product Label identifiers, versions, titles and publication dates | Current SPL may differ from the last FDA-approved label; label presence is not approval proof |
 | Health Canada Drug Product Database | Canadian DIN, ingredient/strength, product class, status, dosage form and route | Includes human and non-human product classes; status is Canadian and source-specific |
 | IUPHAR/BPS Guide to PHARMACOLOGY | Expert-curated peptide/endogenous-peptide ligands and source-reported target interactions | Requires registration/API key; not a complete peptide inventory; license and commercial-use terms apply |
+| DRAMP 5.0 | Antimicrobial peptide sequences, activity classifications, clinical/stability categories and FASTS sequence/SMILES records | AMP-focused subset, not all peptides; patent exports excluded pending permission; source modifications require careful identity curation |
 | ClinicalTrials.gov | Study identifiers, status, phase, sponsor, interventions and summaries | An intervention name does not prove the investigational product is a peptide |
 | PubMed | Publication metadata, abstracts and identifiers | A paper may mention a peptide without studying it |
 

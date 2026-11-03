@@ -1,6 +1,6 @@
 # Schema ownership and governance inventory
 
-**Baseline:** migrations 001–064 on `main` (2026-11-02)  
+**Baseline:** migrations 001–065 on `main` (2026-11-02)  
 **Purpose:** define the intended ownership, visibility, provenance, and lifecycle contract for the existing schema before expanding ingestion or AI write access.
 
 > This is a repository-level design inventory. It does not assert that every existing row is compliant, that every route enforces the contract, or that the live PostgreSQL deployment has this exact schema. Validate against the deployed database before enabling database policies or bulk imports.
@@ -56,7 +56,7 @@
 - The audit does not prove every organization contribution and child table has a complete owner key or that every router has negative cross-tenant tests.
 - The audit does not establish live PostgreSQL schema parity, production role permissions, query plans, backup/restore, monitoring, TLS, or secret management.
 - Canonical peptide identity has a chemical-form foundation, but a complete deterministic identity fingerprint and collision-tested normalization for D-residues, noncanonical residues, terminal chemistry, cyclization, conjugates, salts, and aliases is not yet established.
-- Scientific parent-record revision/supersession is not universal; decisions must be bound to exact revisions before broad ingestion.
+- Scientific parent-record revision/supersession is not universal. Migration 065 adds append-only, content-addressed revision snapshots for peptide chemical forms; other mutable parent records and decision-to-revision bindings remain outstanding.
 - The inventory groups related child tables where exact ownership inheritance must be confirmed from migrations and routes. It is not a claim that all named groups have already passed table-by-table verification.
 
 ## Required validation before expanding data ingestion

@@ -2220,3 +2220,21 @@ def test_peptide_workbook_import_migration_preserves_row_level_provenance():
     assert "peptide_workbook_import_rows" in sql
     assert "UNIQUE (batch_id, worksheet_name, worksheet_row_number)" in sql
     assert "source_row JSONB" in sql
+
+
+def test_peptide_dossier_section_editor_routes_are_registered():
+    paths = app.openapi()["paths"]
+    assert "/api/v1/dossiers/candidates/{candidate_id}/sections" in paths
+    assert "get" in paths["/api/v1/dossiers/candidates/{candidate_id}/sections"]
+    assert "/api/v1/dossiers/candidates/{candidate_id}/sections/{section_key}" in paths
+    assert "put" in paths["/api/v1/dossiers/candidates/{candidate_id}/sections/{section_key}"]
+
+
+def test_dossier_sections_are_organization_scoped_and_revisioned():
+    sql = (MIGRATIONS_DIR / "072_editable_dossier_sections_and_media.sql").read_text(encoding="utf-8")
+    assert "ENABLE ROW LEVEL SECURITY" in sql
+    assert "FORCE ROW LEVEL SECURITY" in sql
+    assert "peptide_dossier_section_revisions" in sql
+    assert "prevent_peptide_dossier_section_revision_mutation" in sql
+    assert "citations JSONB" in sql
+    assert "media JSONB" in sql

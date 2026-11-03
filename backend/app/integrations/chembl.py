@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from typing import Any
 
 import httpx
@@ -94,6 +95,64 @@ def normalize_peptide_biotherapeutic(
 
 
 class ChEMBLProvider:
+    async def get_peptide_molecule(self, chembl_id: str) -> dict:
+        """Retrieve one exact ChEMBL molecule, peptide HELM record and MOA rows."""
+        identifier = chembl_id.strip().upper()
+        if not re.fullmatch(r"CHEMBL[0-9]+", identifier):
+            raise ValueError("ChEMBL molecule ID must match CHEMBL followed by digits.")
+        timeout = httpx.Timeout(35.0, connect=8.0)
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+            molecule_response = await client.get(
+                f"{BASE_URL}/molecule/{identifier}.json",
+                headers={"Accept": "application/json"},
+            )
+            if molecule_response.status_code == 404:
+                raise LookupError("ChEMBL molecule was not found.")
+            molecule_response.raise_for_status()
+            molecule = molecule_response.json()
+            if not isinstance(molecule, dict):
+                raise ValueError("ChEMBL molecule response was not a JSON object.")
+
+            bio_response = await client.get(
+                f"{BASE_URL}/biotherapeutic.json",
+                params={"molecule_chembl_id": identifier, "limit": 5},
+                headers={"Accept": "application/json"},
+            )
+            bio_response.raise_for_status()
+            bio_rows = _records(bio_response.json(), "biotherapeutics")
+            peptide_bio = next(
+                (
+                    row for row in bio_rows
+                    if isinstance(row.get("helm_notation"), str)
+                    and row["helm_notation"].strip().upper().startswith("PEPTIDE1{")
+                ),
+                None,
+            )
+            if peptide_bio is None:
+                raise LookupError("ChEMBL molecule does not have an explicit peptide HELM biotherapeutic record.")
+
+            mechanism_response = await client.get(
+                f"{BASE_URL}/mechanism.json",
+                params={"molecule_chembl_id": identifier, "limit": 30},
+                headers={"Accept": "application/json"},
+            )
+            mechanism_response.raise_for_status()
+            mechanisms = _records(mechanism_response.json(), "mechanisms")
+
+            release = None
+            try:
+                status_response = await client.get(f"{BASE_URL}/status.json")
+                status_response.raise_for_status()
+                status_payload = status_response.json()
+                release = status_payload.get("chembl_db_version") if isinstance(status_payload, dict) else None
+            except (httpx.HTTPError, ValueError, TypeError):
+                release = None
+
+        normalized = normalize_peptide_biotherapeutic(molecule, peptide_bio, mechanisms, release)
+        if normalized is None:
+            raise LookupError("ChEMBL molecule could not be confirmed as a peptide biotherapeutic.")
+        return normalized
+
     async def search_peptides(self, query: str, limit: int = 20) -> dict:
         term = query.strip()
         if len(term) < 2:

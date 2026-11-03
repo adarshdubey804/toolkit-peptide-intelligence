@@ -116,3 +116,9 @@ The enrichment workspace can retrieve an exact peptide ligand by its GtoPdb liga
 GtoPdb interaction types such as “agonist” or “antagonist” are source-reported pharmacological interaction labels. They are not, by themselves, a complete molecular mechanism or proof of clinical effect. Verify the exact peptide and chemical form, target subtype, species, assay context, interaction direction and supporting literature before approval.
 
 GtoPdb licensing must be respected: the database is ODbL and its content is CC BY-SA 4.0. Attribution and share-alike obligations must be assessed before redistribution or commercial reuse.
+
+## Promotion of ChEMBL mechanism records into curation
+
+A researcher may submit an exact ChEMBL molecule ID against a canonical peptide dossier. The importer first verifies that ChEMBL returns an explicit `PEPTIDE1{` HELM biotherapeutic record. It then imports only mechanism rows containing both a mechanism statement and a ChEMBL target identifier.
+
+Each mechanism row becomes a separate `source_asserted`, `in_review` record with the exact ChEMBL molecule ID, target ID, source mechanism ID/locator, ChEMBL release and raw source excerpt. It is not automatically classified as a regulatory-label mechanism. ChEMBL's mechanism endpoint is an aggregated drug-mechanism resource; it does not establish authorisation in any specific jurisdiction or exact equivalence to the selected peptide chemical form. An independent curator must verify the molecule/HELM identity, target, action type and supporting references.

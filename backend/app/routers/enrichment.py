@@ -195,6 +195,10 @@ class GtoPdbMechanismSubmission(BaseModel):
     ligand_id: int = Field(gt=0)
     chemical_form_id: UUID | None = None
 
+class ChEMBLMechanismSubmission(BaseModel):
+    chembl_id: str = Field(min_length=7, max_length=20, pattern=r"(?i)^CHEMBL[0-9]+$")
+    chemical_form_id: UUID | None = None
+
 class PeptideDiscoveryRequest(BaseModel):
     query: str = Field(min_length=2, max_length=160)
     sources: list[str] = Field(
@@ -593,6 +597,185 @@ async def submit_gtopdb_mechanism_for_review(
             "GtoPdb target interactions are source-reported pharmacology evidence, not automatically "
             "a complete mechanism of action. Each imported interaction requires independent curator review."
         ),
+    }
+
+
+@router.post("/peptides/{peptide_id}/mechanisms/chembl", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("enrichment_write", settings.enrichment_rate_limit_per_window))])
+async def submit_chembl_mechanism_for_review(
+    peptide_id: UUID,
+    payload: ChEMBLMechanismSubmission,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """Import exact ChEMBL peptide MOA records into independent curator review."""
+    organization_id, role = _candidate_membership(current_user, db)
+    if role not in {"organization_admin", "curator", "reviewer", "researcher"}:
+        raise HTTPException(status_code=403, detail="Researcher, curator or reviewer membership is required.")
+
+    peptide = db.execute(text("""
+        SELECT p.id, p.preferred_name
+        FROM peptides p
+        WHERE p.id=:peptide_id
+          AND (p.review_status='verified' OR EXISTS (
+              SELECT 1 FROM curation_reviews review
+              WHERE review.entity_type='peptide' AND review.entity_id=p.id
+                AND review.owner_organization_id=:organization_id
+          ))
+    """), {"peptide_id": peptide_id, "organization_id": organization_id}).mappings().first()
+    if peptide is None:
+        raise HTTPException(status_code=404, detail="Peptide dossier not found or not accessible.")
+    if payload.chemical_form_id:
+        form_exists = db.execute(text("""
+            SELECT 1 FROM peptide_chemical_forms
+            WHERE id=:form_id AND peptide_id=:peptide_id
+        """), {"form_id": payload.chemical_form_id, "peptide_id": peptide_id}).first()
+        if not form_exists:
+            raise HTTPException(status_code=422, detail="Chemical form does not belong to this peptide dossier.")
+
+    try:
+        molecule = await ChEMBLProvider().get_peptide_molecule(payload.chembl_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail="ChEMBL peptide biotherapeutic record was not found.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Invalid ChEMBL molecule identifier or peptide record.") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail="ChEMBL could not be reached or returned an upstream error.") from exc
+
+    mechanisms = molecule.get("mechanism_records") or []
+    usable = [
+        item for item in mechanisms
+        if str(item.get("mechanism_of_action") or "").strip()
+        and str(item.get("target_chembl_id") or "").strip()
+    ]
+    if not usable:
+        raise HTTPException(
+            status_code=422,
+            detail="ChEMBL has no explicit mechanism-of-action record with a target identifier for this peptide; no mechanism was created.",
+        )
+
+    source_payload = {
+        **molecule,
+        "source": "ChEMBL / EMBL-EBI",
+        "curation_status": "not_reviewed",
+        "retrieved_at": datetime.now(timezone.utc).isoformat(),
+        "license_notice": (
+            "ChEMBL data are CC BY-SA 3.0. Attribute EMBL-EBI/ChEMBL and redistribute adaptations "
+            "under the same licence."
+        ),
+    }
+    source = persist_normalized_source_record(
+        db,
+        source_name="ChEMBL / EMBL-EBI",
+        source_identifier=str(molecule["source_identifier"]),
+        source_url=molecule["source_url"],
+        title=molecule.get("candidate_name") or molecule["source_identifier"],
+        payload=source_payload,
+        source_version=str(molecule.get("source_version") or "ChEMBL live API"),
+    )
+
+    created = []
+    existing_ids = []
+    for index, item in enumerate(usable, start=1):
+        target_id = str(item["target_chembl_id"])
+        target_name = str(item.get("target_name") or item.get("target_pref_name") or target_id)[:500]
+        action = str(item.get("action_type") or "Not stated by source")[:500]
+        statement = str(item["mechanism_of_action"]).strip()[:8000]
+        mechanism_id = str(item.get("mechanism_id") or item.get("mechanism_chembl_id") or index)
+        source_locator = (
+            f"ChEMBL molecule {molecule['source_identifier']}; mechanism {mechanism_id}; "
+            f"target {target_id}; source release {molecule.get('source_version') or 'not stated'}"
+        )
+        existing = db.execute(text("""
+            SELECT id FROM peptide_mechanisms
+            WHERE peptide_id=:peptide_id
+              AND chemical_form_id IS NOT DISTINCT FROM :chemical_form_id
+              AND source_record_id=:source_id
+              AND source_locator=:source_locator
+            ORDER BY created_at DESC LIMIT 1
+        """), {
+            "peptide_id": peptide_id, "chemical_form_id": payload.chemical_form_id,
+            "source_id": source["source_record_id"], "source_locator": source_locator,
+        }).scalar_one_or_none()
+        if existing:
+            existing_ids.append(str(existing))
+            continue
+
+        mechanism = db.execute(text("""
+            INSERT INTO peptide_mechanisms (
+                peptide_id, chemical_form_id, mechanism_title, mechanism_statement,
+                mechanism_class, target_name, target_action, binding_or_interaction,
+                evidence_level, evidence_type, limitations, source_record_id,
+                source_locator, source_excerpt, model_or_method, review_status
+            ) VALUES (
+                :peptide_id, :chemical_form_id, :title, :statement,
+                'unknown', :target_name, :target_action, :interaction,
+                'source_asserted', 'unknown', :limitations, :source_id,
+                :source_locator, :excerpt, :method, 'in_review'
+            )
+            RETURNING id, review_status
+        """), {
+            "peptide_id": peptide_id,
+            "chemical_form_id": payload.chemical_form_id,
+            "title": f"ChEMBL mechanism: {action} at {target_name}"[:500],
+            "statement": statement,
+            "target_name": target_name,
+            "target_action": action,
+            "interaction": action,
+            "limitations": (
+                "This is a source-reported ChEMBL mechanism record. ChEMBL's mechanism resource "
+                "aggregates drug mechanism information but does not establish approval in a specific "
+                "jurisdiction or exact equivalence to the selected peptide chemical form. Verify the "
+                "molecule identity, HELM sequence, target, action type, supporting references and "
+                "product authorisation independently before approval."
+            ),
+            "source_id": source["source_record_id"],
+            "source_locator": source_locator,
+            "excerpt": json.dumps(item, ensure_ascii=False, default=str)[:4000],
+            "method": "ChEMBL public REST API mechanism resource; source-reported fields only",
+        }).mappings().one()
+
+        review = db.execute(text("""
+            INSERT INTO curation_reviews (
+                entity_type, entity_id, source_record_id, review_status, priority,
+                submitted_by, owner_organization_id
+            ) VALUES (
+                'peptide_mechanism', :mechanism_id, :source_id, 'in_review',
+                'normal', :submitter, :organization_id
+            )
+            RETURNING id, review_status
+        """), {
+            "mechanism_id": mechanism["id"], "source_id": source["source_record_id"],
+            "submitter": current_user["id"], "organization_id": organization_id,
+        }).mappings().one()
+
+        db.execute(text("""
+            INSERT INTO audit_events (actor_user_id, organization_id, action, entity_type, entity_id, event_metadata)
+            VALUES (:actor, :org, 'peptide_mechanism_submitted_for_review', 'peptide_mechanism', :mechanism_id,
+                    jsonb_build_object('peptide_id', :peptide_id, 'source', 'ChEMBL',
+                                       'chembl_id', :chembl_id, 'mechanism_id', :source_mechanism_id,
+                                       'target_chembl_id', :target_id, 'evidence_level', 'source_asserted'))
+        """), {
+            "actor": current_user["id"], "org": organization_id, "mechanism_id": mechanism["id"],
+            "peptide_id": peptide_id, "chembl_id": molecule["source_identifier"],
+            "source_mechanism_id": mechanism_id, "target_id": target_id,
+        })
+        created.append({"mechanism_id": str(mechanism["id"]), "review_id": str(review["id"])})
+
+    db.commit()
+    return {
+        "source": "ChEMBL / EMBL-EBI",
+        "chembl_id": molecule["source_identifier"],
+        "created": created,
+        "already_exists": existing_ids,
+        "created_count": len(created),
+        "existing_count": len(existing_ids),
+        "review_status": "in_review" if created else "already_submitted",
+        "evidence_level": "source_asserted",
+        "notice": (
+            "ChEMBL mechanism records remain source-reported and require independent curator review. "
+            "They are not an approval determination or a complete pathway model."
+        ),
+        "license": "CC BY-SA 3.0",
     }
 
 

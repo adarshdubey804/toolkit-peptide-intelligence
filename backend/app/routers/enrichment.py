@@ -12,6 +12,8 @@ from ..config import settings
 from ..db import get_db
 from ..rate_limit_dependencies import authenticated_write_rate_limit
 from ..integrations.clinicaltrials import ClinicalTrialsProvider
+from ..integrations.dailymed import DailyMedProvider
+from ..integrations.fda_drugsfda import FdaDrugsFdaProvider
 from ..integrations.pubmed import PubMedProvider
 from ..integrations.rcsb import RCSBProvider
 from ..integrations.uniprot import UniProtProvider

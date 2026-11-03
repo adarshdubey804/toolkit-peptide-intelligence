@@ -66,3 +66,18 @@ A section with no curated data must say "not yet curated" or "not found in check
 ## Initial implementation boundary
 
 Migration 068 creates the discovery registry, immutable source observation history and immutable curation decision history. It does not yet claim that global ingestion or full source coverage is running. Source adapters, ingestion schedules, candidate review UI and catalogue search integration are subsequent implementation work.
+
+
+## First named provisional dossier: BPC-157
+
+Migration 069 seeds a provisional BPC-157 candidate from the FDA's official compounding safety page. It preserves the FDA statement under the exact section “Bulk drug substances nominated but withdrawn”, including the agency's stated immunogenicity and peptide impurity/API-characterization concerns.
+
+The record is deliberately:
+- a source-specific US regulatory/compounding observation, not an FDA marketing-authorization record;
+- `needs_review` with `identity_match_status=unresolved`;
+- missing sequence, stereochemistry and chemical-form fields until independently sourced;
+- linked to an immutable normalized source snapshot and discovery observation.
+
+The candidate dossier opens at `/peptide-discovery/{candidate_id}`. It must not be promoted to a canonical peptide or labelled FDA-approved/not-approved from this single compounding page alone. Curators must resolve exact sequence/form and check product-level authorization sources separately.
+
+Official source: https://www.fda.gov/drugs/human-drug-compounding/certain-bulk-drug-substances-use-compounding-may-present-significant-safety-risks

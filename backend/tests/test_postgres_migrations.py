@@ -112,6 +112,22 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             ).scalar_one()
             assert exists, f"Expected migration-created table {table_name!r}"
 
+        bpc157 = connection.execute(text("""
+            SELECT candidate.candidate_name, candidate.candidate_status,
+                   candidate.identity_match_status, candidate.source_jurisdiction_code,
+                   observation.payload_hash, source.source_url
+            FROM peptide_discovery_candidates candidate
+            JOIN source_records source ON source.id=candidate.source_record_id
+            JOIN peptide_discovery_observations observation ON observation.candidate_id=candidate.id
+            WHERE source.source_name='FDA Compounding Safety Risks'
+              AND source.source_identifier='BPC-157'
+        """)).mappings().one()
+        assert bpc157["candidate_name"] == "BPC-157"
+        assert bpc157["candidate_status"] == "needs_review"
+        assert bpc157["identity_match_status"] == "unresolved"
+        assert bpc157["source_jurisdiction_code"] == "US"
+        assert bpc157["payload_hash"] == "fa393e852e3cce8b833bf4dabb82ff769e568aa82d3d321a5253705f03b4dade"
+        assert bpc157["source_url"].startswith("https://www.fda.gov/")
 
         mechanism_columns = connection.execute(text("""
             SELECT count(*) FROM information_schema.columns

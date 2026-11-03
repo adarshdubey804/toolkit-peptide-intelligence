@@ -80,3 +80,13 @@ All integrations are read-only discovery clients. Results returned from external
 - The source applies an approximate 60 requests/minute rate limit. This adapter limits concurrent ligand interaction lookups to five.
 - GtoPdb database data use ODbL and contents use CC BY-SA 4.0. Attribution and share-alike obligations must be assessed before redistributing source data, particularly in commercial deployments.
 - Official API and access documentation: https://www.guidetopharmacology.org/webServices.jsp
+
+
+## DRAMP 5.0 (antimicrobial peptide datasets)
+- Read-only endpoint: `GET /api/v1/research/dramp-peptides?q=...`.
+- Discovers official FASTA and FASTS download links from the DRAMP downloads page, downloads the non-patent core datasets, and merges records by stable DRAMP identifier.
+- Preserves source-reported sequence, dataset category, source release and (where available) SMILES from FASTS annotations. Modified residue symbols in source sequences are not normalized into standard amino acids.
+- DRAMP 5.0 reports 32,296 entries and 22,298 sequence/SMILES FASTS annotations. The adapter excludes patent dataset exports pending separate permission; therefore its imported snapshot is not the full 32,296-entry total.
+- DRAMP is an antimicrobial-peptide repository, not a complete inventory of all peptide classes or medicines. Activity annotations are not mechanisms of action.
+- Non-patent DRAMP data are distributed under CC BY 4.0. Patent AMP downloads are excluded pending separate authorization; retain attribution and release metadata.
+- Official downloads and release notes: https://dramp.cpu-bioinfor.org/downloads/ and https://dramp.cpu-bioinfor.org/static/update.php

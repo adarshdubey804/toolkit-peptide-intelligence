@@ -8,6 +8,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000"
 const AVAILABLE_SOURCES = [
   { id: "fda_drugsfda", label: "FDA Drugs@FDA" },
   { id: "fda_purple_book", label: "FDA Purple Book" },
+  { id: "ema_article57", label: "EMA Article 57 (EEA authorised products)" },
   { id: "gtopdb", label: "IUPHAR/BPS Guide to PHARMACOLOGY (API key required)" },
   { id: "dailymed", label: "DailyMed" },
   { id: "health_canada_dpd", label: "Health Canada DPD" },
@@ -43,7 +44,7 @@ export default function PeptideDiscoveryPage() {
   const [token, setToken] = useState("");
   const [userLabel, setUserLabel] = useState("");
   const [query, setQuery] = useState("");
-  const [sources, setSources] = useState<string[]>(["fda_drugsfda", "fda_purple_book", "dailymed", "health_canada_dpd", "clinicaltrials", "pubmed"]);
+  const [sources, setSources] = useState<string[]>(["fda_drugsfda", "fda_purple_book", "ema_article57", "dailymed", "health_canada_dpd", "clinicaltrials", "pubmed"]);
   const [status, setStatus] = useState("all");
   const [candidates, setCandidates] = useState<CandidateResponse | null>(null);
   const [loading, setLoading] = useState(false);

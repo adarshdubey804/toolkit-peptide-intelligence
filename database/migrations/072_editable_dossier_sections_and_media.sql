@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS peptide_dossier_sections (
     organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE RESTRICT,
     section_key TEXT NOT NULL CHECK (section_key ~ '^[a-z0-9][a-z0-9_-]{1,79}$'),
     content JSONB NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(content) = 'object'),
-    citations JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(references) = 'array'),
+    citations JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(citations) = 'array'),
     media JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(media) = 'array'),
     revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
     updated_by UUID NOT NULL REFERENCES user_profiles(id) ON DELETE RESTRICT,
@@ -39,9 +39,7 @@ BEGIN
     IF TG_OP = 'INSERT' THEN
         next_revision := 1;
     ELSE
-        next_revision := OLD.revision + 1;
-        NEW.revision := next_revision;
-        NEW.updated_at := now();
+        next_revision := NEW.revision;
     END IF;
     snapshot_value := jsonb_build_object(
         'section_key', NEW.section_key,
@@ -62,7 +60,7 @@ $dossier_section_revision$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS peptide_dossier_section_revision_capture ON peptide_dossier_sections;
 CREATE TRIGGER peptide_dossier_section_revision_capture
-    BEFORE INSERT OR UPDATE ON peptide_dossier_sections
+    AFTER INSERT OR UPDATE ON peptide_dossier_sections
     FOR EACH ROW EXECUTE FUNCTION capture_peptide_dossier_section_revision();
 
 CREATE OR REPLACE FUNCTION prevent_peptide_dossier_section_revision_mutation()

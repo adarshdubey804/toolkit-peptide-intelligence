@@ -7,6 +7,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from pydantic import field_validator
 
 from ..config import settings
 from ..db import get_db
@@ -1022,8 +1023,6 @@ def decide_enrichment_candidate(
     db.commit()
     return {"candidate_id": str(candidate_id), "status": payload.decision, "reviewed_at": "recorded"}
 
-
-from pydantic import field_validator
 from ..integrations.pubchem import PubChemProvider
 from ..integrations.alphafold import AlphaFoldProvider
 

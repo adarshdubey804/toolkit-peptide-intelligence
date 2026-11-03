@@ -733,6 +733,14 @@ class GlobalDiscoveryDecision(BaseModel):
     rationale: str = Field(min_length=20, max_length=4000)
     canonical_peptide_id: UUID | None = None
 
+    @field_validator("rationale")
+    @classmethod
+    def validate_rationale_text(cls, value: str) -> str:
+        cleaned = value.strip()
+        if len(cleaned) < 20:
+            raise ValueError("Rationale must contain at least 20 non-space characters.")
+        return cleaned
+
     @field_validator("canonical_peptide_id")
     @classmethod
     def validate_canonical_link(cls, value, info):

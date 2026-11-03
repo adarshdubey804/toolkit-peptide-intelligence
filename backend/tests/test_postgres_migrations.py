@@ -96,6 +96,8 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             "analytical_method_decisions",
             "regulatory_product_authorizations",
             "regulatory_product_authorization_revisions",
+            "peptide_mechanisms",
+            "peptide_mechanism_revisions",
         )
         for table_name in required_tables:
             exists = connection.execute(
@@ -104,6 +106,27 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             ).scalar_one()
             assert exists, f"Expected migration-created table {table_name!r}"
 
+
+        mechanism_columns = connection.execute(text("""
+            SELECT count(*) FROM information_schema.columns
+            WHERE table_schema='public' AND table_name='peptide_mechanisms'
+              AND column_name IN ('peptide_id','chemical_form_id','mechanism_statement',
+                                  'mechanism_class','target_action','downstream_signaling',
+                                  'pathway_context','biological_effect','tissue_or_cell_context',
+                                  'evidence_level','evidence_type','source_record_id',
+                                  'source_locator','limitations','review_status')
+        """)).scalar_one()
+        assert mechanism_columns == 15, "Mechanism records must capture target, pathway, context, evidence and provenance"
+
+        mechanism_triggers = connection.execute(text("""
+            SELECT count(*) FROM pg_trigger
+            WHERE NOT tgisinternal AND tgname IN (
+                'peptide_mechanisms_form_parent',
+                'peptide_mechanism_revision_capture',
+                'peptide_mechanism_revisions_append_only'
+            )
+        """)).scalar_one()
+        assert mechanism_triggers == 3, "Mechanism form-parent integrity and immutable revisions must be installed"
 
         regulatory_authorization_columns = connection.execute(text("""
             SELECT count(*) FROM information_schema.columns

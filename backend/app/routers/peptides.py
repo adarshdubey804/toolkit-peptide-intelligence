@@ -159,6 +159,35 @@ def peptide_profile(peptide_id: UUID, db: Session = Depends(get_db)):
         WHERE peptide_id=:id AND review_status='verified'
         ORDER BY form_name, id
     """)
+    mechanisms = rows("""
+        SELECT m.id, m.chemical_form_id, form.form_name AS chemical_form_name,
+               m.mechanism_title, m.mechanism_statement, m.mechanism_class,
+               m.target_id, COALESCE(m.target_name, target.preferred_name) AS target_name,
+               COALESCE(m.target_identifier, target.external_identifier) AS target_identifier,
+               m.target_action, m.binding_or_interaction, m.downstream_signaling,
+               m.pathway_context, m.biological_effect, m.tissue_or_cell_context,
+               m.species_or_population, m.evidence_level, m.evidence_type,
+               m.confidence_score, m.limitations, m.source_locator, m.source_excerpt,
+               m.model_or_method, source.source_name, source.source_url,
+               m.review_status, m.reviewed_at
+        FROM peptide_mechanisms m
+        LEFT JOIN peptide_chemical_forms form ON form.id=m.chemical_form_id
+        LEFT JOIN targets target ON target.id=m.target_id
+        JOIN source_records source ON source.id=m.source_record_id
+        WHERE m.peptide_id=:id AND m.review_status='verified'
+        ORDER BY
+            CASE m.evidence_level
+                WHEN 'regulatory_label' THEN 1
+                WHEN 'human_mechanistic' THEN 2
+                WHEN 'human_clinical' THEN 3
+                WHEN 'in_vivo_animal' THEN 4
+                WHEN 'in_vitro' THEN 5
+                WHEN 'ex_vivo' THEN 6
+                WHEN 'computational' THEN 7
+                ELSE 8
+            END,
+            m.mechanism_title
+    """)
     structures = rows("SELECT structure_type, file_format, external_identifier, method_or_prediction_tool FROM structures WHERE peptide_id=:id AND review_status='verified'")
     claims = rows("""
         SELECT DISTINCT c.id, c.claim_text, c.claim_domain, c.evidence_type, c.confidence_label,
@@ -176,6 +205,7 @@ def peptide_profile(peptide_id: UUID, db: Session = Depends(get_db)):
         "chemical_properties": chemistry,
         "chemical_forms": chemical_forms,
         "structures": structures,
+        "mechanisms_of_action": mechanisms,
         "evidence_claims": claims,
     }
 

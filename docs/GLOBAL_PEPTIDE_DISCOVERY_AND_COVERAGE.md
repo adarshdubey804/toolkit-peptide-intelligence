@@ -51,6 +51,7 @@ A failed or empty Drugs@FDA query is not evidence that a peptide is not FDA appr
 | NLM DailyMed | Structured Product Label (SPL) identifiers, label versions and published label metadata | That an SPL is the exact last FDA-approved label or proof of approval |
 | ClinicalTrials.gov | Registered interventional/observational study records and status | That a study result is positive, that a peptide is approved, or that a record is necessarily a unique peptide entity |
 | PubMed | Scientific literature and abstracts | That a paper's statements are established facts or that the peptide is a therapeutic product |
+| ChEMBL | Explicit peptide HELM biotherapeutic records, source molecule IDs, and source-reported approved-drug mechanism records | That a HELM record is a marketed product, that all biotherapeutics are peptides, or that ChEMBL coverage is exhaustive |
 
 Future jurisdictional adapters should include regulator-specific datasets and label repositories (for example EMA, MHRA, Health Canada, TGA, PMDA and other national authorities) only after each source's coverage, licensing, identifiers and update policy are documented. Do not infer global regulatory status from FDA-only sources.
 
@@ -74,3 +75,6 @@ Global peptide coverage is an ongoing data-acquisition objective, not a one-time
 - explicit source outages, rate limits, licensing restrictions and known blind spots.
 
 The interface must display these limitations and the last checked timestamp. Never label the database “complete” unless a defined source scope and measurable completeness criteria are met.
+
+### ChEMBL peptide scope
+The ChEMBL adapter searches molecule records and retains only linked biotherapeutic entries whose HELM notation explicitly begins with `PEPTIDE1{`. ChEMBL also contains antibodies and recombinant proteins; these are excluded from this peptide-specific adapter unless separately curated under a different entity scope. HELM notation is preserved verbatim and must not be flattened into an unmodified amino-acid sequence. ChEMBL mechanism records are source-reported observations and are not automatically promoted into the canonical peptide mechanism table.

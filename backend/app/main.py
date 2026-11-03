@@ -17,6 +17,7 @@ from .routers.analytical_methods import router as analytical_method_router
 from .routers.curation import router as curation_router
 from .routers.data_quality import router as data_quality_router
 from .routers.dossiers import router as dossier_router
+from .routers.workbook_import import router as workbook_import_router
 from .routers.enrichment import router as enrichment_router
 from .routers.evidence_intelligence import router as evidence_intelligence_router
 from .routers.formulations import router as formulation_router
@@ -103,6 +104,7 @@ app.include_router(analytical_method_router)
 app.include_router(curation_router)
 app.include_router(data_quality_router)
 app.include_router(dossier_router)
+app.include_router(workbook_import_router)
 app.include_router(enrichment_router)
 app.include_router(evidence_intelligence_router)
 app.include_router(formulation_router)

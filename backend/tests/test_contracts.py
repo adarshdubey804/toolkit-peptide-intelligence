@@ -1893,3 +1893,45 @@ def test_dramp_fasta_and_fasts_merge_preserves_sequence_and_smiles():
     assert merged[0]["reported_sequence"] == "SLGPAIKATRQVCPKATRFVTVSCKKSDCQ"
     assert merged[0]["reported_chemical_form"] == "CC(C)C[C@@H]1NC(=O)"
     assert set(merged[0]["dataset_categories"]) == {"general_amps", "general_smiles"}
+
+
+def test_dramp_download_discovery_finds_fasta_and_fasts_datasets():
+    html = """
+    <a href="/downloads/download.php?filename=download_data%2FDRAMP5.0%2Fgeneral_amps.fasta">General</a>
+    <a href="/downloads/download.php?filename=download_data%2FDRAMP5.0%2Fgeneral_smiles.fasta">General FASTS</a>
+    <a href="/downloads/download.php?filename=download_data%2FDRAMP5.0%2Fgeneral_amps.xlsx">Workbook</a>
+    """
+    links = discover_fasta_downloads(html)
+    assert len(links) == 2
+    assert any(item["contains_smiles"] for item in links)
+
+
+def test_dramp_fasta_and_fasts_merge_preserves_sequence_and_smiles():
+    fasta = parse_fasta_records(
+        ">DRAMP00005 Epicidin 280 (Bacteriocin)\nSLGPAIKATRQVCPKATRFVTVSCKKSDCQ\n",
+        "general_amps",
+    )
+    fasts = parse_fasta_records(
+        ">DRAMP00005 CC(C)C[C@@H]1NC(=O)\nSLGPAIKATRQVCPKATRFVTVSCKKSDCQ\n",
+        "general_smiles",
+        contains_smiles=True,
+    )
+    merged = merge_records([
+        (fasta[0], "https://example.test/general.fasta"),
+        (fasts[0], "https://example.test/general_smiles.fasta"),
+    ])
+    assert len(merged) == 1
+    assert merged[0]["source_identifier"] == "DRAMP00005"
+    assert merged[0]["candidate_name"] == "Epicidin 280 (Bacteriocin)"
+    assert merged[0]["reported_sequence"] == "SLGPAIKATRQVCPKATRFVTVSCKKSDCQ"
+    assert merged[0]["reported_chemical_form"] == "CC(C)C[C@@H]1NC(=O)"
+    assert set(merged[0]["dataset_categories"]) == {"general_amps", "general_smiles"}
+
+
+def test_dramp_research_and_global_discovery_contracts_are_registered():
+    route = app.openapi()["paths"]["/api/v1/research/dramp-peptides"]["get"]
+    params = {item["name"]: item for item in route["parameters"]}
+    assert params["limit"]["schema"]["maximum"] == 100
+    from app.routers.enrichment import PeptideDiscoveryRequest
+    request = PeptideDiscoveryRequest(query="Epicidin", sources=["dramp"])
+    assert request.sources == ["dramp"]

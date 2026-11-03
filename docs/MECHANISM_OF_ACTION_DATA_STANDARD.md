@@ -67,3 +67,19 @@ These examples are references for source extraction and data modelling, not a pr
 ## API and dossier presentation
 
 The peptide profile includes `mechanisms_of_action`, an array of curator-verified records. The dossier displays target, action, binding/interaction, downstream signalling, pathway, biological context, evidence level, limitations and source links. An empty array is rendered as “not yet curated”, never as “no mechanism”.
+
+
+## Automated extraction from DailyMed SPL
+
+The DailyMed connector retrieves the XML for an exact SPL Set ID and extracts only the explicitly coded 12.1 Mechanism of Action section:
+- LOINC code `43679-0` (Mechanism of Action);
+- a title-based fallback is allowed only when the title explicitly begins with `12.1` and contains “Mechanism of Action”;
+- pharmacodynamics (12.2 / LOINC `43681-6`) and pharmacokinetics (12.3 / LOINC `43682-4`) are not substituted for MOA;
+- if no explicit MOA section is found, the connector returns “section not present” and does not infer a mechanism.
+
+DailyMed text is stored as a source-reported mechanism hint with `source_asserted` evidence level. DailyMed presence alone does not establish FDA approval; the current SPL may differ from the last FDA-approved label. A curator must verify the exact product, chemical form, jurisdiction, label version and approval record before promoting the text to a `regulatory_label` mechanism record.
+
+Official references:
+- FDA section-heading mapping: https://www.fda.gov/industry/structured-product-labeling-resources/section-headings-loinc
+- FDA labeling resources: https://www.fda.gov/media/165785/download
+- DailyMed web services and SPL Set ID XML resource: https://dailymed.nlm.nih.gov/dailymed/app-support-web-services.cfm

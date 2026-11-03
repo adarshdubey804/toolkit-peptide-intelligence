@@ -1,4 +1,5 @@
 import asyncio
+import json
 from datetime import datetime, timezone
 from typing import Annotated, Literal
 from uuid import UUID
@@ -187,6 +188,10 @@ class CandidateDecision(BaseModel):
 
 class DailyMedMechanismSubmission(BaseModel):
     set_id: str = Field(min_length=36, max_length=36, pattern=r"^[0-9a-fA-F-]{36}$")
+    chemical_form_id: UUID | None = None
+
+class GtoPdbMechanismSubmission(BaseModel):
+    ligand_id: int = Field(gt=0)
     chemical_form_id: UUID | None = None
 
 class PeptideDiscoveryRequest(BaseModel):
@@ -385,6 +390,210 @@ async def submit_dailymed_mechanism_for_review(
         "evidence_level": "source_asserted",
         "notice": extracted.get("notice"),
     }
+
+@router.post("/peptides/{peptide_id}/mechanisms/gtopdb", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("enrichment_write", settings.enrichment_rate_limit_per_window))])
+async def submit_gtopdb_mechanism_for_review(
+    peptide_id: UUID,
+    payload: GtoPdbMechanismSubmission,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """Import source-reported GtoPdb peptide/target interactions into independent review."""
+    organization_id, role = _candidate_membership(current_user, db)
+    if role not in {"organization_admin", "curator", "reviewer", "researcher"}:
+        raise HTTPException(status_code=403, detail="Researcher, curator or reviewer membership is required.")
+    if not settings.gtopdb_api_key:
+        raise HTTPException(status_code=503, detail="GtoPdb is not configured. Set GTOPDB_API_KEY after registering with the source.")
+
+    peptide = db.execute(text("""
+        SELECT p.id, p.preferred_name
+        FROM peptides p
+        WHERE p.id=:peptide_id
+          AND (p.review_status='verified' OR EXISTS (
+              SELECT 1 FROM curation_reviews review
+              WHERE review.entity_type='peptide' AND review.entity_id=p.id
+                AND review.owner_organization_id=:organization_id
+          ))
+    """), {"peptide_id": peptide_id, "organization_id": organization_id}).mappings().first()
+    if peptide is None:
+        raise HTTPException(status_code=404, detail="Peptide dossier not found or not accessible.")
+    if payload.chemical_form_id:
+        form_exists = db.execute(text("""
+            SELECT 1 FROM peptide_chemical_forms
+            WHERE id=:form_id AND peptide_id=:peptide_id
+        """), {"form_id": payload.chemical_form_id, "peptide_id": peptide_id}).first()
+        if not form_exists:
+            raise HTTPException(status_code=422, detail="Chemical form does not belong to this peptide dossier.")
+
+    try:
+        ligand = await GtoPdbProvider().get_peptide_ligand(payload.ligand_id, settings.gtopdb_api_key)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail="GtoPdb ligand was not found.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Invalid GtoPdb ligand request.") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail="GtoPdb could not be reached or returned an upstream error.") from exc
+
+    ligand_type = str(ligand.get("ligand_type") or "")
+    if "peptide" not in ligand_type.casefold():
+        raise HTTPException(status_code=422, detail="The selected GtoPdb ligand is not explicitly classified as a peptide.")
+    interactions = ligand.get("reported_interactions") or []
+    usable_interactions = []
+    for interaction in interactions[:50]:
+        action = interaction.get("type") or interaction.get("interactionType") or interaction.get("action")
+        target = interaction.get("targetName") or interaction.get("target_name") or interaction.get("target")
+        if isinstance(target, dict):
+            target = target.get("name") or target.get("preferredName")
+        if action and str(action).strip() and target and str(target).strip():
+            usable_interactions.append(interaction)
+    if not usable_interactions:
+        raise HTTPException(status_code=422, detail="GtoPdb has no explicit target-and-action interaction records for this ligand; no mechanism record was created.")
+
+    source_id = ligand.get("source_identifier")
+    source_url = ligand.get("source_url")
+    if not source_id or not source_url:
+        raise HTTPException(status_code=502, detail="GtoPdb did not return a stable ligand identifier and source URL.")
+    source_payload = {
+        "source": "IUPHAR/BPS Guide to PHARMACOLOGY",
+        "source_version": "GtoPdb API",
+        "ligand_id": payload.ligand_id,
+        "candidate_name": ligand.get("candidate_name"),
+        "ligand_type": ligand_type,
+        "synonyms": ligand.get("synonyms"),
+        "reported_interactions": interactions,
+        "reported_targets": ligand.get("reported_target"),
+        "reported_mechanism": ligand.get("reported_mechanism"),
+        "retrieved_at": datetime.now(timezone.utc).isoformat(),
+        "curation_status": "not_reviewed",
+        "license_notice": "GtoPdb database ODbL and content CC BY-SA 4.0; attribution and share-alike terms require review before redistribution.",
+    }
+    source = persist_normalized_source_record(
+        db,
+        source_name="IUPHAR/BPS Guide to PHARMACOLOGY",
+        source_identifier=str(source_id),
+        source_url=source_url,
+        title=ligand.get("candidate_name") or f"GtoPdb peptide ligand {source_id}",
+        payload=source_payload,
+        source_version="GtoPdb API",
+    )
+
+    created = []
+    existing_ids = []
+    for index, interaction in enumerate(usable_interactions, start=1):
+        target = (
+            interaction.get("targetName")
+            or interaction.get("target_name")
+            or interaction.get("target")
+        )
+        if isinstance(target, dict):
+            target = target.get("name") or target.get("preferredName")
+        action = (
+            interaction.get("type")
+            or interaction.get("interactionType")
+            or interaction.get("action")
+        )
+        if not action:
+            continue
+        target_name = str(target).strip()[:500]
+        action_text = str(action).strip()[:500]
+        statement = (
+            f"GtoPdb reports {action_text} for peptide ligand "
+            f"{ligand.get('candidate_name') or source_id} at {target_name}."
+        )
+        source_locator = (
+            f"GtoPdb ligand {source_id}; interaction {index}; "
+            f"target={target_name}; action={action_text}"
+        )
+        existing = db.execute(text("""
+            SELECT id FROM peptide_mechanisms
+            WHERE peptide_id=:peptide_id
+              AND chemical_form_id IS NOT DISTINCT FROM :chemical_form_id
+              AND source_record_id=:source_id
+              AND source_locator=:source_locator
+            ORDER BY created_at DESC LIMIT 1
+        """), {
+            "peptide_id": peptide_id, "chemical_form_id": payload.chemical_form_id,
+            "source_id": source["source_record_id"], "source_locator": source_locator,
+        }).scalar_one_or_none()
+        if existing:
+            existing_ids.append(str(existing))
+            continue
+
+        mechanism = db.execute(text("""
+            INSERT INTO peptide_mechanisms (
+                peptide_id, chemical_form_id, mechanism_title, mechanism_statement,
+                mechanism_class, target_name, target_action, binding_or_interaction,
+                evidence_level, evidence_type, limitations, source_record_id,
+                source_locator, source_excerpt, model_or_method, review_status
+            ) VALUES (
+                :peptide_id, :chemical_form_id, :title, :statement,
+                'unknown', :target_name, :target_action, :interaction,
+                'source_asserted', 'unknown', :limitations, :source_id,
+                :source_locator, :excerpt, :method, 'in_review'
+            )
+            RETURNING id, review_status
+        """), {
+            "peptide_id": peptide_id,
+            "chemical_form_id": payload.chemical_form_id,
+            "title": f"GtoPdb reported interaction: {action_text[:140]}",
+            "statement": statement,
+            "target_name": target_name,
+            "target_action": action_text[:1000],
+            "interaction": action_text[:1000],
+            "limitations": (
+                "This is an interaction assertion reproduced from an expert-curated GtoPdb record, "
+                "not a complete mechanistic pathway or proof of clinical effect. Confirm the exact "
+                "peptide/chemical-form identity, target subtype, species, assay context, interaction "
+                "direction and source record before approving or expanding the mechanism."
+            ),
+            "source_id": source["source_record_id"],
+            "source_locator": source_locator,
+            "excerpt": json.dumps(interaction, ensure_ascii=False, default=str)[:4000],
+            "method": "IUPHAR/BPS Guide to PHARMACOLOGY API interaction import; source-reported fields only",
+        }).mappings().one()
+
+        review = db.execute(text("""
+            INSERT INTO curation_reviews (
+                entity_type, entity_id, source_record_id, review_status, priority,
+                submitted_by, owner_organization_id
+            ) VALUES (
+                'peptide_mechanism', :mechanism_id, :source_id, 'in_review',
+                'normal', :submitter, :organization_id
+            )
+            RETURNING id, review_status
+        """), {
+            "mechanism_id": mechanism["id"], "source_id": source["source_record_id"],
+            "submitter": current_user["id"], "organization_id": organization_id,
+        }).mappings().one()
+
+        db.execute(text("""
+            INSERT INTO audit_events (actor_user_id, organization_id, action, entity_type, entity_id, event_metadata)
+            VALUES (:actor, :org, 'peptide_mechanism_submitted_for_review', 'peptide_mechanism', :mechanism_id,
+                    jsonb_build_object('peptide_id', :peptide_id, 'source', 'GtoPdb',
+                                       'ligand_id', :ligand_id, 'interaction_index', :interaction_index,
+                                       'evidence_level', 'source_asserted'))
+        """), {
+            "actor": current_user["id"], "org": organization_id, "mechanism_id": mechanism["id"],
+            "peptide_id": peptide_id, "ligand_id": payload.ligand_id, "interaction_index": index,
+        })
+        created.append({"mechanism_id": str(mechanism["id"]), "review_id": str(review["id"])})
+
+    db.commit()
+    return {
+        "source": "IUPHAR/BPS Guide to PHARMACOLOGY",
+        "ligand_id": payload.ligand_id,
+        "created": created,
+        "already_exists": existing_ids,
+        "created_count": len(created),
+        "existing_count": len(existing_ids),
+        "review_status": "in_review" if created else "already_submitted",
+        "evidence_level": "source_asserted",
+        "notice": (
+            "GtoPdb target interactions are source-reported pharmacology evidence, not automatically "
+            "a complete mechanism of action. Each imported interaction requires independent curator review."
+        ),
+    }
+
 
 @router.post("/discover-peptides", status_code=200, dependencies=[Depends(authenticated_write_rate_limit("enrichment_write", settings.enrichment_rate_limit_per_window))])
 async def discover_and_persist_peptide_candidates(

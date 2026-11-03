@@ -40,7 +40,9 @@ export default function EnrichmentPage() {
   const [userLabel, setUserLabel] = useState("");
   const [peptideId, setPeptideId] = useState("");
   const [dailymedSetId, setDailymedSetId] = useState("");
+  const [gtopdbLigandId, setGtopdbLigandId] = useState("");
   const [mechanismSubmitting, setMechanismSubmitting] = useState(false);
+  const [gtopdbSubmitting, setGtopdbSubmitting] = useState(false);
   const [result, setResult] = useState<EnrichmentResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -110,6 +112,29 @@ export default function EnrichmentPage() {
       setError(err instanceof Error ? err.message : "Mechanism submission failed.");
     } finally {
       setMechanismSubmitting(false);
+    }
+  }
+
+  async function submitGtoPdbMechanism(event: FormEvent) {
+    event.preventDefault();
+    if (!token || peptideId.trim().length !== 36 || !gtopdbLigandId.trim()) return;
+    setGtopdbSubmitting(true); setError(""); setNotice("");
+    try {
+      const response = await fetch(API_BASE + "/api/v1/enrichment/peptides/" + encodeURIComponent(peptideId.trim()) + "/mechanisms/gtopdb", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+        body: JSON.stringify({ ligand_id: Number(gtopdbLigandId.trim()) })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Could not import GtoPdb interactions.");
+      setNotice(data.created_count
+        ? data.created_count + " GtoPdb interaction record(s) were saved as source-reported evidence and submitted for independent curator review."
+        : "These GtoPdb interaction records were already submitted for review.");
+      await loadQueue();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "GtoPdb mechanism submission failed.");
+    } finally {
+      setGtopdbSubmitting(false);
     }
   }
 
@@ -189,6 +214,13 @@ export default function EnrichmentPage() {
         <div className="flex gap-2"><button onClick={() => void loadQueue()} className="rounded-full border border-slate-600 px-4 py-2 text-xs">Load curator queue</button><button onClick={() => { setToken(""); setResult(null); setUserLabel(""); setQueue([]); }} className="rounded-full border border-slate-600 px-4 py-2 text-xs">Sign out</button></div>
       </div>
       <section className="panel mt-5 p-5">
+        <form onSubmit={discover} className="grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
+          <label className="block"><span className={label}>Peptide dossier UUID</span><input className={field} required minLength={36} maxLength={36} value={peptideId} onChange={e => setPeptideId(e.target.value)} placeholder="Paste the peptide record UUID" /></label>
+          <button disabled={loading || peptideId.trim().length !== 36} className="rounded-full bg-emerald-400 px-6 py-3 text-sm font-semibold text-slate-950 disabled:opacity-50">{loading ? "Searching sources…" : "Discover evidence"}</button>
+        </form>
+        <p className="muted mt-3 text-xs">Find the UUID in a submitted dossier or the curation queue. Discovery currently searches the peptide's preferred name and aliases.</p>
+      </section>
+       <section className="panel mt-5 p-5">
         <h2 className="text-lg font-semibold">Import a DailyMed mechanism of action</h2>
         <p className="muted mt-2 text-sm">Paste a DailyMed SPL Set ID from a source-backed discovery record. The system extracts only Section 12.1 and submits it as an unverified mechanism for independent curator review.</p>
         <form onSubmit={submitDailyMedMechanism} className="mt-4 grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
@@ -199,13 +231,16 @@ export default function EnrichmentPage() {
       </section>
 
       <section className="panel mt-5 p-5">
-        <form onSubmit={discover} className="grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
-          <label className="block"><span className={label}>Peptide dossier UUID</span><input className={field} required minLength={36} maxLength={36} value={peptideId} onChange={e => setPeptideId(e.target.value)} placeholder="Paste the peptide record UUID" /></label>
-          <button disabled={loading || peptideId.trim().length !== 36} className="rounded-full bg-emerald-400 px-6 py-3 text-sm font-semibold text-slate-950 disabled:opacity-50">{loading ? "Searching sources…" : "Discover evidence"}</button>
+        <h2 className="text-lg font-semibold">Import GtoPdb peptide-target interactions</h2>
+        <p className="muted mt-2 text-sm">Enter an exact IUPHAR/BPS Guide to PHARMACOLOGY peptide ligand ID. Explicit target-action interactions are imported individually as source-reported evidence; they are not expanded into an inferred signalling pathway.</p>
+        <form onSubmit={submitGtoPdbMechanism} className="mt-4 grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
+          <label className="block"><span className={label}>GtoPdb peptide ligand ID</span><input className={field} required type="number" min={1} step={1} value={gtopdbLigandId} onChange={e => setGtopdbLigandId(e.target.value)} placeholder="e.g. 1234" /></label>
+          <button disabled={gtopdbSubmitting || !gtopdbLigandId.trim() || peptideId.trim().length !== 36} className="rounded-full border border-emerald-400/50 px-6 py-3 text-sm font-semibold text-emerald-200 disabled:opacity-50">{gtopdbSubmitting ? "Importing interactions…" : "Import interactions for review"}</button>
         </form>
-        <p className="muted mt-3 text-xs">Find the UUID in a submitted dossier or the curation queue. Discovery currently searches the peptide's preferred name and aliases.</p>
+        <p className="muted mt-3 text-xs">Requires the platform's registered GtoPdb API key. Each record remains unverified until an independent curator checks ligand identity, target subtype and source context. GtoPdb licensing and attribution requirements apply.</p>
       </section>
-    </>}
+
+   </>}
 
     {error && <div role="alert" className="mt-5 rounded-xl border border-rose-400/30 bg-rose-400/5 p-4 text-sm text-rose-200">{error}</div>}
     {notice && <div role="status" className="mt-5 rounded-xl border border-emerald-400/30 bg-emerald-400/5 p-4 text-sm text-emerald-200">{notice}</div>}

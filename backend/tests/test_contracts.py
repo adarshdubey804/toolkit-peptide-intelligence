@@ -1659,3 +1659,19 @@ def test_fda_and_dailymed_research_routes_are_registered_and_bounded():
     daily_params = {item["name"]: item for item in paths["/api/v1/research/dailymed"]["get"]["parameters"]}
     assert fda_params["limit"]["schema"]["maximum"] == 99
     assert daily_params["limit"]["schema"]["maximum"] == 100
+
+
+def test_global_peptide_discovery_persistence_route_is_registered_and_rate_limited():
+    paths = app.openapi()["paths"]
+    route = paths["/api/v1/enrichment/discover-peptides"]["post"]
+    assert route["requestBody"]["required"] is True
+    assert "PeptideDiscoveryRequest" in str(route["requestBody"])
+    from app.routers.enrichment import router as enrichment_router
+    discovery_route = next(
+        item for item in enrichment_router.routes
+        if item.path == "/api/v1/enrichment/discover-peptides"
+    )
+    assert any(
+        getattr(dependency.call, "rate_limit_scope", None) == "enrichment_write"
+        for dependency in discovery_route.dependant.dependencies
+    )

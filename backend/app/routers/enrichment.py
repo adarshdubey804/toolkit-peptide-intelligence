@@ -1,6 +1,6 @@
 import asyncio
 from datetime import datetime, timezone
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 import httpx
@@ -157,7 +157,7 @@ async def discover_peptide_evidence(
 
 import hashlib
 import json
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.exc import IntegrityError
 
 SOURCE_HOSTS = {
@@ -745,6 +745,177 @@ def list_global_peptide_discovery_candidates(
         "offset": offset,
         "scope": "Source observations only. A candidate is not a verified peptide entity or regulatory status determination.",
     }
+
+
+class GlobalDiscoveryDecision(BaseModel):
+    decision: Literal[
+        "accepted_as_existing_peptide", "accepted_as_new_peptide",
+        "rejected", "duplicate", "needs_more_evidence",
+    ]
+    rationale: str = Field(min_length=20, max_length=4000)
+    canonical_peptide_id: UUID | None = None
+
+    @field_validator("rationale")
+    @classmethod
+    def validate_rationale_text(cls, value: str) -> str:
+        cleaned = value.strip()
+        if len(cleaned) < 20:
+            raise ValueError("Rationale must contain at least 20 non-space characters.")
+        return cleaned
+
+    @field_validator("canonical_peptide_id")
+    @classmethod
+    def validate_canonical_link(cls, value, info):
+        decision = info.data.get("decision")
+        if decision == "accepted_as_existing_peptide" and value is None:
+            raise ValueError("Select a verified canonical peptide when accepting as an existing peptide.")
+        if decision != "accepted_as_existing_peptide" and value is not None:
+            raise ValueError("A canonical peptide link is only valid for accepted_as_existing_peptide.")
+        return value
+
+
+@router.get("/discovery-candidates/{candidate_id}")
+def get_global_peptide_discovery_candidate(
+    candidate_id: UUID,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """Retrieve the source-backed, versioned dossier for one unresolved peptide candidate."""
+    organization_id, role = _candidate_membership(current_user, db)
+    if role not in {"organization_admin", "curator", "reviewer", "researcher"}:
+        raise HTTPException(status_code=403, detail="Researcher, curator or reviewer membership is required.")
+
+    candidate = db.execute(text("""
+        SELECT c.*, s.source_name, s.source_identifier, s.source_url,
+               s.retrieved_at AS source_retrieved_at, s.license_notes,
+               p.preferred_name AS canonical_peptide_name
+        FROM peptide_discovery_candidates c
+        JOIN source_records s ON s.id=c.source_record_id
+        LEFT JOIN peptides p ON p.id=c.canonical_peptide_id
+        WHERE c.id=:id
+    """), {"id": candidate_id}).mappings().first()
+    if candidate is None:
+        raise HTTPException(status_code=404, detail="Peptide discovery candidate not found.")
+
+    observations = db.execute(text("""
+        SELECT id, source_version, payload_hash, observed_at, payload
+        FROM peptide_discovery_observations
+        WHERE candidate_id=:id
+        ORDER BY observed_at DESC
+        LIMIT 10
+    """), {"id": candidate_id}).mappings().all()
+    decisions = db.execute(text("""
+        SELECT d.id, d.decision, d.canonical_peptide_id, d.rationale,
+               d.evidence_source_record_ids, d.decided_at,
+               reviewer.display_name AS reviewer_name
+        FROM peptide_discovery_decisions d
+        LEFT JOIN user_profiles reviewer ON reviewer.id=d.reviewer_id
+        WHERE d.candidate_id=:id
+        ORDER BY d.decided_at DESC
+        LIMIT 50
+    """), {"id": candidate_id}).mappings().all()
+
+    return {
+        "candidate": dict(candidate),
+        "observations": [dict(row) for row in observations],
+        "decisions": [dict(row) for row in decisions],
+        "permissions": {
+            "can_review": role in {"organization_admin", "curator", "reviewer"},
+            "organization_id": str(organization_id),
+        },
+        "dossier_notice": (
+            "This is a provisional source-observation folder, not a verified canonical peptide dossier. "
+            "Source sequence, chemical form, target and mechanism fields remain unreviewed until curated."
+        ),
+    }
+
+
+@router.post("/discovery-candidates/{candidate_id}/decisions", status_code=201,
+             dependencies=[Depends(authenticated_write_rate_limit("enrichment_write", settings.enrichment_rate_limit_per_window))])
+def decide_global_peptide_discovery_candidate(
+    candidate_id: UUID,
+    payload: GlobalDiscoveryDecision,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    organization_id, role = _candidate_membership(current_user, db)
+    if role not in {"organization_admin", "curator", "reviewer"}:
+        raise HTTPException(status_code=403, detail="Curator or reviewer permission is required.")
+
+    candidate = db.execute(text("""
+        SELECT id, source_record_id, candidate_status
+        FROM peptide_discovery_candidates
+        WHERE id=:id FOR UPDATE
+    """), {"id": candidate_id}).mappings().first()
+    if candidate is None:
+        raise HTTPException(status_code=404, detail="Peptide discovery candidate not found.")
+
+    decision = payload.decision
+    canonical_id = payload.canonical_peptide_id
+    if decision == "accepted_as_existing_peptide":
+        canonical = db.execute(text("""
+            SELECT id FROM peptides WHERE id=:id AND review_status='verified'
+        """), {"id": canonical_id}).first()
+        if canonical is None:
+            raise HTTPException(status_code=422, detail="The linked canonical peptide must be curator-verified.")
+        next_status, identity_status = "accepted", "matched"
+    elif decision == "accepted_as_new_peptide":
+        next_status, identity_status = "accepted", "new_entity"
+    elif decision == "rejected":
+        next_status, identity_status = "rejected", "rejected"
+    elif decision == "duplicate":
+        next_status, identity_status = "duplicate", "ambiguous"
+    else:
+        next_status, identity_status = "needs_review", "unresolved"
+
+    rationale = payload.rationale.strip()
+    db.execute(text("""
+        INSERT INTO peptide_discovery_decisions
+            (candidate_id, decision, canonical_peptide_id, rationale,
+             evidence_source_record_ids, reviewer_id)
+        VALUES (:candidate, :decision, :canonical, :rationale,
+                ARRAY[CAST(:source_id AS uuid)], :reviewer)
+    """), {
+        "candidate": candidate_id, "decision": decision, "canonical": canonical_id,
+        "rationale": rationale, "source_id": candidate["source_record_id"],
+        "reviewer": current_user["id"],
+    })
+    db.execute(text("""
+        UPDATE peptide_discovery_candidates
+        SET candidate_status=:status, identity_match_status=:identity,
+            canonical_peptide_id=:canonical, match_rationale=:rationale,
+            updated_at=now()
+        WHERE id=:candidate
+    """), {
+        "status": next_status, "identity": identity_status, "canonical": canonical_id,
+        "rationale": rationale, "candidate": candidate_id,
+    })
+    db.execute(text("""
+        INSERT INTO audit_events
+            (actor_user_id, organization_id, action, entity_type, entity_id, event_metadata)
+        VALUES (:actor, :org, 'global_peptide_discovery_decided',
+                'peptide_discovery_candidate', :id,
+                jsonb_build_object('decision', :decision, 'candidate_status', :status,
+                                   'identity_match_status', :identity,
+                                   'canonical_peptide_id', :canonical))
+    """), {
+        "actor": current_user["id"], "org": organization_id, "id": candidate_id,
+        "decision": decision, "status": next_status, "identity": identity_status,
+        "canonical": str(canonical_id) if canonical_id else None,
+    })
+    db.commit()
+    return {
+        "candidate_id": str(candidate_id),
+        "decision": decision,
+        "candidate_status": next_status,
+        "identity_match_status": identity_status,
+        "canonical_peptide_id": str(canonical_id) if canonical_id else None,
+        "notice": (
+            "Accepted as a new peptide identity. Canonical dossier creation remains a separate governed step."
+            if decision == "accepted_as_new_peptide" else "Decision recorded with immutable history."
+        ),
+    }
+
 
 
 @router.post("/peptides/{peptide_id}/candidates", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("enrichment_write", settings.enrichment_rate_limit_per_window))])

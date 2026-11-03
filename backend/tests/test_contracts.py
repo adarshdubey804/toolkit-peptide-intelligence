@@ -2268,3 +2268,29 @@ def test_workbook_import_preserves_companion_worksheet_metadata():
     assert "source_row JSONB" in sql
     from app.routers import workbook_import
     assert "Expected 128 populated peptide rows" in __import__("inspect").getsource(workbook_import.import_peptide_workbook)
+
+
+def test_dossier_references_must_map_to_claims_and_use_https():
+    from pydantic import ValidationError
+    from app.routers.workbook_import import DossierReferenceInput, DossierMediaInput
+    valid = {
+        "claim_text": "Binds the target receptor in a concentration-dependent assay.",
+        "title": "Primary pharmacology study",
+        "source_name": "PubMed",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/12345678/",
+        "locator": "Figure 2",
+        "evidence_type": "in_vitro",
+    }
+    assert DossierReferenceInput(**valid).claim_text.startswith("Binds")
+    with pytest.raises(ValidationError):
+        DossierReferenceInput(**{**valid, "url": "http://example.org/source"})
+    with pytest.raises(ValidationError):
+        DossierReferenceInput(**{key: value for key, value in valid.items() if key != "claim_text"})
+    media = {
+        "title": "Peptide structure",
+        "image_url": "https://pubchem.ncbi.nlm.nih.gov/image.png",
+        "alt_text": "2D molecular structure depiction",
+        "source_name": "PubChem",
+        "license_or_reuse_terms": "PubChem record image terms",
+    }
+    assert DossierMediaInput(**media).image_url.scheme == "https"

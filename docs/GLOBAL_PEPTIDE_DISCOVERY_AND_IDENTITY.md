@@ -39,6 +39,7 @@ The endpoint is authenticated and rate-limited. It does not create a canonical p
 |---|---|---|
 | FDA Drugs@FDA via openFDA | Application, product presentation, strength, route, sponsor and submission action observations | Not all CBER biologics or non-approved products; a missing record is not proof of non-approval |
 | FDA Purple Book | FDA-licensed CDER/CBER biologics, BLA/product identifiers, strength, dosage form, route, licensure and biosimilar relationships | Includes many non-peptide biologics; a match is not proof that the entity is a peptide |
+| IUPHAR/BPS Guide to PHARMACOLOGY | Expert-curated peptide/endogenous-peptide ligands and source-reported target interactions | Requires registration/API key; not a complete peptide inventory; license and commercial-use terms apply |
 | NLM DailyMed | Structured Product Label identifiers, versions, titles and publication dates | Current SPL may differ from the last FDA-approved label; label presence is not approval proof |
 | Health Canada Drug Product Database | Canadian DIN, ingredient/strength, product class, status, dosage form and route | Includes human and non-human product classes; status is Canadian and source-specific |
 | ClinicalTrials.gov | Study identifiers, status, phase, sponsor, interventions and summaries | An intervention name does not prove the investigational product is a peptide |

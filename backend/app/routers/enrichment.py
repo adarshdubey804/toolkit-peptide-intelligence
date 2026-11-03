@@ -409,7 +409,7 @@ async def discover_and_persist_peptide_candidates(
                 """), {
                     "candidate_id": candidate["id"],
                     "source_id": snapshot["source_record_id"],
-                    "source_version": None,
+                    "source_version": str(item.get("spl_version")) if item.get("spl_version") is not None else None,
                     "payload": json.dumps(item, ensure_ascii=False, default=str),
                     "payload_hash": snapshot["content_hash"],
                 })

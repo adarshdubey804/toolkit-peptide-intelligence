@@ -1743,6 +1743,18 @@ def test_dailymed_extracts_only_explicit_moa_section():
     assert result["evidence_level"] == "source_asserted"
 
 
+def test_dailymed_title_fallback_is_explicitly_marked():
+    result = extract_mechanism_of_action(
+        '<document xmlns="urn:hl7-org:v3"><component><section>'
+        '<title>12.1 Mechanism of Action</title>'
+        '<text><paragraph>Explicit fallback mechanism text from the label.</paragraph></text>'
+        '</section></component></document>'
+    )
+    assert result["found"] is True
+    assert result["section_code"] == "title_fallback"
+    assert result["extraction_status"] == "extracted_from_explicit_spl_section"
+
+
 def test_dailymed_missing_moa_section_is_not_inferred():
     result = extract_mechanism_of_action(
         '<document xmlns="urn:hl7-org:v3"><component><section>'

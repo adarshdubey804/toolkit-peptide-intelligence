@@ -110,7 +110,7 @@ export default function EditPeptideDossierPage() {
         <textarea className={field + " mt-3 min-h-56"} spellCheck={false} value={contentText} onChange={e=>setContentText(e.target.value)} />
       </section>
       <section className="panel p-5">
-        <h2 className="font-semibold">References and claim sources</h2><p className="muted mt-1 text-xs">Array of objects: title, source_name, url, DOI, PMID, registry_id, locator, evidence_type, notes.</p>
+        <h2 className="font-semibold">References and claim sources</h2><p className="muted mt-1 text-xs">Array of objects: claim_text, claim_key, title, source_name, HTTPS url, DOI, PMID, registry_id, exact locator, evidence_type, notes.</p>
         <textarea className={field + " mt-3 min-h-48"} spellCheck={false} value={citationsText} onChange={e=>setCitationsText(e.target.value)} />
       </section>
       <section className="panel p-5">

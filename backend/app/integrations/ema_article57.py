@@ -57,6 +57,7 @@ def parse_article57_workbook(content: bytes, query: str, limit: int = 30) -> lis
     term = _norm(query)
     results: list[dict] = []
     seen: set[str] = set()
+    header_found = False
     try:
         for sheet in workbook.worksheets:
             header_row_number = None
@@ -72,6 +73,7 @@ def parse_article57_workbook(content: bytes, query: str, limit: int = 30) -> lis
                     break
             if header_row_number is None:
                 continue
+            header_found = True
 
             indexes = {
                 "product_name": _column_index(headers, ("product name", "product short name")),
@@ -128,6 +130,8 @@ def parse_article57_workbook(content: bytes, query: str, limit: int = 30) -> lis
                     return results
     finally:
         workbook.close()
+    if not header_found:
+        raise ValueError("EMA Article 57 workbook schema changed: required product and active-substance columns were not found.")
     return results
 
 
@@ -173,6 +177,9 @@ class EmaArticle57Provider:
             raise ValueError("EMA Article 57 result limit must be between 1 and 50.")
         content, etag, last_modified, retrieved_at = await self._download_snapshot()
         items = parse_article57_workbook(content, term, limit)
+        source_version = last_modified or etag or retrieved_at
+        for item in items:
+            item["source_version"] = source_version
         return {
             "source": SOURCE_NAME,
             "query": term,

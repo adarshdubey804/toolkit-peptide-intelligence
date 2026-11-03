@@ -183,11 +183,31 @@ export default function DiscoveryCandidateDossierPage() {
       {candidate.canonical_peptide_id && <Link href={"/peptides/" + candidate.canonical_peptide_id} className="mt-4 inline-block text-sm text-emerald-300">Open linked canonical peptide dossier →</Link>}
     </header>
 
+    <nav aria-label="Candidate dossier sections" className="panel mt-6 p-4">
+      <p className="text-xs uppercase tracking-[.16em] text-slate-400">Individual peptide dossier</p>
+      <div className="mt-3 flex flex-wrap gap-2 text-sm">
+        {[
+          ["identity", "Identity & source"],
+          ["sequence", "Sequence & chemistry"],
+          ["mechanism", "Targets & MOA"],
+          ["dbaasp-evidence", "DBAASP evidence"],
+          ["chembl-evidence", "ChEMBL evidence"],
+          ["dailymed-mechanism", "DailyMed MOA"],
+          ["ema-product", "EMA product"],
+          ["source-metadata", "Source metadata"],
+          ["source-history", "Source history"],
+          ["curation-history", "Curation history"],
+          ["curation", "Curator review"],
+        ].map(([id, label]) => <a key={id} href={`#${id}`} className="rounded-full border border-slate-700 px-3 py-2 text-emerald-300 hover:border-emerald-400">{label}</a>)}
+      </div>
+      <p className="muted mt-3 text-xs">This source candidate has its own stable dossier URL. If identity is confirmed against an existing peptide, the dossier links to that canonical peptide folder; unresolved candidates remain separate until reviewed.</p>
+    </nav>
+
     {error && <div role="alert" className="mt-5 rounded-xl border border-rose-400/30 bg-rose-400/5 p-4 text-sm text-rose-200">{error}</div>}
     {notice && <div role="status" className="mt-5 rounded-xl border border-emerald-400/30 bg-emerald-400/5 p-4 text-sm text-emerald-200">{notice}</div>}
 
     <div className="mt-8 grid gap-4 lg:grid-cols-2">
-      <section className="panel p-5">
+      <section id="identity" className="panel scroll-mt-24 p-5">
         <h2 className="text-lg font-semibold">Identity and source</h2>
         <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
           <dt className="muted">Source identifier</dt><dd className="break-all">{candidate.source_identifier}</dd>
@@ -203,7 +223,7 @@ export default function DiscoveryCandidateDossierPage() {
         {candidate.license_notes && <p className="muted mt-3 text-xs">Source license: {candidate.license_notes}</p>}
       </section>
 
-      <section className="panel p-5">
+      <section id="sequence" className="panel scroll-mt-24 p-5">
         <h2 className="text-lg font-semibold">Sequence and chemical form</h2>
         <p className="muted mt-3 text-xs">Source-reported data only; not canonicalized or chemically validated.</p>
         <p className="mt-4 text-xs font-medium text-slate-400">Reported sequence ({candidate.reported_sequence_type || "type not specified"})</p>
@@ -212,7 +232,7 @@ export default function DiscoveryCandidateDossierPage() {
         <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-all rounded-xl bg-slate-950 p-3 text-xs">{candidate.reported_chemical_form || "No chemical-form representation reported."}</pre>
       </section>
 
-      <section className="panel p-5">
+      <section id="mechanism" className="panel scroll-mt-24 p-5">
         <h2 className="text-lg font-semibold">Target and mechanism hints</h2>
         <p className="muted mt-3 text-xs">These fields are source assertions and must not be treated as verified mechanisms.</p>
         <p className="mt-4 text-xs font-medium text-slate-400">Reported target</p>
@@ -221,7 +241,7 @@ export default function DiscoveryCandidateDossierPage() {
         <p className="mt-2 text-sm">{candidate.reported_mechanism || "Not reported"}</p>
       </section>
 
-      {candidate.source_name.includes("DBAASP") && <section className="panel p-5">
+      {candidate.source_name.includes("DBAASP") && <section id="dbaasp-evidence" className="panel scroll-mt-24 p-5">
         <h2 className="text-lg font-semibold">DBAASP experimental evidence</h2>
         <p className="muted mt-1 text-xs">Source-reported laboratory observations. Preserve assay context; these are not clinical efficacy or incidence estimates.</p>
         {dbaaspActivities.length > 0 && <div className="mt-4"><h3 className="text-sm font-semibold">Target activity ({dbaaspActivities.length})</h3>
@@ -258,7 +278,7 @@ export default function DiscoveryCandidateDossierPage() {
           <ul className="mt-2 space-y-2 text-xs">{dbaaspArticles.map((item, index) => <li key={index} className="rounded-lg border border-slate-800 p-3">{displayValue(item.title)} ({displayValue(item.year)}) · PMID: {displayValue(asRecord(item.pubmed).pubmedId)}</li>)}</ul>
         </div>}
       </section>}
-      {candidate.source_name.includes("ChEMBL") && <section className="panel p-5">
+      {candidate.source_name.includes("ChEMBL") && <section id="chembl-evidence" className="panel scroll-mt-24 p-5">
         <h2 className="text-lg font-semibold">ChEMBL peptide biotherapeutic evidence</h2>
         <p className="muted mt-1 text-xs">HELM notation and mechanism entries are copied from ChEMBL; source-reported only and not a canonical chemical identity or regulatory determination.</p>
         <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
@@ -279,13 +299,13 @@ export default function DiscoveryCandidateDossierPage() {
         </div>}
         <p className="muted mt-3 text-xs">ChEMBL data are CC BY-SA 3.0. Attribution and share-alike obligations apply. A ChEMBL mechanism is not automatically a complete pathway or proof of clinical effect.</p>
       </section>}
-      {dailymedMechanism && <section className="panel p-5">
+      {dailymedMechanism && <section id="dailymed-mechanism" className="panel scroll-mt-24 p-5">
         <h2 className="text-lg font-semibold">Source-extracted mechanism of action</h2>
         <p className="muted mt-1 text-xs">DailyMed SPL Section 12.1 · source-reported · not yet curator-verified</p>
         <p className="mt-3 whitespace-pre-wrap text-sm leading-6">{dailymedMechanism}</p>
         <p className="muted mt-2 text-xs">{displayValue(sourceRecord.mechanism_extraction_notice)}</p>
       </section>}
-      {candidate.source_name.includes("European Medicines Agency") && <section className="panel p-5">
+      {candidate.source_name.includes("European Medicines Agency") && <section id="ema-product" className="panel scroll-mt-24 p-5">
         <h2 className="text-lg font-semibold">EMA Article 57 product observation</h2>
         <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
           <p>Product: {displayValue(sourceRecord.product_name)}</p>
@@ -297,7 +317,7 @@ export default function DiscoveryCandidateDossierPage() {
         </div>
         <p className="muted mt-3 text-xs">{displayValue(sourceRecord.coverage_notice)}</p>
       </section>}
-      <section className="panel p-5">
+      <section id="source-metadata" className="panel scroll-mt-24 p-5">
         <h2 className="text-lg font-semibold">Source metadata</h2>
         <details className="mt-3">
           <summary className="cursor-pointer text-sm text-emerald-300">View original normalized source payload</summary>
@@ -306,7 +326,7 @@ export default function DiscoveryCandidateDossierPage() {
       </section>
     </div>
 
-    <section className="panel mt-5 p-5">
+    <section id="source-history" className="panel mt-5 scroll-mt-24 p-5">
       <h2 className="text-lg font-semibold">Source observation history</h2>
       <p className="muted mt-2 text-xs">Immutable source snapshots; changed source content creates a new observation.</p>
       {data.observations.length ? <div className="mt-4 space-y-3">
@@ -324,7 +344,7 @@ export default function DiscoveryCandidateDossierPage() {
       </div> : <p className="muted mt-4 text-sm">No source observations have been recorded yet.</p>}
     </section>
 
-    <section className="panel mt-5 p-5">
+    <section id="curation-history" className="panel mt-5 scroll-mt-24 p-5">
       <h2 className="text-lg font-semibold">Curation decision history</h2>
       {data.decisions.length ? <div className="mt-4 space-y-3">
         {data.decisions.map(item => <article key={item.id} className="rounded-xl border border-slate-800 p-4">
@@ -336,7 +356,7 @@ export default function DiscoveryCandidateDossierPage() {
       </div> : <p className="muted mt-4 text-sm">No curation decisions have been recorded.</p>}
     </section>
 
-    {data.permissions.can_review && <section className="panel mt-5 p-5">
+    {data.permissions.can_review && <section id="curation" className="panel mt-5 scroll-mt-24 p-5">
       <h2 className="text-lg font-semibold">Curator review</h2>
       <p className="muted mt-2 text-xs">Decisions are append-only. Corrective decisions create new history entries; source observations are never overwritten.</p>
       <form onSubmit={submitDecision} className="mt-4 space-y-4">

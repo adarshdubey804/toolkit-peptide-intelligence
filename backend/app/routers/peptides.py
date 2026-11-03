@@ -220,6 +220,7 @@ def peptide_profile(peptide_id: UUID, db: Session = Depends(get_db)):
         "sequences": sequences,
         "chemical_properties": chemistry,
         "chemical_forms": chemical_forms,
+        "regulatory_authorizations": regulatory_authorizations,
         "structures": structures,
         "mechanisms_of_action": mechanisms,
         "evidence_claims": claims,

@@ -241,6 +241,7 @@ export default function DiscoveryCandidateDossierPage() {
           const url = typeof citation.url === "string" && citation.url.startsWith("https://") ? citation.url : "";
           return <article key={citation.key} className="rounded-xl border border-slate-700 p-4">
             <h3 className="font-medium">{displayValue(citation.title)}</h3>
+            <p className="mt-1 text-sm">{displayValue(citation.claim_text)}</p>
             <p className="muted mt-1 text-xs">{displayValue(citation.source_name)} · {displayValue(citation.evidence_type)}</p>
             <p className="muted mt-1 text-xs">Locator: {displayValue(citation.locator)} · DOI: {displayValue(citation.doi)} · PMID: {displayValue(citation.pmid)}</p>
             {url && <a className="mt-2 inline-block text-xs text-emerald-300" href={url} target="_blank" rel="noreferrer">Open source →</a>}

@@ -14,6 +14,7 @@ from ..rate_limit_dependencies import authenticated_write_rate_limit
 from ..integrations.clinicaltrials import ClinicalTrialsProvider
 from ..integrations.dailymed import DailyMedProvider
 from ..integrations.fda_drugsfda import FdaDrugsFdaProvider
+from ..integrations.health_canada_dpd import HealthCanadaDpdProvider
 from ..integrations.pubmed import PubMedProvider
 from ..integrations.rcsb import RCSBProvider
 from ..integrations.uniprot import UniProtProvider
@@ -182,9 +183,9 @@ class CandidateDecision(BaseModel):
 class PeptideDiscoveryRequest(BaseModel):
     query: str = Field(min_length=2, max_length=160)
     sources: list[str] = Field(
-        default_factory=lambda: ["fda_drugsfda", "dailymed", "clinicaltrials", "pubmed"],
+        default_factory=lambda: ["fda_drugsfda", "dailymed", "health_canada_dpd", "clinicaltrials", "pubmed"],
         min_length=1,
-        max_length=4,
+        max_length=5,
     )
     limit: int = Field(default=20, ge=1, le=50)
 
@@ -222,7 +223,7 @@ async def discover_and_persist_peptide_candidates(
     if role not in {"organization_admin", "curator", "reviewer", "researcher"}:
         raise HTTPException(status_code=403, detail="Researcher, curator or reviewer membership is required.")
 
-    allowed_sources = {"fda_drugsfda", "dailymed", "clinicaltrials", "pubmed"}
+    allowed_sources = {"fda_drugsfda", "dailymed", "health_canada_dpd", "clinicaltrials", "pubmed"}
     selected = list(dict.fromkeys(payload.sources))
     if not selected or not set(selected).issubset(allowed_sources):
         raise HTTPException(status_code=422, detail="Unsupported peptide discovery source.")
@@ -237,6 +238,10 @@ async def discover_and_persist_peptide_candidates(
         )
     if "dailymed" in selected:
         operations["dailymed"] = DailyMedProvider().search_by_name(query, min(payload.limit, 50), 1)
+    if "health_canada_dpd" in selected:
+        operations["health_canada_dpd"] = HealthCanadaDpdProvider().search_by_ingredient(
+            query, min(payload.limit, 50)
+        )
     if "clinicaltrials" in selected:
         operations["clinicaltrials"] = ClinicalTrialsProvider().search(query, min(payload.limit, 50))
     if "pubmed" in selected and settings.ncbi_email:
@@ -282,6 +287,22 @@ async def discover_and_persist_peptide_candidates(
                     title = item.get("title") or query
                     candidate_name = query
                     development_status = "SPL_label_record_observed"
+                elif source_key == "health_canada_dpd":
+                    identifier = item.get("drug_code")
+                    source_url = item.get("source_url")
+                    din = item.get("drug_identification_number")
+                    title = f"Health Canada DIN {din or identifier or 'unknown'}"
+                    ingredients = item.get("active_ingredients") or []
+                    candidate_name = next(
+                        (entry.get("ingredient_name") for entry in ingredients
+                         if entry.get("ingredient_name") and entry.get("ingredient_name").casefold() == query.casefold()),
+                        query,
+                    )
+                    status_rows = item.get("source_status_records") or []
+                    development_status = (
+                        status_rows[0].get("status") or status_rows[0].get("status_name")
+                        if status_rows else "source_status_not_returned"
+                    )
                 elif source_key == "clinicaltrials":
                     identifier = item.get("nct_id")
                     source_url = item.get("url")
@@ -339,7 +360,7 @@ async def discover_and_persist_peptide_candidates(
                     "url": source_url,
                     "name": candidate_name,
                     "development_status": development_status,
-                    "jurisdiction": "US" if source_key in {"fda_drugsfda", "dailymed"} else None,
+                    "jurisdiction": "US" if source_key in {"fda_drugsfda", "dailymed"} else "CA" if source_key == "health_canada_dpd" else None,
                     "sequence": item.get("sequence"),
                     "sequence_type": item.get("sequence_type"),
                     "chemical_form": item.get("chemical_form"),

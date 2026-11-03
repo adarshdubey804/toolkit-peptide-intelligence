@@ -219,6 +219,11 @@ export default function DiscoveryCandidateDossierPage() {
           <dt className="muted">Match confidence</dt><dd>{candidate.match_confidence == null ? "Not assessed" : candidate.match_confidence.toFixed(2)}</dd>
         </dl>
         {candidate.match_rationale && <p className="muted mt-4 text-xs">Identity review: {candidate.match_rationale}</p>}
+        {typeof sourceRecord.source_statement === "string" && <div className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/5 p-4">
+          <p className="text-xs font-semibold text-amber-200">Source-reported regulatory / safety note</p>
+          <p className="mt-2 text-sm leading-6">{sourceRecord.source_statement}</p>
+          <p className="muted mt-2 text-xs">This is a quotation-level source assertion, not an independent safety assessment or a drug-approval determination.</p>
+        </div>}
         <a href={candidate.source_url} target="_blank" rel="noreferrer" className="mt-5 inline-block text-sm text-emerald-300">Open original source ↗</a>
         {candidate.license_notes && <p className="muted mt-3 text-xs">Source license: {candidate.license_notes}</p>}
       </section>

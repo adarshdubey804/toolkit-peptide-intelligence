@@ -12,7 +12,7 @@
 | Japan | PMDA approved-product lists and product information search | Official public lists and search | Published approved drug product lists, selected review reports and Japanese product information; English translations are selective | Official link-out only; automated ingestion not integrated |
 | China | NMPA information-center drug product databases | Official Chinese-language data query portal and published records | Domestic and imported drug product databases; source documentation describes approval/registration numbers, product names, dosage forms, specifications, holders/manufacturers and approval dates | Official link-out only; automated ingestion not integrated |
 | China | NMPA Center for Drug Evaluation (CDE) | Official Chinese-language public information portal | Accepted drug applications, review-task disclosures, clinical-trial implied permissions, breakthrough-therapy and priority-review designations, conditional approvals and marketed-drug information | Official link-out only; automated ingestion not integrated |
-| Singapore | HSA Register of Therapeutic Products | Official Infosearch and government open-data CSV listing | Product name, licence number, active ingredients, dosage form, route, manufacturer, country of origin, approval date and classification where published; post-registration actions require checking HSA | Official link-out only; automated ingestion not integrated |
+| Singapore | HSA Register of Therapeutic Products | Official data.gov.sg datastore API plus HSA Infosearch | Product name, licence number, active ingredients, dosage form, route, manufacturer, country of origin, approval date and classification; current post-registration actions require checking HSA | Integrated read-only snapshot API; approximately six-monthly dataset refresh, not a live status feed |
 | South Korea | MFDS Drug Safety Nara | Official English/Korean public product information and review portal | Product approval information, drug information search, review results and safety/product information | Official link-out only; automated ingestion not integrated |
 | Brazil | ANVISA medicine registration consultation | Official Portuguese-language public search | Registered medicines and simplified-notification medicines; ANVISA also regulates biological products and clinical trials | Official link-out only; automated ingestion not integrated |
 | New Zealand | Medsafe Product/Application Search | Official public product and application search | Product consent and application status including consent given, provisional consent, clinical trial, pending, refused, revoked, withdrawn, not available and lapsed approval | Official link-out only; automated ingestion not integrated |
@@ -123,11 +123,13 @@ For every new jurisdiction, an adapter is accepted only after it has: (1) a sour
 - These states represent different regulatory/development milestones. An accepted application, clinical-trial implied permission or designation is not a marketing authorisation.
 - Current platform status: link-out only; automated ingestion requires source-native status mapping, Chinese-language normalization, stable identifiers and historical change coverage.
 
-### Singapore — HSA Register of Therapeutic Products (link-out stage)
+### Singapore — HSA Register of Therapeutic Products (integrated snapshot)
 - Official HSA Infosearch: `https://www.hsa.gov.sg/e-services/infosearch/`.
-- HSA's official data.gov.sg listing provides product name, licence number, active ingredients, dosage form, manufacturer, country of origin, approval date and classification fields; the published listing is updated periodically.
-- Check HSA Infosearch for current registration and post-registration actions such as transfers, cancellations and recalls.
-- Current platform status: link-out only; automated ingestion and status history are not integrated.
+- Official data.gov.sg dataset: `https://data.gov.sg/datasets/d_767279312753558cbf19d48344577084/view`.
+- The public datastore API is queried using the dataset resource ID `d_767279312753558cbf19d48344577084`. The dataset includes product name, licence number, active ingredients, dosage form, route, manufacturer, country of origin, approval date and classification.
+- The dataset's Open Data Licence permits personal and commercial reuse. Preserve attribution to HSA and data.gov.sg.
+- HSA states that the dataset is updated approximately every six months. Check HSA Infosearch for current registration and post-registration actions such as transfers, cancellations and recalls.
+- Current platform status: integrated read-only snapshot discovery; not a live status feed and not a complete change-history feed.
 
 ### South Korea — MFDS Drug Safety Nara (link-out stage)
 - Official English portal: `https://nedrug.mfds.go.kr/eng/index`.

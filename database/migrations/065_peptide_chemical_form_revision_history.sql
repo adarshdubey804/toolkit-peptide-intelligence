@@ -59,28 +59,26 @@ DECLARE
     previous_revision_id UUID;
     previous_revision_number INTEGER;
     form_snapshot JSONB;
+    latest_snapshot JSONB;
 BEGIN
     form_snapshot := to_jsonb(NEW) - 'id' - 'created_at' - 'updated_at';
 
     -- Avoid creating a new scientific revision for timestamp-only or
     -- otherwise content-neutral updates.
-    IF TG_OP = 'UPDATE' AND EXISTS (
-        SELECT 1
-        FROM peptide_chemical_form_revisions revision
-        WHERE revision.chemical_form_id = NEW.id
-          AND revision.snapshot = form_snapshot
-    ) THEN
-        RETURN NEW;
-    END IF;
-
     -- The parent row is locked by the INSERT/UPDATE that invoked this AFTER
     -- trigger, serializing revision-number allocation for this form.
-    SELECT id, revision_number
-      INTO previous_revision_id, previous_revision_number
+    SELECT id, revision_number, snapshot
+      INTO previous_revision_id, previous_revision_number, latest_snapshot
       FROM peptide_chemical_form_revisions
      WHERE chemical_form_id = NEW.id
      ORDER BY revision_number DESC
      LIMIT 1;
+
+    -- Compare only with the immediately preceding revision. Reverting to an
+    -- older snapshot is still a material change and must create a new revision.
+    IF TG_OP = 'UPDATE' AND latest_snapshot = form_snapshot THEN
+        RETURN NEW;
+    END IF;
 
     INSERT INTO peptide_chemical_form_revisions (
         chemical_form_id, revision_number, snapshot, content_hash,

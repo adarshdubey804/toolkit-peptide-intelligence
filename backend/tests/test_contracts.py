@@ -2266,6 +2266,5 @@ def test_workbook_import_preserves_companion_worksheet_metadata():
     sql = (MIGRATIONS_DIR / "071_peptide_workbook_imports.sql").read_text(encoding="utf-8")
     assert "workbook_metadata JSONB" in sql
     assert "source_row JSONB" in sql
-    assert "Expected 128 populated peptide rows" in (
-        (MIGRATIONS_DIR.parent.parent / "app" / "routers" / "workbook_import.py").read_text(encoding="utf-8")
-    )
+    from app.routers import workbook_import
+    assert "Expected 128 populated peptide rows" in __import__("inspect").getsource(workbook_import.import_peptide_workbook)

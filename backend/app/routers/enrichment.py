@@ -15,6 +15,7 @@ from ..integrations.clinicaltrials import ClinicalTrialsProvider
 from ..integrations.pubmed import PubMedProvider
 from ..integrations.rcsb import RCSBProvider
 from ..integrations.uniprot import UniProtProvider
+from ..services.source_persistence import persist_normalized_source_record
 from .auth import get_current_user
 
 router = APIRouter(prefix="/api/v1/enrichment", tags=["peptide knowledge enrichment"])
@@ -174,6 +175,16 @@ class CandidateDecision(BaseModel):
     rationale: str = Field(min_length=20, max_length=4000)
 
 
+class PeptideDiscoveryRequest(BaseModel):
+    query: str = Field(min_length=2, max_length=160)
+    sources: list[str] = Field(
+        default_factory=lambda: ["fda_drugsfda", "dailymed", "clinicaltrials", "pubmed"],
+        min_length=1,
+        max_length=4,
+    )
+    limit: int = Field(default=20, ge=1, le=50)
+
+
 def _candidate_membership(user: dict, db: Session):
     organization_id = user.get("organization_id")
     if not organization_id:
@@ -194,6 +205,188 @@ def _validated_source_url(source: str, url: str) -> str:
     if not expected_host or parsed.scheme != "https" or parsed.hostname != expected_host or parsed.username or parsed.password:
         raise HTTPException(status_code=422, detail="Source must be one of the supported providers and use its official HTTPS domain.")
     return url
+
+
+@router.post("/discover-peptides", status_code=200, dependencies=[Depends(authenticated_write_rate_limit("enrichment_write", settings.enrichment_rate_limit_per_window))])
+async def discover_and_persist_peptide_candidates(
+    payload: PeptideDiscoveryRequest,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """Search official/research sources and persist unverified discovery observations."""
+    organization_id, role = _candidate_membership(current_user, db)
+    if role not in {"organization_admin", "curator", "reviewer", "researcher"}:
+        raise HTTPException(status_code=403, detail="Researcher, curator or reviewer membership is required.")
+
+    allowed_sources = {"fda_drugsfda", "dailymed", "clinicaltrials", "pubmed"}
+    selected = list(dict.fromkeys(payload.sources))
+    if not selected or not set(selected).issubset(allowed_sources):
+        raise HTTPException(status_code=422, detail="Unsupported peptide discovery source.")
+    query = payload.query.strip()
+    if len(query) < 2:
+        raise HTTPException(status_code=422, detail="Search query must contain at least two non-space characters.")
+
+    operations = {}
+    if "fda_drugsfda" in selected:
+        operations["fda_drugsfda"] = FdaDrugsFdaProvider().search_by_ingredient(
+            query, min(payload.limit, 50), settings.openfda_api_key
+        )
+    if "dailymed" in selected:
+        operations["dailymed"] = DailyMedProvider().search_by_name(query, min(payload.limit, 50), 1)
+    if "clinicaltrials" in selected:
+        operations["clinicaltrials"] = ClinicalTrialsProvider().search(query, min(payload.limit, 50))
+    if "pubmed" in selected and settings.ncbi_email:
+        operations["pubmed"] = PubMedProvider(settings.ncbi_email, settings.ncbi_api_key).search(query, min(payload.limit, 50))
+
+    results = await asyncio.gather(*(
+        _safe_search(name, operation) for name, operation in operations.items()
+    ))
+    source_results = dict(zip(operations.keys(), results))
+    if "pubmed" in selected and "pubmed" not in source_results:
+        source_results["pubmed"] = {
+            "status": "not_configured", "source": "PubMed", "total": None, "items": [],
+            "error": "Configure NCBI_EMAIL to enable PubMed discovery.",
+        }
+
+    persisted = []
+    failed = []
+    try:
+        for source_key, result in source_results.items():
+            if result.get("status") != "success":
+                continue
+            source_name = result.get("source") or source_key
+            for item in result.get("items", []):
+                if source_key == "fda_drugsfda":
+                    identifier = item.get("application_number")
+                    source_url = item.get("source_url")
+                    title = f"FDA application {identifier or 'unknown'}"
+                    products = item.get("products") or []
+                    ingredient_names = [
+                        ingredient.get("name")
+                        for product in products
+                        for ingredient in (product.get("active_ingredients") or [])
+                        if ingredient.get("name")
+                    ]
+                    candidate_name = next(
+                        (name for name in ingredient_names if name.casefold() == query.casefold()),
+                        query,
+                    )
+                    development_status = item.get("approval_state_interpretation")
+                elif source_key == "dailymed":
+                    identifier = item.get("set_id")
+                    source_url = item.get("source_url")
+                    title = item.get("title") or query
+                    candidate_name = query
+                    development_status = "SPL_label_record_observed"
+                elif source_key == "clinicaltrials":
+                    identifier = item.get("nct_id")
+                    source_url = item.get("url")
+                    title = item.get("title") or query
+                    candidate_name = query
+                    development_status = item.get("overall_status")
+                else:
+                    identifier = item.get("pmid")
+                    source_url = item.get("url")
+                    title = item.get("title") or query
+                    candidate_name = query
+                    development_status = "publication_record_observed"
+
+                if not identifier or not source_url:
+                    failed.append({"source": source_key, "reason": "missing_stable_source_identifier_or_url"})
+                    continue
+                if len(json.dumps(item, ensure_ascii=False, default=str)) > 30000:
+                    failed.append({"source": source_key, "identifier": str(identifier), "reason": "source_payload_exceeds_30kb"})
+                    continue
+
+                snapshot = persist_normalized_source_record(
+                    db,
+                    source_name=source_name,
+                    source_identifier=str(identifier),
+                    source_url=source_url,
+                    title=title,
+                    payload=item,
+                )
+                candidate = db.execute(text("""
+                    INSERT INTO peptide_discovery_candidates (
+                        source_record_id, source_entity_identifier, source_entity_url,
+                        candidate_name, candidate_kind, source_development_status,
+                        source_jurisdiction_code, identity_match_status, candidate_status,
+                        last_seen_at, last_observed_at, raw_metadata
+                    ) VALUES (
+                        :source_id, :identifier, :url, :name, 'unknown', :development_status,
+                        :jurisdiction, 'unresolved', 'discovered', now(), now(),
+                        CAST(:metadata AS jsonb)
+                    )
+                    ON CONFLICT (source_record_id, source_entity_identifier) DO UPDATE SET
+                        source_entity_url=EXCLUDED.source_entity_url,
+                        source_development_status=COALESCE(EXCLUDED.source_development_status,
+                                                           peptide_discovery_candidates.source_development_status),
+                        last_seen_at=now(),
+                        last_observed_at=now(),
+                        raw_metadata=EXCLUDED.raw_metadata,
+                        updated_at=now()
+                    RETURNING id, candidate_status
+                """), {
+                    "source_id": snapshot["source_record_id"],
+                    "identifier": str(identifier),
+                    "url": source_url,
+                    "name": candidate_name,
+                    "development_status": development_status,
+                    "jurisdiction": "US" if source_key in {"fda_drugsfda", "dailymed"} else None,
+                    "metadata": json.dumps({"search_query": query, "source_record": item}, ensure_ascii=False, default=str),
+                }).mappings().one()
+
+                db.execute(text("""
+                    INSERT INTO peptide_discovery_observations (
+                        candidate_id, source_record_id, source_version, payload, payload_hash
+                    ) VALUES (
+                        :candidate_id, :source_id, :source_version,
+                        CAST(:payload AS jsonb), :payload_hash
+                    )
+                    ON CONFLICT (candidate_id, payload_hash) DO NOTHING
+                """), {
+                    "candidate_id": candidate["id"],
+                    "source_id": snapshot["source_record_id"],
+                    "source_version": None,
+                    "payload": json.dumps(item, ensure_ascii=False, default=str),
+                    "payload_hash": snapshot["content_hash"],
+                })
+                persisted.append({
+                    "candidate_id": str(candidate["id"]),
+                    "source": source_name,
+                    "source_identifier": str(identifier),
+                    "candidate_name": candidate_name,
+                    "status": candidate["candidate_status"],
+                    "identity_match_status": "unresolved",
+                })
+
+        db.execute(text("""
+            INSERT INTO audit_events (actor_user_id, organization_id, action, entity_type, entity_id, event_metadata)
+            VALUES (:actor, :org, 'global_peptide_discovery_run', 'peptide_discovery_candidate', NULL,
+                    jsonb_build_object('query', :query, 'sources', CAST(:sources AS jsonb),
+                                       'persisted_count', :count, 'failed_count', :failed))
+        """), {
+            "actor": current_user["id"], "org": organization_id, "query": query,
+            "sources": json.dumps(selected), "count": len(persisted), "failed": len(failed),
+        })
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    return {
+        "query": query,
+        "sources": source_results,
+        "persisted_candidates": persisted,
+        "persisted_count": len(persisted),
+        "skipped_records": failed,
+        "governance": (
+            "All saved items are source observations with unresolved peptide identity. "
+            "Search matches are not proof that the source record describes a peptide, "
+            "not a regulatory determination, and not a curated mechanism-of-action claim. "
+            "Human review is required before linking to a canonical peptide dossier."
+        ),
+    }
 
 
 @router.post("/peptides/{peptide_id}/candidates", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("enrichment_write", settings.enrichment_rate_limit_per_window))])

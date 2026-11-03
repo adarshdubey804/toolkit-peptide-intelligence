@@ -33,6 +33,8 @@ async def _safe_search(name: str, operation):
             "source": result.get("source", name),
             "total": result.get("total"),
             "items": items,
+            "coverage_notice": result.get("coverage_notice"),
+            "curation_status": result.get("curation_status", "not_reviewed"),
         }
     except Exception as exc:
         return {
@@ -312,11 +314,14 @@ async def discover_and_persist_peptide_candidates(
                     INSERT INTO peptide_discovery_candidates (
                         source_record_id, source_entity_identifier, source_entity_url,
                         candidate_name, candidate_kind, source_development_status,
-                        source_jurisdiction_code, identity_match_status, candidate_status,
+                        source_jurisdiction_code, reported_sequence, reported_sequence_type,
+                        reported_chemical_form, reported_target, reported_mechanism,
+                        identity_match_status, candidate_status,
                         last_seen_at, last_observed_at, raw_metadata
                     ) VALUES (
                         :source_id, :identifier, :url, :name, 'unknown', :development_status,
-                        :jurisdiction, 'unresolved', 'discovered', now(), now(),
+                        :jurisdiction, :sequence, :sequence_type, :chemical_form,
+                        :target, :mechanism, 'unresolved', 'discovered', now(), now(),
                         CAST(:metadata AS jsonb)
                     )
                     ON CONFLICT (source_record_id, source_entity_identifier) DO UPDATE SET
@@ -335,6 +340,11 @@ async def discover_and_persist_peptide_candidates(
                     "name": candidate_name,
                     "development_status": development_status,
                     "jurisdiction": "US" if source_key in {"fda_drugsfda", "dailymed"} else None,
+                    "sequence": item.get("sequence"),
+                    "sequence_type": item.get("sequence_type"),
+                    "chemical_form": item.get("chemical_form"),
+                    "target": item.get("target") or item.get("target_name"),
+                    "mechanism": item.get("mechanism_of_action") or item.get("mechanism"),
                     "metadata": json.dumps({"search_query": query, "source_record": item}, ensure_ascii=False, default=str),
                 }).mappings().one()
 

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { getPreferredOrganizationId, setPreferredOrganizationId } from "@/lib/auth";
+import { getAccessToken, getPreferredOrganizationId, setAccessToken, setPreferredOrganizationId } from "@/lib/auth";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 const AVAILABLE_SOURCES = [
@@ -72,6 +72,11 @@ export default function PeptideDiscoveryPage() {
   }, [status]);
 
   useEffect(() => {
+    const storedToken = getAccessToken();
+    if (storedToken) setToken(storedToken);
+  }, []);
+
+  useEffect(() => {
     if (token) void loadCandidates(token);
   }, [token, loadCandidates]);
 
@@ -91,6 +96,7 @@ export default function PeptideDiscoveryPage() {
         throw new Error("A researcher, curator or reviewer role is required.");
       }
       setPreferredOrganizationId(data.user.organization_id);
+      setAccessToken(data.access_token);
       setToken(data.access_token);
       setUserLabel(data.user.display_name + " · " + data.user.role);
       setPassword("");
@@ -155,7 +161,7 @@ export default function PeptideDiscoveryPage() {
     </section> : <>
       <div className="panel mt-7 flex flex-wrap items-center justify-between gap-3 p-4">
         <div><p className="text-sm font-semibold">{userLabel}</p><p className="muted mt-1 text-xs">Authenticated research session</p></div>
-        <button onClick={() => { setToken(""); setCandidates(null); setUserLabel(""); }} className="rounded-full border border-slate-600 px-4 py-2 text-xs">Sign out</button>
+        <button onClick={() => { setAccessToken(null); setToken(""); setCandidates(null); setUserLabel(""); }} className="rounded-full border border-slate-600 px-4 py-2 text-xs">Sign out</button>
       </div>
 
       <section className="panel mt-5 p-5">
@@ -207,6 +213,7 @@ export default function PeptideDiscoveryPage() {
             <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
               <p className="muted text-[10px]">Last observed {new Date(item.last_seen_at).toLocaleString()}</p>
               <div className="flex gap-3">
+                <Link href={`/peptide-discovery/${item.id}`} className="text-sm text-emerald-300">Open candidate dossier →</Link>
                 <a href={item.source_url} target="_blank" rel="noreferrer" className="text-sm text-emerald-300">Open source ↗</a>
                 {item.canonical_peptide_id && <Link href={"/peptides/" + item.canonical_peptide_id} className="text-sm text-emerald-300">Open peptide dossier →</Link>}
               </div>

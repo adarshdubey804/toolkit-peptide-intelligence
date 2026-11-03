@@ -134,3 +134,10 @@ All integrations are read-only discovery clients. Results returned from external
 - ChEMBL mechanism records are retained as source-reported hints; they do not establish regulatory approval, clinical benefit or a complete pathway mechanism.
 - Preserve ChEMBL molecule ID, source URL, source release where returned and source payload.
 - ChEMBL data are licensed under CC BY-SA 3.0. Attribute EMBL-EBI/ChEMBL and redistribute adaptations under the same licence.
+
+### ChEMBL mechanism review import
+- Researchers can submit an exact ChEMBL molecule ID against a peptide dossier.
+- The importer verifies a `PEPTIDE1{` HELM biotherapeutic record and imports only mechanism rows with a mechanism statement and target identifier.
+- Each row is submitted independently to the peptide mechanism curator queue as source-reported evidence.
+- The source's drug mechanism data do not establish jurisdiction-specific approval or canonical peptide chemical-form identity.
+- ChEMBL content remains subject to CC BY-SA 3.0 attribution and share-alike obligations.

@@ -83,3 +83,17 @@ Official references:
 - FDA section-heading mapping: https://www.fda.gov/industry/structured-product-labeling-resources/section-headings-loinc
 - FDA labeling resources: https://www.fda.gov/media/165785/download
 - DailyMed web services and SPL Set ID XML resource: https://dailymed.nlm.nih.gov/dailymed/app-support-web-services.cfm
+
+
+## Promotion into an individual peptide dossier
+
+Researchers can submit a DailyMed SPL Set ID against an existing peptide dossier through the enrichment workspace. The system:
+1. retrieves the exact SPL XML and extracts the explicit 12.1 section;
+2. stores a normalized source record and immutable source-version snapshot;
+3. creates a peptide mechanism record with `evidence_level=source_asserted`, `mechanism_class=unknown`, the exact source locator, excerpt, SPL version and explicit limitations;
+4. links the record to the selected peptide and optional chemical form;
+5. creates an organization-scoped curation review.
+
+The mechanism remains `in_review` and is not shown in the public dossier's verified MOA section until an independent curator verifies it. A reviewer cannot approve their own submission. Verification records reviewer identity and timestamp; corrections create immutable mechanism revisions.
+
+A source record is not automatically classified as a regulatory-label mechanism. Upgrading to `regulatory_label` requires separate verification of the exact product authorization, active ingredient/chemical form, jurisdiction and label version.

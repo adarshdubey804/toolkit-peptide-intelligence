@@ -13,3 +13,19 @@ export function setPreferredOrganizationId(organizationId: string | null | undef
     window.localStorage.removeItem(ACTIVE_ORGANIZATION_STORAGE_KEY);
   }
 }
+
+const ACCESS_TOKEN_SESSION_KEY = "toolkit.accessToken";
+
+export function getAccessToken(): string | undefined {
+  if (typeof window === "undefined") return undefined;
+  return window.sessionStorage.getItem(ACCESS_TOKEN_SESSION_KEY) || undefined;
+}
+
+export function setAccessToken(token: string | null | undefined): void {
+  if (typeof window === "undefined") return;
+  if (token) {
+    window.sessionStorage.setItem(ACCESS_TOKEN_SESSION_KEY, token);
+  } else {
+    window.sessionStorage.removeItem(ACCESS_TOKEN_SESSION_KEY);
+  }
+}

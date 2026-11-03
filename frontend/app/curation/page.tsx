@@ -7,6 +7,15 @@ import Link from "next/link";
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 type Review = { id:string; entity_type:string; entity_id:string; source_record_id?:string; review_status:string; priority:string; assigned_to?:string; created_at:string; record_label?:string; source_name?:string; source_identifier?:string; source_url?:string; evidence_claim_revision_id?:string; evidence_claim_revision_number?:number; evidence_claim_revision_hash?:string };
 type ClaimRevision = { id:string; claim_id:string; revision_number:number; claim_text:string; claim_domain:string; evidence_type:string; confidence_label:string; limitations?:string; content_hash:string; revision_origin:string; supersedes_revision_id?:string; created_at:string };
+type MechanismEvidence = {
+ id:string; peptide_name:string; chemical_form_name?:string|null; mechanism_title:string;
+ mechanism_statement:string; mechanism_class:string; target_name?:string|null; target_action?:string|null;
+ binding_or_interaction?:string|null; downstream_signaling?:string|null; pathway_context?:string|null;
+ biological_effect?:string|null; tissue_or_cell_context?:string|null; species_or_population?:string|null;
+ evidence_level:string; evidence_type:string; limitations?:string|null; source_locator?:string|null;
+ source_excerpt?:string|null; model_or_method?:string|null; source_name:string; source_identifier:string;
+ source_version?:string|null; source_url:string; review_status:string;
+};
 type User = { id:string; display_name:string; role:string; organization_name:string };
 
 export default function CurationDashboardPage() {
@@ -14,6 +23,7 @@ export default function CurationDashboardPage() {
  const [reviews,setReviews]=useState<Review[]>([]); const [status,setStatus]=useState("in_review"); const [loading,setLoading]=useState(false); const [busyId,setBusyId]=useState("");
  const [rationales,setRationales]=useState<Record<string,string>>({}); const [errors,setErrors]=useState(""); const [notice,setNotice]=useState("");
  const [revisionDetails,setRevisionDetails]=useState<Record<string,ClaimRevision>>({}); const [revisionBusyId,setRevisionBusyId]=useState("");
+ const [mechanismDetails,setMechanismDetails]=useState<Record<string,MechanismEvidence>>({}); const [mechanismBusyId,setMechanismBusyId]=useState("");
  const loadQueue=useCallback(async()=>{ if(!token)return; setLoading(true);setErrors("");try{
   const params=new URLSearchParams({limit:"100"});if(status!=="all")params.set("review_status",status);
   const response=await fetch(API_BASE+"/api/v1/curation/reviews?"+params.toString(),{headers:{Authorization:"Bearer "+token}});
@@ -36,6 +46,15 @@ export default function CurationDashboardPage() {
    setRevisionDetails(prev=>({...prev,[review.id]:data as ClaimRevision}));
   }catch(err){setErrors(err instanceof Error?err.message:"Revision request failed.");}
   finally{setRevisionBusyId("");}
+ }
+ async function viewMechanism(review:Review){
+  setMechanismBusyId(review.id);setErrors("");
+  try{
+   const response=await fetch(API_BASE+"/api/v1/curation/reviews/"+review.id+"/mechanism",{headers:{Authorization:"Bearer "+token}});
+   const data=await response.json();if(!response.ok)throw new Error(data.detail||"Could not load mechanism evidence.");
+   setMechanismDetails(prev=>({...prev,[review.id]:data as MechanismEvidence}));
+  }catch(err){setErrors(err instanceof Error?err.message:"Mechanism evidence request failed.");}
+  finally{setMechanismBusyId("");}
  }
  async function assignToMe(review:Review){setBusyId(review.id);setErrors("");try{
   const response=await fetch(API_BASE+"/api/v1/curation/reviews/"+review.id+"/assignment",{method:"PATCH",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify({assigned_to:user?.id})});
@@ -69,6 +88,28 @@ export default function CurationDashboardPage() {
       <div className="grid gap-3 text-xs sm:grid-cols-2"><p><span className="text-slate-400">Domain:</span> {revisionDetails[review.id].claim_domain}</p><p><span className="text-slate-400">Evidence type:</span> {revisionDetails[review.id].evidence_type}</p><p><span className="text-slate-400">Confidence label:</span> {revisionDetails[review.id].confidence_label}</p><p><span className="text-slate-400">Origin:</span> {revisionDetails[review.id].revision_origin}</p></div>
       {revisionDetails[review.id].limitations&&<div><p className="text-[10px] uppercase tracking-wider text-slate-400">Limitations recorded at review time</p><p className="mt-1 text-xs">{revisionDetails[review.id].limitations}</p></div>}
       <p className="break-all font-mono text-[10px] text-slate-500">Content hash: {revisionDetails[review.id].content_hash}</p>
+     </div>}
+    </section>}
+    {review.entity_type==="peptide_mechanism"&&<section className="mt-4 rounded-xl border border-emerald-400/30 bg-emerald-400/5 p-4">
+     <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-semibold text-emerald-200">Mechanism-of-action evidence</p><p className="muted mt-1 text-xs">Inspect the exact label text and evidence context before making a decision.</p></div><button type="button" disabled={mechanismBusyId===review.id} onClick={()=>void viewMechanism(review)} className="rounded-full border border-emerald-300/40 px-4 py-2 text-xs text-emerald-100 disabled:opacity-50">{mechanismBusyId===review.id?"Loading…":"View mechanism evidence"}</button></div>
+     {mechanismDetails[review.id]&&<div className="mt-4 space-y-4 border-t border-emerald-300/20 pt-4">
+      <div><p className="text-[10px] uppercase tracking-wider text-slate-400">{mechanismDetails[review.id].mechanism_title} · {mechanismDetails[review.id].peptide_name}</p><p className="mt-2 whitespace-pre-wrap text-sm leading-6">{mechanismDetails[review.id].mechanism_statement}</p></div>
+      <div className="grid gap-3 text-xs sm:grid-cols-2">
+       <p><span className="text-slate-400">Evidence level:</span> {mechanismDetails[review.id].evidence_level}</p>
+       <p><span className="text-slate-400">Mechanism class:</span> {mechanismDetails[review.id].mechanism_class}</p>
+       <p><span className="text-slate-400">Target:</span> {mechanismDetails[review.id].target_name||"Not separately curated"}</p>
+       <p><span className="text-slate-400">Target action:</span> {mechanismDetails[review.id].target_action||"Not reported"}</p>
+       <p><span className="text-slate-400">Downstream signalling:</span> {mechanismDetails[review.id].downstream_signaling||"Not reported"}</p>
+       <p><span className="text-slate-400">Pathway:</span> {mechanismDetails[review.id].pathway_context||"Not reported"}</p>
+       <p><span className="text-slate-400">Biological effect:</span> {mechanismDetails[review.id].biological_effect||"Not reported"}</p>
+       <p><span className="text-slate-400">Chemical form:</span> {mechanismDetails[review.id].chemical_form_name||"Not form-specific"}</p>
+       <p><span className="text-slate-400">SPL version:</span> {mechanismDetails[review.id].source_version||"Not stated"}</p>
+      </div>
+      {mechanismDetails[review.id].limitations&&<div><p className="text-[10px] uppercase tracking-wider text-slate-400">Limitations</p><p className="mt-1 text-xs leading-5">{mechanismDetails[review.id].limitations}</p></div>}
+      {mechanismDetails[review.id].source_locator&&<p className="text-xs text-slate-400">Source locator: {mechanismDetails[review.id].source_locator}</p>}
+      {mechanismDetails[review.id].source_excerpt&&<blockquote className="border-l-2 border-emerald-300/50 pl-3 text-xs leading-5 text-slate-200">{mechanismDetails[review.id].source_excerpt}</blockquote>}
+      <a href={mechanismDetails[review.id].source_url} target="_blank" rel="noreferrer" className="inline-block text-xs text-emerald-300 underline">Open exact DailyMed label ↗</a>
+      <p className="muted text-[10px]">This record is source-reported, not yet a verified regulatory-label mechanism. Confirm product identity and FDA authorization independently.</p>
      </div>}
     </section>}
     <div className="mt-4 rounded-xl border border-slate-700 bg-slate-950/60 p-4"><p className="text-xs font-semibold text-slate-300">Source provenance</p>{review.source_name?<><p className="mt-2 text-sm">{review.source_name}{review.source_identifier?" · "+review.source_identifier:""}</p>{review.source_url?<a href={review.source_url} target="_blank" rel="noreferrer" className="mt-2 inline-block break-all text-xs text-emerald-300 underline">Open original source ↗</a>:<p className="muted mt-2 text-xs">No source URL attached.</p>}</>:<p className="muted mt-2 text-xs">No source details returned.</p>}</div>

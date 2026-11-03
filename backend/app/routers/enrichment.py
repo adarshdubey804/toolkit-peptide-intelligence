@@ -438,8 +438,13 @@ async def submit_gtopdb_mechanism_for_review(
     if "peptide" not in ligand_type.casefold():
         raise HTTPException(status_code=422, detail="The selected GtoPdb ligand is not explicitly classified as a peptide.")
     interactions = ligand.get("reported_interactions") or []
-    if not interactions:
-        raise HTTPException(status_code=422, detail="GtoPdb has no target interaction records for this ligand; no mechanism record was created.")
+    usable_interactions = []
+    for interaction in interactions[:50]:
+        action = interaction.get("type") or interaction.get("interactionType") or interaction.get("action")
+        if action and str(action).strip():
+            usable_interactions.append(interaction)
+    if not usable_interactions:
+        raise HTTPException(status_code=422, detail="GtoPdb has no explicit target-action interaction records for this ligand; no mechanism record was created.")
 
     source_id = ligand.get("source_identifier")
     source_url = ligand.get("source_url")
@@ -471,7 +476,7 @@ async def submit_gtopdb_mechanism_for_review(
 
     created = []
     existing_ids = []
-    for index, interaction in enumerate(interactions, start=1):
+    for index, interaction in enumerate(usable_interactions, start=1):
         target = (
             interaction.get("targetName")
             or interaction.get("target_name")
@@ -486,8 +491,8 @@ async def submit_gtopdb_mechanism_for_review(
         )
         if not action:
             continue
-        target_name = str(target).strip() if target else "Target not specified in GtoPdb interaction"
-        action_text = str(action).strip()
+        target_name = (str(target).strip()[:500] if target else "Target not specified in GtoPdb interaction")
+        action_text = str(action).strip()[:500]
         statement = (
             f"GtoPdb reports {action_text} for peptide ligand "
             f"{ligand.get('candidate_name') or source_id} at {target_name}."

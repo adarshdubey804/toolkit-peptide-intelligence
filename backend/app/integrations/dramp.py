@@ -75,7 +75,10 @@ def parse_fasta_records(content: str, dataset: str, contains_smiles: bool = Fals
             "source_identifier": identifier,
             "candidate_name": identifier if contains_smiles or not annotation else annotation,
             "reported_sequence": sequence,
+            "sequence": sequence,
+            "sequence_type": "source_reported_peptide_sequence",
             "reported_chemical_form": annotation if contains_smiles and annotation else None,
+            "chemical_form": annotation if contains_smiles and annotation else None,
             "dataset_categories": [dataset],
             "raw_header": header,
         })

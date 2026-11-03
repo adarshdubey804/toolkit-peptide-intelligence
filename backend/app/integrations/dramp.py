@@ -144,9 +144,9 @@ class DrampProvider:
                 core_links = [
                     link for link in download_links
                     if any(token in link["filename"].casefold() for token in (
-                        "general_amps", "patent_amps", "specific_amps",
+                        "general_amps", "specific_amps",
                         "stability_amps", "expanded_amps", "natural_amps",
-                        "synthetic_amps", "stapled_amps", "candidate_amps", "general_smiles", "patent_smiles", "specific_smiles",
+                        "synthetic_amps", "stapled_amps", "candidate_amps", "general_smiles", "specific_smiles",
                         "stability_smiles", "expanded_smiles",
                     ))
                 ]
@@ -217,5 +217,5 @@ class DrampProvider:
             "items": items,
             "retrieved_from_source": True,
             "curation_status": "not_reviewed",
-            "license_notice": "DRAMP 5.0 data are distributed under CC BY 4.0; retain attribution and source release.",
+            "license_notice": "Non-patent DRAMP 5.0 datasets are provided under CC BY 4.0; patent dataset exports are excluded from automated ingestion pending separate permission. Retain attribution and source release.",
         }

@@ -94,6 +94,8 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             "analytical_methods",
             "analytical_method_sources",
             "analytical_method_decisions",
+            "regulatory_product_authorizations",
+            "regulatory_product_authorization_revisions",
         )
         for table_name in required_tables:
             exists = connection.execute(
@@ -102,6 +104,34 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             ).scalar_one()
             assert exists, f"Expected migration-created table {table_name!r}"
 
+
+        regulatory_authorization_columns = connection.execute(text("""
+            SELECT count(*) FROM information_schema.columns
+            WHERE table_schema='public' AND table_name='regulatory_product_authorizations'
+              AND column_name IN ('peptide_id','chemical_form_id','product_name',
+                                  'jurisdiction_code','authority_name','regulatory_status',
+                                  'indication_text','original_approval_date','label_url',
+                                  'source_record_id','source_checked_at','review_status')
+        """)).scalar_one()
+        assert regulatory_authorization_columns == 12, "Product-level regulatory records must preserve exact product, jurisdiction, status and provenance"
+
+        authorization_status_check = connection.execute(text("""
+            SELECT pg_get_constraintdef(oid)
+            FROM pg_constraint
+            WHERE conrelid='public.regulatory_product_authorizations'::regclass
+              AND conname='regulatory_product_authorizations_regulatory_status_check'
+        """)).scalar_one()
+        assert "not_found_in_checked_sources" in authorization_status_check
+        assert "unknown" in authorization_status_check
+
+        authorization_revision_trigger = connection.execute(text("""
+            SELECT count(*) FROM pg_trigger
+            WHERE NOT tgisinternal AND tgname IN (
+                'regulatory_product_authorization_revision_capture',
+                'regulatory_product_authorization_revisions_append_only'
+            )
+        """)).scalar_one()
+        assert authorization_revision_trigger == 2, "Regulatory authorization revisions must be captured and immutable"
 
         chemical_form_columns = connection.execute(text("""
             SELECT count(*) FROM information_schema.columns

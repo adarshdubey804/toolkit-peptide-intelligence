@@ -2,7 +2,7 @@ from pathlib import Path
 import asyncio
 
 from app.integrations.clinicaltrials import normalize_study
-from app.integrations.dailymed import normalize_spl
+from app.integrations.dailymed import extract_mechanism_of_action, normalize_spl
 from app.integrations.fda_drugsfda import normalize_application
 from app.integrations.health_canada_dpd import normalize_product
 from app.main import MIGRATIONS_DIR, app
@@ -1717,3 +1717,44 @@ def test_global_peptide_discovery_accepts_canada_as_a_source():
     from app.routers.enrichment import PeptideDiscoveryRequest
     request = PeptideDiscoveryRequest(query="peptide X", sources=["health_canada_dpd"])
     assert request.sources == ["health_canada_dpd"]
+
+
+def test_dailymed_extracts_only_explicit_moa_section():
+    xml = """<?xml version="1.0" encoding="UTF-8"?>
+    <document xmlns="urn:hl7-org:v3">
+      <component><structuredBody>
+        <component><section>
+          <code code="43679-0" displayName="MECHANISM OF ACTION SECTION"/>
+          <title>12.1 Mechanism of Action</title>
+          <text><paragraph>Peptide X binds receptor Y and activates intracellular signalling.</paragraph></text>
+        </section></component>
+        <component><section>
+          <code code="43681-6" displayName="PHARMACODYNAMICS SECTION"/>
+          <title>12.2 Pharmacodynamics</title>
+          <text><paragraph>Biomarker Z changes after administration.</paragraph></text>
+        </section></component>
+      </structuredBody></component>
+    </document>"""
+    result = extract_mechanism_of_action(xml)
+    assert result["found"] is True
+    assert result["section_code"] == "43679-0"
+    assert "binds receptor Y" in result["mechanism_text"]
+    assert "Biomarker Z" not in result["mechanism_text"]
+    assert result["evidence_level"] == "source_asserted"
+
+
+def test_dailymed_missing_moa_section_is_not_inferred():
+    result = extract_mechanism_of_action(
+        '<document xmlns="urn:hl7-org:v3"><component><section>'
+        '<code code="43681-6"/><title>12.2 Pharmacodynamics</title>'
+        '<text>Observed effect only.</text></section></component></document>'
+    )
+    assert result["found"] is False
+    assert result["mechanism_text"] is None
+    assert result["extraction_status"] == "section_not_present"
+
+
+def test_dailymed_moa_extraction_route_is_registered():
+    paths = app.openapi()["paths"]
+    route = paths["/api/v1/research/dailymed/{set_id}/mechanism-of-action"]["get"]
+    assert route["parameters"][0]["name"] == "set_id"

@@ -1,7 +1,7 @@
 # Database Architecture Audit
 
 **Audit date:** 2026-11-02  
-**Scope:** Repository schema and application access patterns on `main`, migrations 001–064, and relevant backend routers.  
+**Scope:** Repository schema and application access patterns on `main`, migrations 001–065, and relevant backend routers.  
 **Important limitation:** This is a repository-level architecture review. It does not establish the live PostgreSQL database's current schema, data quality, query plans, backup state, or deployment configuration. Those require access to the deployed database and environment.
 
 ## Executive assessment
@@ -73,9 +73,9 @@ Do not impose a uniqueness constraint until canonicalization rules and collision
 
 ### P1 — Version history is uneven across domain entities
 
-Source records have version support and several decision tables are append-only. However, important mutable scientific parent records (for example formulation/process profiles, vendor service details, method records, and peptide properties) do not share one clearly defined universal revision/supersession contract in the inspected schema.
+Source records have version support and several decision tables are append-only. Migration 065 adds immutable, content-addressed snapshots for peptide chemical forms, including legacy baselines and revision chaining. Important mutable scientific parent records (for example formulation/process profiles, vendor service details, method records, and peptide properties) still do not share one clearly defined universal revision/supersession contract.
 
-**Required design:** Add explicit record revisions or immutable snapshots for material scientific changes. Preserve who changed what, when, why, the source basis, and which revision a decision reviewed. A review decision should apply to a specific revision, not silently to a record that may later have changed.
+**Remaining design:** Extend explicit record revisions to the other mutable scientific parents and bind each review/applicability decision to the exact revision it assessed. The peptide chemical-form revision history is a first step; it does not yet bind existing chemical-form review decisions or prove that all related evidence has been reviewed.
 
 ### P1 — Evidence linkage needs a more complete citation locator
 

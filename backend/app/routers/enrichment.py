@@ -181,7 +181,7 @@ class CandidateDecision(BaseModel):
 
 
 class DailyMedMechanismSubmission(BaseModel):
-    set_id: str = Field(min_length=36, max_length=36)
+    set_id: str = Field(min_length=36, max_length=36, pattern=r"^[0-9a-fA-F-]{36}$")
     chemical_form_id: UUID | None = None
 
 
@@ -249,7 +249,12 @@ async def submit_dailymed_mechanism_for_review(
         if not form_exists:
             raise HTTPException(status_code=422, detail="Chemical form does not belong to this peptide dossier.")
 
-    extracted = await DailyMedProvider().get_mechanism_of_action(payload.set_id)
+    try:
+        extracted = await DailyMedProvider().get_mechanism_of_action(payload.set_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Invalid DailyMed SPL Set ID.") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail="DailyMed SPL could not be retrieved.") from exc
     if not extracted.get("found") or not extracted.get("mechanism_text"):
         raise HTTPException(
             status_code=422,

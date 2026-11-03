@@ -124,6 +124,13 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
         """)).scalar_one()
         assert mechanism_columns == 15, "Mechanism records must capture target, pathway, context, evidence and provenance"
 
+        mechanism_review_columns = connection.execute(text("""
+            SELECT count(*) FROM information_schema.columns
+            WHERE table_schema='public' AND table_name='peptide_mechanisms'
+              AND column_name IN ('review_status','reviewed_by','reviewed_at')
+        """)).scalar_one()
+        assert mechanism_review_columns == 3, "MOA curation must record review status, reviewer and review timestamp"
+
         mechanism_triggers = connection.execute(text("""
             SELECT count(*) FROM pg_trigger
             WHERE NOT tgisinternal AND tgname IN (

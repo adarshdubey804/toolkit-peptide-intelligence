@@ -14,7 +14,7 @@ router = APIRouter(prefix="/api/v1/curation", tags=["scientific curation"])
 
 
 class ReviewSubmission(BaseModel):
-    entity_type: Literal["peptide", "evidence_claim"]
+    entity_type: Literal["peptide", "evidence_claim", "peptide_mechanism"]
     entity_id: UUID
     source_record_id: UUID | None = None
     priority: Literal["low", "normal", "high"] = "normal"
@@ -54,7 +54,7 @@ def _require_reviewer_role(role: str):
 
 
 def _entity_exists(db: Session, entity_type: str, entity_id: UUID) -> bool:
-    table = {"peptide": "peptides", "evidence_claim": "evidence_claims"}[entity_type]
+    table = {"peptide": "peptides", "evidence_claim": "evidence_claims", "peptide_mechanism": "peptide_mechanisms"}[entity_type]
     return db.execute(text(f"SELECT 1 FROM {table} WHERE id = :entity_id"), {"entity_id": entity_id}).first() is not None
 
 
@@ -109,11 +109,14 @@ def list_reviews(
                cr.evidence_claim_revision_id,
                revision.revision_number AS evidence_claim_revision_number,
                revision.content_hash AS evidence_claim_revision_hash,
-               COALESCE(p.preferred_name, ec.claim_text) AS record_label,
+               COALESCE(p.preferred_name, ec.claim_text, mechanism.mechanism_title || ' — ' || mechanism_peptide.preferred_name) AS record_label,
                sr.source_name, sr.source_identifier, sr.source_url
         FROM curation_reviews cr
         LEFT JOIN peptides p ON cr.entity_type = 'peptide' AND p.id = cr.entity_id
         LEFT JOIN evidence_claims ec ON cr.entity_type = 'evidence_claim' AND ec.id = cr.entity_id
+        LEFT JOIN peptide_mechanisms mechanism
+          ON cr.entity_type = 'peptide_mechanism' AND mechanism.id = cr.entity_id
+        LEFT JOIN peptides mechanism_peptide ON mechanism_peptide.id = mechanism.peptide_id
         LEFT JOIN evidence_claim_revisions revision ON revision.id = cr.evidence_claim_revision_id
         LEFT JOIN source_records sr ON sr.id = cr.source_record_id
         WHERE (:review_status IS NULL OR cr.review_status = CAST(:review_status AS review_status))
@@ -256,6 +259,14 @@ def decide_review(
                 text("SELECT 1 FROM source_records WHERE id = :source_id AND source_url IS NOT NULL"),
                 {"source_id": source_id},
             ).first()
+        elif review["entity_type"] == "peptide_mechanism":
+            supported = db.execute(text("""
+                SELECT 1
+                FROM peptide_mechanisms mechanism
+                JOIN source_records source ON source.id = mechanism.source_record_id
+                WHERE mechanism.id = :entity_id AND source.source_url IS NOT NULL
+                LIMIT 1
+            """), {"entity_id": review["entity_id"]}).first()
         else:
             supported = db.execute(text("""
                 SELECT 1
@@ -291,7 +302,17 @@ def decide_review(
     """), {"new_status": new_status, "rationale": payload.rationale.strip(),
            "reviewer": current_user["id"], "review_id": review_id})
 
-    if review["entity_type"] in ("peptide", "evidence_claim"):
+    if review["entity_type"] == "peptide_mechanism":
+        db.execute(text("""
+            UPDATE peptide_mechanisms
+            SET review_status = CAST(:new_status AS review_status),
+                reviewed_by = CASE WHEN :new_status IN ('verified','rejected','archived') THEN :reviewer ELSE NULL END,
+                reviewed_at = CASE WHEN :new_status IN ('verified','rejected','archived') THEN now() ELSE NULL END,
+                updated_at = now()
+            WHERE id = :entity_id
+        """), {"new_status": new_status, "entity_id": review["entity_id"],
+               "reviewer": current_user["id"]})
+    elif review["entity_type"] in ("peptide", "evidence_claim"):
         table = {"peptide": "peptides", "evidence_claim": "evidence_claims"}[review["entity_type"]]
         db.execute(text(f"""
             UPDATE {table}
@@ -314,3 +335,40 @@ def decide_review(
            "decision": payload.decision, "record_type": review["entity_type"]})
     db.commit()
     return dict(decision)
+
+
+
+@router.get("/reviews/{review_id}/mechanism")
+def get_review_mechanism_evidence(
+    review_id: UUID,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """Return the exact source-backed MOA record assigned for this organization's review."""
+    organization_id, role = _membership(current_user, db)
+    _require_reviewer_role(role)
+    row = db.execute(text("""
+        SELECT mechanism.id, mechanism.peptide_id, peptide.preferred_name AS peptide_name,
+               mechanism.chemical_form_id, form.form_name AS chemical_form_name,
+               mechanism.mechanism_title, mechanism.mechanism_statement,
+               mechanism.mechanism_class, mechanism.target_name, mechanism.target_action,
+               mechanism.binding_or_interaction, mechanism.downstream_signaling,
+               mechanism.pathway_context, mechanism.biological_effect,
+               mechanism.tissue_or_cell_context, mechanism.species_or_population,
+               mechanism.evidence_level, mechanism.evidence_type,
+               mechanism.confidence_score, mechanism.limitations,
+               mechanism.source_locator, mechanism.source_excerpt,
+               mechanism.model_or_method, mechanism.review_status,
+               mechanism.created_at, source.source_name, source.source_identifier,
+               source.source_version, source.source_url
+        FROM curation_reviews review
+        JOIN peptide_mechanisms mechanism
+          ON review.entity_type='peptide_mechanism' AND mechanism.id=review.entity_id
+        JOIN peptides peptide ON peptide.id=mechanism.peptide_id
+        LEFT JOIN peptide_chemical_forms form ON form.id=mechanism.chemical_form_id
+        JOIN source_records source ON source.id=mechanism.source_record_id
+        WHERE review.id=:review_id AND review.owner_organization_id=:organization_id
+    """), {"review_id": review_id, "organization_id": organization_id}).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Mechanism review not found in this organization.")
+    return dict(row)

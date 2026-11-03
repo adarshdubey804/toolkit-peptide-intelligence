@@ -142,7 +142,8 @@ class DrampProvider:
                     if any(token in link["filename"].casefold() for token in (
                         "general_amps", "patent_amps", "specific_amps",
                         "stability_amps", "expanded_amps", "natural_amps",
-                        "synthetic_amps", "stapled_amps", "candidate_amps",
+                        "synthetic_amps", "stapled_amps", "candidate_amps", "general_smiles", "patent_smiles", "specific_smiles",
+                        "stability_smiles", "expanded_smiles",
                     ))
                 ]
                 semaphore = asyncio.Semaphore(4)

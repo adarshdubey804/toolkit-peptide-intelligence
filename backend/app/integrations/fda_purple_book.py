@@ -109,6 +109,7 @@ def normalize_product(record: dict, source_csv_url: str) -> dict:
         "source": "FDA Purple Book",
         "jurisdiction": "US",
         "source_url": source_csv_url,
+        "source_version": source_csv_url.rsplit("/", 1)[-1],
         "source_page_url": DOWNLOADS_PAGE_URL,
         "curation_status": "not_reviewed",
         "coverage_notice": (

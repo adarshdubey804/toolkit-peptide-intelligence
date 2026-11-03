@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS peptide_workbook_import_batches (
     uploaded_filename TEXT NOT NULL,
     uploaded_by UUID REFERENCES user_profiles(id),
     organization_id UUID REFERENCES organizations(id),
+    workbook_metadata JSONB NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(workbook_metadata) = 'object'),
     imported_row_count INTEGER NOT NULL DEFAULT 0 CHECK (imported_row_count >= 0),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (source_sha256, organization_id)

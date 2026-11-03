@@ -19,16 +19,28 @@ from ..rate_limit_dependencies import authenticated_write_rate_limit
 
 router = APIRouter(prefix="/api/v1/dossiers", tags=["peptide scientific dossiers"])
 
-EXPECTED_COLUMNS = (
-    "Peptide (generic / common name)",
-    "Brand / Other Names",
-    "Treatment Category",
-    "Primary Use / Indication",
-    "FDA Approved?",
-    "Status Detail",
-    "First US Approval",
-    "Notes",
-)
+NAME_HEADERS = {
+    "peptide generic common name", "peptide name", "peptide", "generic name", "common name"
+}
+STATUS_HEADERS = {"status detail", "fda approved", "fda status", "approval status"}
+FDA_HEADERS = {"fda approved", "fda status", "approved by fda"}
+
+
+def _normalise_header(value) -> str:
+    return " ".join(str(value or "").strip().lower().replace("_", " ").replace("/", " ").replace("?", "").split())
+
+
+def _first_header(headers, aliases):
+    return next((header for header in headers if _normalise_header(header) in aliases), None)
+
+
+def _worksheet_rows(sheet):
+    output = []
+    for values in sheet.iter_rows(values_only=True):
+        row = [_json_value(value) for value in values]
+        if any(value is not None for value in row):
+            output.append(row)
+    return output
 
 
 def _membership(user: dict, db: Session) -> tuple[str, str]:
@@ -78,34 +90,56 @@ async def import_peptide_workbook(
     if "Peptides" not in workbook.sheetnames:
         raise HTTPException(status_code=422, detail="Workbook must contain a 'Peptides' worksheet.")
     sheet = workbook["Peptides"]
-    headers = tuple(_json_value(cell.value) for cell in next(sheet.iter_rows(min_row=1, max_row=1)))
-    if headers[:len(EXPECTED_COLUMNS)] != EXPECTED_COLUMNS:
-        raise HTTPException(status_code=422, detail="The Peptides worksheet headers do not match the expected catalogue format.")
-
+    header_row_number = None
+    headers = ()
+    for row_number, values in enumerate(sheet.iter_rows(min_row=1, max_row=10, values_only=True), start=1):
+        possible_headers = tuple(_json_value(value) for value in values)
+        if _first_header(possible_headers, NAME_HEADERS):
+            header_row_number = row_number
+            headers = possible_headers
+            break
+    if header_row_number is None:
+        raise HTTPException(status_code=422, detail="Could not identify a peptide-name column in the first 10 rows of the Peptides worksheet.")
+    name_header = _first_header(headers, NAME_HEADERS)
+    status_header = _first_header(headers, STATUS_HEADERS)
+    fda_header = _first_header(headers, FDA_HEADERS)
     rows = []
-    for row_number, values in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
+    for row_number, values in enumerate(sheet.iter_rows(min_row=header_row_number + 1, values_only=True), start=header_row_number + 1):
         row = {str(headers[i]): _json_value(values[i]) for i in range(min(len(headers), len(values))) if headers[i]}
-        name = row.get(EXPECTED_COLUMNS[0])
+        name = row.get(name_header)
         if name is None or not str(name).strip():
             continue
-        rows.append((row_number, row, str(name).strip()))
+        reported_status = row.get(status_header) if status_header else None
+        if reported_status is None and fda_header:
+            reported_status = row.get(fda_header)
+        rows.append((row_number, row, str(name).strip(), str(reported_status or "Not stated")))
     if not rows:
         raise HTTPException(status_code=422, detail="No peptide rows were found.")
     if len(rows) > 1000:
         raise HTTPException(status_code=422, detail="A single workbook import is limited to 1,000 rows.")
 
+    workbook_metadata = {
+        name: _worksheet_rows(workbook[name])
+        for name in workbook.sheetnames if name != "Peptides"
+    }
+    workbook_metadata_json = json.dumps(workbook_metadata, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+    if len(workbook_metadata_json.encode("utf-8")) > 4 * 1024 * 1024:
+        raise HTTPException(status_code=422, detail="Summary and notes/source worksheets exceed the 4 MB metadata limit.")
+
     batch = db.execute(text("""
         INSERT INTO peptide_workbook_import_batches
-            (source_name, source_sha256, uploaded_filename, uploaded_by, organization_id)
-        VALUES ('User peptide workbook', :hash, :filename, :user_id, :org)
+            (source_name, source_sha256, uploaded_filename, uploaded_by, organization_id, workbook_metadata)
+        VALUES ('User peptide workbook', :hash, :filename, :user_id, :org, CAST(:workbook_metadata AS jsonb))
         ON CONFLICT (source_sha256, organization_id) DO UPDATE
-          SET uploaded_filename=EXCLUDED.uploaded_filename
+          SET uploaded_filename=EXCLUDED.uploaded_filename,
+              workbook_metadata=EXCLUDED.workbook_metadata
         RETURNING id
-    """), {"hash": file_hash, "filename": file.filename[:255], "user_id": current_user["id"], "org": organization_id}).scalar_one()
+    """), {"hash": file_hash, "filename": file.filename[:255], "user_id": current_user["id"],
+           "org": organization_id, "workbook_metadata": workbook_metadata_json}).scalar_one()
 
     imported = []
     try:
-        for row_number, row, name in rows:
+        for row_number, row, name, reported_status in rows:
             row_json = json.dumps(row, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
             row_hash = hashlib.sha256(row_json.encode("utf-8")).hexdigest()
             source_identifier = f"{organization_id}:{file_hash}:Peptides:{row_number}"
@@ -138,7 +172,7 @@ async def import_peptide_workbook(
                 RETURNING id
             """), {
                 "source_id": source_id, "entity_identifier": source_identifier, "org": organization_id,
-                "name": name, "reported_status": str(row.get("Status Detail") or row.get("FDA Approved?") or "Not stated"),
+                "name": name, "reported_status": reported_status,
                 "metadata": json.dumps({"workbook_row": row, "source_type": "user_supplied_catalogue",
                                         "regulatory_status_is_unverified": True}, ensure_ascii=False),
             }).scalar_one()

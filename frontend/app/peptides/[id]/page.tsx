@@ -34,6 +34,31 @@ type Profile = {
     canonicalization_version?: string | null;
   }[];
   structures: { structure_type: string; external_identifier?: string; method_or_prediction_tool?: string }[];
+  mechanisms_of_action: {
+    id: string;
+    chemical_form_name?: string | null;
+    mechanism_title: string;
+    mechanism_statement: string;
+    mechanism_class: string;
+    target_name?: string | null;
+    target_identifier?: string | null;
+    target_action?: string | null;
+    binding_or_interaction?: string | null;
+    downstream_signaling?: string | null;
+    pathway_context?: string | null;
+    biological_effect?: string | null;
+    tissue_or_cell_context?: string | null;
+    species_or_population?: string | null;
+    evidence_level: string;
+    evidence_type: string;
+    confidence_score?: number | null;
+    limitations?: string | null;
+    source_locator?: string | null;
+    source_excerpt?: string | null;
+    model_or_method?: string | null;
+    source_name: string;
+    source_url?: string | null;
+  }[];
   evidence_claims: { id: string; claim_text: string; claim_domain: string; evidence_type: string; confidence_label: string; limitations?: string; doi?: string; pmid?: string; publication_title?: string; publication_url?: string }[];
 };
 
@@ -74,6 +99,35 @@ export default function PeptideProfilePage() {
   return <main className="container min-h-screen py-10">
     <Link href="/peptides" className="text-sm text-emerald-300 hover:text-emerald-200">← Peptide database</Link>
     <header className="mt-9 max-w-4xl"><span className="rounded-full bg-emerald-400/10 px-3 py-1 text-xs text-emerald-300">Curator verified</span><h1 className="mt-4 text-4xl font-semibold md:text-5xl">{peptide.preferred_name}</h1><p className="muted mt-4 leading-7">{peptide.description || "No curated description available."}</p><div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-400">{peptide.peptide_category && <span className="rounded-full border border-slate-700 px-3 py-1">{peptide.peptide_category}</span>}<span className="rounded-full border border-slate-700 px-3 py-1">{peptide.intended_use_class}</span>{peptide.development_status && <span className="rounded-full border border-slate-700 px-3 py-1">{peptide.development_status}</span>}</div></header>
+    <Section title="Mechanism of action">
+      {profile.mechanisms_of_action?.length ? <div className="space-y-5">
+        {profile.mechanisms_of_action.map((mechanism) => <article key={mechanism.id} className="border-b border-slate-800 pb-5 last:border-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="font-medium">{mechanism.mechanism_title}</h3>
+            <span className="rounded-full border border-slate-700 px-2 py-1 text-xs">{mechanism.mechanism_class.replaceAll("_", " ")}</span>
+            <span className="rounded-full border border-slate-700 px-2 py-1 text-xs">{mechanism.evidence_level.replaceAll("_", " ")}</span>
+          </div>
+          <p className="mt-3 text-sm leading-6">{mechanism.mechanism_statement}</p>
+          <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+            <dt className="muted">Target</dt><dd>{mechanism.target_name || "Not established"}</dd>
+            <dt className="muted">Target action</dt><dd>{mechanism.target_action || "Not reported"}</dd>
+            <dt className="muted">Binding / interaction</dt><dd>{mechanism.binding_or_interaction || "Not reported"}</dd>
+            <dt className="muted">Downstream signalling</dt><dd>{mechanism.downstream_signaling || "Not reported"}</dd>
+            <dt className="muted">Pathway context</dt><dd>{mechanism.pathway_context || "Not reported"}</dd>
+            <dt className="muted">Biological effect</dt><dd>{mechanism.biological_effect || "Not reported"}</dd>
+            <dt className="muted">Tissue / cell context</dt><dd>{mechanism.tissue_or_cell_context || "Not reported"}</dd>
+            <dt className="muted">Species / population</dt><dd>{mechanism.species_or_population || "Not specified"}</dd>
+            {mechanism.chemical_form_name && <><dt className="muted">Chemical form</dt><dd>{mechanism.chemical_form_name}</dd></>}
+            {mechanism.confidence_score !== null && mechanism.confidence_score !== undefined && <><dt className="muted">Curated confidence score</dt><dd>{mechanism.confidence_score.toFixed(2)}</dd></>}
+          </dl>
+          {mechanism.limitations && <p className="muted mt-3 text-xs">Limitations: {mechanism.limitations}</p>}
+          {mechanism.source_excerpt && <blockquote className="mt-3 border-l-2 border-slate-700 pl-3 text-xs text-slate-300">{mechanism.source_excerpt}</blockquote>}
+          <p className="muted mt-3 text-xs">Evidence type: {mechanism.evidence_type.replaceAll("_", " ")} · Source: {mechanism.source_name}{mechanism.source_locator ? ` · ${mechanism.source_locator}` : ""}</p>
+          {mechanism.source_url && <a href={mechanism.source_url} target="_blank" rel="noreferrer" className="mt-2 inline-block text-xs text-emerald-300">Open supporting source ↗</a>}
+        </article>)}
+      </div> : <p className="muted text-sm">No curator-verified mechanism records are currently available. This means the mechanism has not yet been established in this dossier; it does not mean the peptide has no biological mechanism.</p>}
+      <p className="muted mt-4 text-xs">Evidence levels are shown separately. Computational, AI-extracted, animal and in-vitro mechanisms are not presented as established human mechanisms or proof of clinical benefit.</p>
+    </Section>
     <div className="mt-8 grid gap-4 lg:grid-cols-2">
       <Section title="Aliases">{profile.aliases.length ? <ul className="flex flex-wrap gap-2">{profile.aliases.map((item) => <li key={item.alias} className="rounded-full border border-slate-700 px-3 py-1 text-sm">{item.alias}</li>)}</ul> : <p className="muted text-sm">No reviewed aliases recorded.</p>}</Section>
       <Section title="Sequence and modifications">{profile.sequences.length ? profile.sequences.map((item,index)=><div key={index} className="mb-3"><p className="text-xs text-slate-400">{item.sequence_type}</p><p className="mt-1 break-all font-mono text-sm">{item.sequence}</p><p className="muted mt-1 text-xs">Modifications: {item.modifications?.length ? JSON.stringify(item.modifications) : "None recorded"}</p></div>) : <p className="muted text-sm">No reviewed sequence data.</p>}</Section>

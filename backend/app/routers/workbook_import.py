@@ -108,27 +108,27 @@ async def import_peptide_workbook(
         for row_number, row, name in rows:
             row_json = json.dumps(row, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
             row_hash = hashlib.sha256(row_json.encode("utf-8")).hexdigest()
-            source_identifier = f"{file_hash}:Peptides:{row_number}"
+            source_identifier = f"{organization_id}:{file_hash}:Peptides:{row_number}"
             source_id = db.execute(text("""
                 INSERT INTO source_records (source_name, source_identifier, source_url, retrieved_at, license_notes, raw_metadata)
                 VALUES ('User peptide workbook', :identifier, NULL, now(),
                         'User-provided workbook; preserve attribution and do not redistribute without permission.',
                         jsonb_build_object('filename', :filename, 'worksheet', 'Peptides', 'row_number', :row_number,
-                                           'uploaded_by', :user_id))
+                                           'organization_id', :org))
                 ON CONFLICT (source_name, source_identifier) DO UPDATE
                     SET retrieved_at=now()
                 RETURNING id
             """), {"identifier": source_identifier, "filename": file.filename[:255],
-                   "row_number": row_number, "user_id": current_user["id"]}).scalar_one()
+                   "row_number": row_number, "org": organization_id}).scalar_one()
 
             candidate = db.execute(text("""
                 INSERT INTO peptide_discovery_candidates (
                     source_record_id, source_entity_identifier, source_entity_url,
                     candidate_name, candidate_kind, source_development_status,
-                    source_jurisdiction_code, identity_match_status, candidate_status, raw_metadata
+                    source_jurisdiction_code, identity_match_status, candidate_status, raw_metadata, owner_organization_id
                 ) VALUES (
                     :source_id, :entity_identifier, NULL, :name, 'unknown', :reported_status,
-                    'US', 'unresolved', 'needs_review', CAST(:metadata AS jsonb)
+                    'US', 'unresolved', 'needs_review', CAST(:metadata AS jsonb), :org
                 )
                 ON CONFLICT (source_record_id, source_entity_identifier) DO UPDATE SET
                     candidate_name=EXCLUDED.candidate_name,
@@ -137,7 +137,7 @@ async def import_peptide_workbook(
                     last_seen_at=now(), last_observed_at=now(), updated_at=now()
                 RETURNING id
             """), {
-                "source_id": source_id, "entity_identifier": source_identifier,
+                "source_id": source_id, "entity_identifier": source_identifier, "org": organization_id,
                 "name": name, "reported_status": str(row.get("Status Detail") or row.get("FDA Approved?") or "Not stated"),
                 "metadata": json.dumps({"workbook_row": row, "source_type": "user_supplied_catalogue",
                                         "regulatory_status_is_unverified": True}, ensure_ascii=False),
@@ -145,21 +145,21 @@ async def import_peptide_workbook(
 
             db.execute(text("""
                 INSERT INTO peptide_discovery_observations
-                    (candidate_id, source_record_id, source_version, payload, payload_hash)
-                VALUES (:candidate_id, :source_id, :version, CAST(:payload AS jsonb), :hash)
+                    (candidate_id, source_record_id, source_version, payload, payload_hash, owner_organization_id)
+                VALUES (:candidate_id, :source_id, :version, CAST(:payload AS jsonb), :hash, :org)
                 ON CONFLICT (candidate_id, payload_hash) DO NOTHING
             """), {"candidate_id": candidate, "source_id": source_id, "version": file_hash,
-                   "payload": row_json, "hash": row_hash})
+                   "payload": row_json, "hash": row_hash, "org": organization_id})
 
             db.execute(text("""
                 INSERT INTO peptide_workbook_import_rows
-                    (batch_id, worksheet_name, worksheet_row_number, candidate_id, source_row, row_sha256)
-                VALUES (:batch, 'Peptides', :row_number, :candidate, CAST(:source_row AS jsonb), :row_hash)
+                    (batch_id, worksheet_name, worksheet_row_number, candidate_id, organization_id, source_row, row_sha256)
+                VALUES (:batch, 'Peptides', :row_number, :candidate, :org, CAST(:source_row AS jsonb), :row_hash)
                 ON CONFLICT (batch_id, worksheet_name, worksheet_row_number) DO UPDATE
                     SET source_row=EXCLUDED.source_row, row_sha256=EXCLUDED.row_sha256,
                         candidate_id=EXCLUDED.candidate_id
             """), {"batch": batch, "row_number": row_number, "candidate": candidate,
-                   "source_row": row_json, "row_hash": row_hash})
+                   "source_row": row_json, "row_hash": row_hash, "org": organization_id})
             imported.append({"candidate_id": str(candidate), "name": name, "worksheet_row": row_number})
 
         db.execute(text("""

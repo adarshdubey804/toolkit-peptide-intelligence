@@ -143,7 +143,7 @@ BEGIN
     );
     RETURN NEW;
 END;
-$capture_peptide_mechanism_revision$ LANGUAGE plpgsql;
+$mechanism_revision_capture$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS peptide_mechanism_revision_capture ON peptide_mechanisms;
 CREATE TRIGGER peptide_mechanism_revision_capture

@@ -180,6 +180,11 @@ class CandidateDecision(BaseModel):
     rationale: str = Field(min_length=20, max_length=4000)
 
 
+class DailyMedMechanismSubmission(BaseModel):
+    set_id: str = Field(min_length=36, max_length=36)
+    chemical_form_id: UUID | None = None
+
+
 class PeptideDiscoveryRequest(BaseModel):
     query: str = Field(min_length=2, max_length=160)
     sources: list[str] = Field(
@@ -210,6 +215,165 @@ def _validated_source_url(source: str, url: str) -> str:
     if not expected_host or parsed.scheme != "https" or parsed.hostname != expected_host or parsed.username or parsed.password:
         raise HTTPException(status_code=422, detail="Source must be one of the supported providers and use its official HTTPS domain.")
     return url
+
+
+@router.post("/peptides/{peptide_id}/mechanisms/dailymed", status_code=201, dependencies=[Depends(authenticated_write_rate_limit("enrichment_write", settings.enrichment_rate_limit_per_window))])
+async def submit_dailymed_mechanism_for_review(
+    peptide_id: UUID,
+    payload: DailyMedMechanismSubmission,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """Create a source-backed, unverified MOA record and queue it for independent curation."""
+    organization_id, role = _candidate_membership(current_user, db)
+    if role not in {"organization_admin", "curator", "reviewer", "researcher"}:
+        raise HTTPException(status_code=403, detail="Researcher, curator or reviewer membership is required.")
+
+    peptide = db.execute(text("""
+        SELECT p.id, p.preferred_name
+        FROM peptides p
+        WHERE p.id=:peptide_id
+          AND (p.review_status='verified' OR EXISTS (
+              SELECT 1 FROM curation_reviews review
+              WHERE review.entity_type='peptide' AND review.entity_id=p.id
+                AND review.owner_organization_id=:organization_id
+          ))
+    """), {"peptide_id": peptide_id, "organization_id": organization_id}).mappings().first()
+    if peptide is None:
+        raise HTTPException(status_code=404, detail="Peptide dossier not found or not accessible.")
+    if payload.chemical_form_id:
+        form_exists = db.execute(text("""
+            SELECT 1 FROM peptide_chemical_forms
+            WHERE id=:form_id AND peptide_id=:peptide_id
+        """), {"form_id": payload.chemical_form_id, "peptide_id": peptide_id}).first()
+        if not form_exists:
+            raise HTTPException(status_code=422, detail="Chemical form does not belong to this peptide dossier.")
+
+    extracted = await DailyMedProvider().get_mechanism_of_action(payload.set_id)
+    if not extracted.get("found") or not extracted.get("mechanism_text"):
+        raise HTTPException(
+            status_code=422,
+            detail="This DailyMed SPL does not contain an explicit 12.1 Mechanism of Action section. No mechanism record was created.",
+        )
+
+    source_payload = {
+        "source": "DailyMed",
+        "set_id": extracted["set_id"],
+        "spl_title": extracted.get("spl_title"),
+        "spl_version": extracted.get("spl_version"),
+        "mechanism_section": extracted.get("mechanism_text"),
+        "section_code": extracted.get("section_code"),
+        "section_title": extracted.get("section_title"),
+        "retrieved_at": extracted.get("retrieved_at"),
+        "curation_status": "not_reviewed",
+        "approval_status": extracted.get("approval_status"),
+    }
+    source = persist_normalized_source_record(
+        db,
+        source_name="DailyMed",
+        source_identifier=extracted["set_id"],
+        source_url=extracted["source_url"],
+        title=extracted.get("spl_title") or "DailyMed SPL",
+        payload=source_payload,
+        source_version=str(extracted["spl_version"]) if extracted.get("spl_version") is not None else None,
+    )
+    source_locator = (
+        f"{extracted.get('section_title') or '12.1 Mechanism of Action'} "
+        f"(LOINC {extracted.get('section_code')}; SPL version {extracted.get('spl_version') or 'not stated'})"
+    )
+    existing = db.execute(text("""
+        SELECT id, review_status FROM peptide_mechanisms
+        WHERE peptide_id=:peptide_id
+          AND chemical_form_id IS NOT DISTINCT FROM :chemical_form_id
+          AND source_record_id=:source_id
+          AND source_locator=:source_locator
+        ORDER BY created_at DESC LIMIT 1
+    """), {
+        "peptide_id": peptide_id, "chemical_form_id": payload.chemical_form_id,
+        "source_id": source["source_record_id"], "source_locator": source_locator,
+    }).mappings().first()
+    if existing:
+        review = db.execute(text("""
+            SELECT id, review_status FROM curation_reviews
+            WHERE entity_type='peptide_mechanism' AND entity_id=:mechanism_id
+              AND owner_organization_id=:organization_id
+            ORDER BY created_at DESC LIMIT 1
+        """), {"mechanism_id": existing["id"], "organization_id": organization_id}).mappings().first()
+        db.commit()
+        return {
+            "mechanism_id": str(existing["id"]),
+            "review_id": str(review["id"]) if review else None,
+            "review_status": existing["review_status"],
+            "already_exists": True,
+            "evidence_level": "source_asserted",
+            "notice": extracted.get("notice"),
+        }
+
+    mechanism = db.execute(text("""
+        INSERT INTO peptide_mechanisms (
+            peptide_id, chemical_form_id, mechanism_title, mechanism_statement,
+            mechanism_class, target_name, evidence_level, evidence_type,
+            limitations, source_record_id, source_locator, source_excerpt,
+            model_or_method, review_status
+        ) VALUES (
+            :peptide_id, :chemical_form_id, :title, :statement,
+            'unknown', 'Not separately curated from the label text',
+            'source_asserted', 'unknown',
+            :limitations, :source_id, :source_locator, :excerpt,
+            :method, 'in_review'
+        )
+        RETURNING id, review_status
+    """), {
+        "peptide_id": peptide_id,
+        "chemical_form_id": payload.chemical_form_id,
+        "title": "DailyMed label: 12.1 Mechanism of Action",
+        "statement": extracted["mechanism_text"],
+        "limitations": (
+            "Source-reported SPL text only. DailyMed presence is not proof of FDA approval; "
+            "the current SPL may differ from the last FDA-approved label. Verify the exact "
+            "product, active ingredient, chemical form, indication, jurisdiction and label "
+            "version before treating this as a regulatory-label mechanism."
+        ),
+        "source_id": source["source_record_id"],
+        "source_locator": source_locator,
+        "excerpt": extracted["mechanism_text"],
+        "method": "DailyMed SPL XML extraction; LOINC 43679-0 or explicit 12.1 title fallback; extractor v1",
+    }).mappings().one()
+
+    review = db.execute(text("""
+        INSERT INTO curation_reviews (
+            entity_type, entity_id, source_record_id, review_status, priority,
+            submitted_by, owner_organization_id
+        ) VALUES (
+            'peptide_mechanism', :mechanism_id, :source_id, 'in_review',
+            'normal', :submitter, :organization_id
+        )
+        RETURNING id, review_status
+    """), {
+        "mechanism_id": mechanism["id"], "source_id": source["source_record_id"],
+        "submitter": current_user["id"], "organization_id": organization_id,
+    }).mappings().one()
+
+    db.execute(text("""
+        INSERT INTO audit_events (actor_user_id, organization_id, action, entity_type, entity_id, event_metadata)
+        VALUES (:actor, :org, 'peptide_mechanism_submitted_for_review', 'peptide_mechanism', :mechanism_id,
+                jsonb_build_object('peptide_id', :peptide_id, 'source', 'DailyMed',
+                                   'set_id', :set_id, 'source_version', :source_version,
+                                   'evidence_level', 'source_asserted'))
+    """), {
+        "actor": current_user["id"], "org": organization_id, "mechanism_id": mechanism["id"],
+        "peptide_id": peptide_id, "set_id": extracted["set_id"],
+        "source_version": extracted.get("spl_version"),
+    })
+    db.commit()
+    return {
+        "mechanism_id": str(mechanism["id"]),
+        "review_id": str(review["id"]),
+        "review_status": mechanism["review_status"],
+        "already_exists": False,
+        "evidence_level": "source_asserted",
+        "notice": extracted.get("notice"),
+    }
 
 
 @router.post("/discover-peptides", status_code=200, dependencies=[Depends(authenticated_write_rate_limit("enrichment_write", settings.enrichment_rate_limit_per_window))])

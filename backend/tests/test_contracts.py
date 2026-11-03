@@ -1970,3 +1970,8 @@ def test_global_discovery_decision_requires_canonical_link_only_for_existing_pep
             canonical_peptide_id=uuid4(),
             rationale="This candidate is not a peptide entity and is excluded.",
         )
+    with pytest.raises(ValidationError):
+        GlobalDiscoveryDecision(
+            decision="rejected",
+            rationale="                    ",
+        )

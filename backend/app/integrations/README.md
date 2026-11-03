@@ -70,3 +70,13 @@ All integrations are read-only discovery clients. Results returned from external
 - The Purple Book covers FDA-licensed biological products regulated by CDER and CBER, including reference products and biosimilars. It complements Drugs@FDA and is not interchangeable with it.
 - A Purple Book match does not establish that the matched biological product is a peptide. Candidate identity remains unresolved until curator review.
 - Official downloads: https://purplebooksearch.fda.gov/downloads
+
+
+## IUPHAR/BPS Guide to PHARMACOLOGY (GtoPdb)
+- Read-only endpoint: `GET /api/v1/research/gtopdb-peptides?q=...`.
+- Searches the expert-curated ligand service for both `Peptide` and `Endogenous peptide` classes and retrieves the source-reported ligand interaction records where available.
+- These interactions can provide useful target/action hints for mechanism-of-action research. They are preserved as source-reported evidence and are not automatically promoted to verified MOA records.
+- API access requires registration and an API key. Configure `GTOPDB_API_KEY`; the key is sent in the `GTP-API-Key` request header and is never placed in URLs or persisted.
+- The source applies a request rate limit (approximately 60 requests/minute). This adapter limits concurrent ligand interaction lookups to five.
+- GtoPdb database data use ODbL and contents use CC BY-SA 4.0. Attribution and share-alike requirements must be assessed before redistributing source data, particularly in commercial deployments.
+- Official API and access documentation: https://www.guidetopharmacology.org/webServices.jsp

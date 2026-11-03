@@ -65,6 +65,24 @@ export default function SourceCoveragePage() {
         </article>)}
       </div>
     </section>)}
+    <section className="mt-9">
+      <h2 className="text-xl font-semibold">Priority sources under evaluation</h2>
+      <p className="muted mt-2 text-sm leading-6">These jurisdictions are part of the global coverage roadmap but are not yet connected as production ingestion adapters. Their official access method, dataset scope, licence and update cadence must be verified before integration.</p>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {[
+          ["India · CDSCO", "Approved new drugs, regulatory notices and product-specific source records; official data access and machine-readable coverage require evaluation."],
+          ["United Kingdom · MHRA", "National product authorisation and product-information sources; source access, status semantics and identifier mapping require evaluation."],
+          ["Australia · TGA ARTG", "Australian Register of Therapeutic Goods product records; peptide/biologic coverage and bulk access terms require evaluation."],
+          ["Japan · PMDA / MHLW", "Japanese drug and biologic approval information; official datasets, language handling and product identifiers require evaluation."],
+          ["China · NMPA", "Chinese drug and biologic registration information; official publication sources, access constraints and identifier mapping require evaluation."],
+          ["Other national authorities", "Additional national and regional regulators will be prioritised after source-access and coverage assessment."]
+        ].map(([name, description]) => <article key={name} className="panel p-4">
+          <div className="text-xs text-amber-300">Not integrated</div>
+          <h3 className="mt-2 font-semibold">{name}</h3>
+          <p className="muted mt-2 text-xs leading-5">{description}</p>
+        </article>)}
+      </div>
+    </section>
     <section className="panel mt-9 p-5">
       <h2 className="font-semibold">Coverage expansion policy</h2>
       <p className="muted mt-2 text-sm leading-6">Additional national regulators and specialist databases will be added through versioned adapters after access terms, licensing, stable identifiers, pagination completeness, update cadence and source-native status semantics are documented. Planned sources are not displayed as integrated until the adapter and its tests are merged.</p>

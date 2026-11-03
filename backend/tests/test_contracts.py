@@ -2111,3 +2111,18 @@ def test_gtopdb_mechanism_import_route_is_registered_and_bounded():
     schemas = app.openapi()["components"]["schemas"]
     ligand_id = schemas["GtoPdbMechanismSubmission"]["properties"]["ligand_id"]
     assert ligand_id["exclusiveMinimum"] == 0
+
+
+def test_gtopdb_mechanism_submission_requires_exact_ligand_id():
+    from app.routers.enrichment import GtoPdbMechanismSubmission
+    request = GtoPdbMechanismSubmission(ligand_id=1234)
+    assert request.ligand_id == 1234
+    with pytest.raises(Exception):
+        GtoPdbMechanismSubmission(ligand_id=0)
+
+
+def test_gtopdb_mechanism_curation_route_is_registered():
+    paths = app.openapi()["paths"]
+    route = paths["/api/v1/enrichment/peptides/{peptide_id}/mechanisms/gtopdb"]["post"]
+    assert route["requestBody"]["required"] is True
+    assert "/api/v1/curation/reviews/{review_id}/mechanism" in paths

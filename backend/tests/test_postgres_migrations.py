@@ -101,6 +101,9 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             "peptide_discovery_candidates",
             "peptide_discovery_observations",
             "peptide_discovery_decisions",
+            "peptide_discovery_candidates",
+            "peptide_discovery_observations",
+            "peptide_discovery_decisions",
         )
         for table_name in required_tables:
             exists = connection.execute(
@@ -109,6 +112,25 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             ).scalar_one()
             assert exists, f"Expected migration-created table {table_name!r}"
 
+
+        discovery_candidate_columns = connection.execute(text("""
+            SELECT count(*) FROM information_schema.columns
+            WHERE table_schema='public' AND table_name='peptide_discovery_candidates'
+              AND column_name IN ('source_record_id','source_entity_identifier','candidate_name',
+                                  'candidate_kind','source_development_status','reported_sequence',
+                                  'reported_mechanism','canonical_peptide_id','identity_match_status',
+                                  'candidate_status','raw_metadata')
+        """)).scalar_one()
+        assert discovery_candidate_columns == 11
+
+        discovery_append_only_triggers = connection.execute(text("""
+            SELECT count(*) FROM pg_trigger
+            WHERE NOT tgisinternal AND tgname IN (
+                'peptide_discovery_observations_append_only',
+                'peptide_discovery_decisions_append_only'
+            )
+        """)).scalar_one()
+        assert discovery_append_only_triggers == 2
 
         mechanism_columns = connection.execute(text("""
             SELECT count(*) FROM information_schema.columns

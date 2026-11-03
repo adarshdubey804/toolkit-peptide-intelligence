@@ -372,7 +372,7 @@ async def discover_and_persist_peptide_candidates(
                     source_url=source_url,
                     title=title,
                     payload=item,
-                    source_version=str(item.get("spl_version")) if item.get("spl_version") is not None else None,
+                    source_version=str(item.get("source_version") or item.get("spl_version")) if (item.get("source_version") is not None or item.get("spl_version") is not None) else None,
                 )
                 candidate = db.execute(text("""
                     INSERT INTO peptide_discovery_candidates (
@@ -423,7 +423,7 @@ async def discover_and_persist_peptide_candidates(
                 """), {
                     "candidate_id": candidate["id"],
                     "source_id": snapshot["source_record_id"],
-                    "source_version": str(item.get("spl_version")) if item.get("spl_version") is not None else None,
+                    "source_version": str(item.get("source_version") or item.get("spl_version")) if (item.get("source_version") is not None or item.get("spl_version") is not None) else None,
                     "payload": json.dumps(item, ensure_ascii=False, default=str),
                     "payload_hash": snapshot["content_hash"],
                 })

@@ -259,7 +259,7 @@ export default function EnrichmentPage() {
         <h2 className="text-lg font-semibold">Import ChEMBL peptide mechanism records</h2>
         <p className="muted mt-2 text-sm">Enter an exact ChEMBL molecule ID. The system verifies an explicit peptide HELM biotherapeutic record and imports only mechanism entries that include a target identifier and mechanism statement.</p>
         <form onSubmit={submitChEMBLMechanism} className="mt-4 grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
-          <label className="block"><span className={label}>ChEMBL molecule ID</span><input className={field} required minLength={7} maxLength={20} pattern="(?i)CHEMBL[0-9]+" value={chemblId} onChange={e => setChemblId(e.target.value)} placeholder="CHEMBL448105" /></label>
+          <label className="block"><span className={label}>ChEMBL molecule ID</span><input className={field} required minLength={7} maxLength={20} pattern="[Cc][Hh][Ee][Mm][Bb][Ll][0-9]+" value={chemblId} onChange={e => setChemblId(e.target.value)} placeholder="CHEMBL448105" /></label>
           <button disabled={chemblSubmitting || !/^CHEMBL[0-9]+$/i.test(chemblId.trim()) || peptideId.trim().length !== 36} className="rounded-full border border-emerald-400/50 px-6 py-3 text-sm font-semibold text-emerald-200 disabled:opacity-50">{chemblSubmitting ? "Importing mechanism records…" : "Import MOA for review"}</button>
         </form>
         <p className="muted mt-3 text-xs">Each mechanism remains source-reported until an independent curator reviews the peptide HELM identity, target and action. ChEMBL is CC BY-SA 3.0; attribution and share-alike obligations apply.</p>

@@ -12,6 +12,9 @@
 | Japan | PMDA approved-product lists and product information search | Official public lists and search | Published approved drug product lists, selected review reports and Japanese product information; English translations are selective | Official link-out only; automated ingestion not integrated |
 | China | NMPA information-center drug product databases | Official Chinese-language data query portal and published records | Domestic and imported drug product databases; source documentation describes approval/registration numbers, product names, dosage forms, specifications, holders/manufacturers and approval dates | Official link-out only; automated ingestion not integrated |
 | China | NMPA Center for Drug Evaluation (CDE) | Official Chinese-language public information portal | Accepted drug applications, review-task disclosures, clinical-trial implied permissions, breakthrough-therapy and priority-review designations, conditional approvals and marketed-drug information | Official link-out only; automated ingestion not integrated |
+| Singapore | HSA Register of Therapeutic Products | Official Infosearch and government open-data CSV listing | Product name, licence number, active ingredients, dosage form, route, manufacturer, country of origin, approval date and classification where published; post-registration actions require checking HSA | Official link-out only; automated ingestion not integrated |
+| South Korea | MFDS Drug Safety Nara | Official English/Korean public product information and review portal | Product approval information, drug information search, review results and safety/product information | Official link-out only; automated ingestion not integrated |
+| Brazil | ANVISA medicine registration consultation | Official Portuguese-language public search | Registered medicines and simplified-notification medicines; ANVISA also regulates biological products and clinical trials | Official link-out only; automated ingestion not integrated |
 | European Union | EMA Article 57 product snapshot | Public XLSX snapshot | Products with valid marketing authorisations in the EEA at the snapshot date; active substance, route, country and holder fields where published | Integrated read-only snapshot importer |
 | European Union | EMA Product Management Service (PMS) public API | FHIR R5 API with prior registration and OAuth2 | Limited public subset of non-nullified human medicinal products; current/provisional status scope and confidential-field exclusions | Planned; credentials and access scope required |
 | European Union | EMA ePI pilot API | Public API for published pilot product information | Published electronic product information pilot; not a complete register of all EU products | Planned source evaluation |
@@ -115,3 +118,19 @@ For every new jurisdiction, an adapter is accepted only after it has: (1) a sour
 - CDE publicly exposes accepted product applications, review-task information, clinical-trial implied permissions, breakthrough-therapy and priority-review designations, conditional approvals and marketed-drug information.
 - These states represent different regulatory/development milestones. An accepted application, clinical-trial implied permission or designation is not a marketing authorisation.
 - Current platform status: link-out only; automated ingestion requires source-native status mapping, Chinese-language normalization, stable identifiers and historical change coverage.
+
+### Singapore — HSA Register of Therapeutic Products (link-out stage)
+- Official HSA Infosearch: `https://www.hsa.gov.sg/e-services/infosearch/`.
+- HSA's official data.gov.sg listing provides product name, licence number, active ingredients, dosage form, manufacturer, country of origin, approval date and classification fields; the published listing is updated periodically.
+- Check HSA Infosearch for current registration and post-registration actions such as transfers, cancellations and recalls.
+- Current platform status: link-out only; automated ingestion and status history are not integrated.
+
+### South Korea — MFDS Drug Safety Nara (link-out stage)
+- Official English portal: `https://nedrug.mfds.go.kr/eng/index`.
+- The portal exposes drug information search, approval information and review-result functions. Korean-language records may contain more complete information than English views.
+- Current platform status: link-out only; bilingual normalization, stable identifiers and historical status reconciliation are not integrated.
+
+### Brazil — ANVISA medicine registration (link-out stage)
+- Official medicine registration consultation: `https://www.gov.br/anvisa/pt-br/sistemas/consulta-a-registro-de-medicamentos`.
+- ANVISA's regulatory scope includes medicines and biological products and authorisation of clinical trials in Brazil.
+- Current platform status: link-out only; Portuguese-language normalization, product identifiers and regulatory status history are not integrated.

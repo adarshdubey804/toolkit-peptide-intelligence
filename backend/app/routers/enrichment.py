@@ -32,12 +32,14 @@ async def _safe_search(name: str, operation):
         result = await operation
         items = result.get("items", [])
         return {
-            "status": "success",
+            "status": result.get("status", "success"),
             "source": result.get("source", name),
             "total": result.get("total"),
             "items": items,
             "coverage_notice": result.get("coverage_notice"),
             "curation_status": result.get("curation_status", "not_reviewed"),
+            "error": result.get("error"),
+            "license_notice": result.get("license_notice"),
         }
     except Exception as exc:
         return {
@@ -411,7 +413,7 @@ async def discover_and_persist_peptide_candidates(
         operations["fda_purple_book"] = FdaPurpleBookProvider().search(
             query, min(payload.limit, 100)
         )
-    if "gtopdb" in selected and settings.gtopdb_api_key:
+    if "gtopdb" in selected:
         operations["gtopdb"] = GtoPdbProvider().search_peptides(
             query, min(payload.limit, 30), settings.gtopdb_api_key
         )

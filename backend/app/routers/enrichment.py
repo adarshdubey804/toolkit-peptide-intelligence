@@ -255,6 +255,8 @@ async def submit_dailymed_mechanism_for_review(
         raise HTTPException(status_code=422, detail="Invalid DailyMed SPL Set ID.") from exc
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail="DailyMed SPL could not be retrieved.") from exc
+    if extracted.get("found") and len((extracted.get("mechanism_text") or "").strip()) < 20:
+        raise HTTPException(status_code=422, detail="The extracted MOA section is too short to create a scientific mechanism record.")
     if not extracted.get("found") or not extracted.get("mechanism_text"):
         raise HTTPException(
             status_code=422,

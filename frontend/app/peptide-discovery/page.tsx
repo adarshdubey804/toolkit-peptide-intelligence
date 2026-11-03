@@ -47,7 +47,7 @@ export default function PeptideDiscoveryPage() {
   const [token, setToken] = useState("");
   const [userLabel, setUserLabel] = useState("");
   const [query, setQuery] = useState("");
-  const [sources, setSources] = useState<string[]>(["fda_drugsfda", "fda_purple_book", "ema_article57", "dbaasp", "chembl", "dailymed", "health_canada_dpd", "clinicaltrials", "pubmed"]);
+  const [sources, setSources] = useState<string[]>(["fda_drugsfda", "fda_purple_book", "ema_article57", "dbaasp", "dramp", "gtopdb", "chembl", "dailymed", "health_canada_dpd", "clinicaltrials", "pubmed"]);
   const [status, setStatus] = useState("all");
   const [candidates, setCandidates] = useState<CandidateResponse | null>(null);
   const [loading, setLoading] = useState(false);

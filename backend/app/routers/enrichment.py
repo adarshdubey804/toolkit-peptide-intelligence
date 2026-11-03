@@ -202,9 +202,9 @@ class ChEMBLMechanismSubmission(BaseModel):
 class PeptideDiscoveryRequest(BaseModel):
     query: str = Field(min_length=2, max_length=160)
     sources: list[str] = Field(
-        default_factory=lambda: ["fda_drugsfda", "fda_purple_book", "ema_article57", "dbaasp", "dailymed", "health_canada_dpd", "chembl", "clinicaltrials", "pubmed"],
+        default_factory=lambda: ["fda_drugsfda", "fda_purple_book", "ema_article57", "dbaasp", "dramp", "gtopdb", "dailymed", "health_canada_dpd", "chembl", "clinicaltrials", "pubmed"],
         min_length=1,
-        max_length=10,
+        max_length=12,
     )
     limit: int = Field(default=20, ge=1, le=50)
 

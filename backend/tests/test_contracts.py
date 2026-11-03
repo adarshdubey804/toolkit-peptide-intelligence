@@ -2196,3 +2196,12 @@ def test_chembl_exact_peptide_lookup_rejects_invalid_identifier_without_network(
     from app.integrations.chembl import ChEMBLProvider
     with pytest.raises(ValueError):
         asyncio.run(ChEMBLProvider().get_peptide_molecule("not-a-chembl-id"))
+
+
+def test_default_global_peptide_discovery_includes_all_configured_specialist_sources():
+    from app.routers.enrichment import PeptideDiscoveryRequest
+    request = PeptideDiscoveryRequest(query="peptide")
+    assert "dramp" in request.sources
+    assert "gtopdb" in request.sources
+    assert "chembl" in request.sources
+    assert len(request.sources) <= 12

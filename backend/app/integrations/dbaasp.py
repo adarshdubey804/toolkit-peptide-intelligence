@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -111,7 +112,7 @@ class DbaaspProvider:
                 f"{BASE_URL}/peptides",
                 params={"name.value": term, "limit": limit, "offset": 0},
             )
-            if response.status_code == 204:
+            if response.status_code in (204, 404):
                 result = {
                     "source": SOURCE_NAME, "query": term, "total": 0, "returned_count": 0,
                     "items": [], "source_version": f"DBAASP API {API_VERSION}",
@@ -155,9 +156,13 @@ class DbaaspProvider:
                         seen.add(identifier)
                         items.append(normalized)
 
+                retrieved_at = datetime.now(timezone.utc).isoformat()
+                for item in items:
+                    item["retrieved_at"] = retrieved_at
                 result = {
                     "source": SOURCE_NAME,
                     "query": term,
+                    "retrieved_at": retrieved_at,
                     "total": total,
                     "returned_count": len(items),
                     "items": items,

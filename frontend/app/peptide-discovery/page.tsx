@@ -8,6 +8,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000"
 const AVAILABLE_SOURCES = [
   { id: "fda_drugsfda", label: "FDA Drugs@FDA" },
   { id: "fda_purple_book", label: "FDA Purple Book" },
+  { id: "gtopdb", label: "IUPHAR/BPS Guide to PHARMACOLOGY (API key required)" },
   { id: "dailymed", label: "DailyMed" },
   { id: "health_canada_dpd", label: "Health Canada DPD" },
   { id: "clinicaltrials", label: "ClinicalTrials.gov" },

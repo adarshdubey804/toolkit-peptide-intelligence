@@ -16,6 +16,7 @@ from ..integrations.dailymed import DailyMedProvider
 from ..integrations.fda_drugsfda import FdaDrugsFdaProvider
 from ..integrations.fda_purple_book import FdaPurpleBookProvider
 from ..integrations.gtopdb import GtoPdbProvider
+from ..integrations.dramp import DrampProvider
 from ..integrations.health_canada_dpd import HealthCanadaDpdProvider
 from ..integrations.pubmed import PubMedProvider
 from ..integrations.rcsb import RCSBProvider
@@ -191,7 +192,7 @@ class PeptideDiscoveryRequest(BaseModel):
     sources: list[str] = Field(
         default_factory=lambda: ["fda_drugsfda", "fda_purple_book", "dailymed", "health_canada_dpd", "clinicaltrials", "pubmed"],
         min_length=1,
-        max_length=7,
+        max_length=8,
     )
     limit: int = Field(default=20, ge=1, le=50)
 
@@ -394,7 +395,7 @@ async def discover_and_persist_peptide_candidates(
     if role not in {"organization_admin", "curator", "reviewer", "researcher"}:
         raise HTTPException(status_code=403, detail="Researcher, curator or reviewer membership is required.")
 
-    allowed_sources = {"fda_drugsfda", "fda_purple_book", "dailymed", "health_canada_dpd", "clinicaltrials", "pubmed", "gtopdb"}
+    allowed_sources = {"fda_drugsfda", "fda_purple_book", "dailymed", "health_canada_dpd", "clinicaltrials", "pubmed", "gtopdb", "dramp"}
     selected = list(dict.fromkeys(payload.sources))
     if not selected or not set(selected).issubset(allowed_sources):
         raise HTTPException(status_code=422, detail="Unsupported peptide discovery source.")
@@ -415,6 +416,8 @@ async def discover_and_persist_peptide_candidates(
         operations["gtopdb"] = GtoPdbProvider().search_peptides(
             query, min(payload.limit, 30), settings.gtopdb_api_key
         )
+    if "dramp" in selected:
+        operations["dramp"] = DrampProvider().search(query, min(payload.limit, 100))
     if "dailymed" in selected:
         operations["dailymed"] = DailyMedProvider().search_by_name(query, min(payload.limit, 50), 1)
     if "health_canada_dpd" in selected:
@@ -509,6 +512,12 @@ async def discover_and_persist_peptide_candidates(
                     title = f"GtoPdb ligand {identifier or 'unknown'} · {item.get('candidate_name') or query}"
                     candidate_name = item.get("candidate_name") or query
                     development_status = item.get("ligand_type") or "curated_peptide_ligand_record"
+                elif source_key == "dramp":
+                    identifier = item.get("source_identifier")
+                    source_url = item.get("source_url")
+                    title = f"DRAMP {identifier or 'unknown'} · {item.get('candidate_name') or query}"
+                    candidate_name = item.get("candidate_name") or identifier or query
+                    development_status = None
                 elif source_key == "dailymed":
                     identifier = item.get("set_id")
                     source_url = item.get("source_url")

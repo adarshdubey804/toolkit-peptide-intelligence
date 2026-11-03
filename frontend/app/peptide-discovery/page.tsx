@@ -9,6 +9,7 @@ const AVAILABLE_SOURCES = [
   { id: "fda_drugsfda", label: "FDA Drugs@FDA" },
   { id: "fda_purple_book", label: "FDA Purple Book" },
   { id: "gtopdb", label: "IUPHAR/BPS Guide to PHARMACOLOGY (API key required)" },
+  { id: "dramp", label: "DRAMP 5.0 (Antimicrobial peptides)" },
   { id: "dailymed", label: "DailyMed" },
   { id: "health_canada_dpd", label: "Health Canada DPD" },
   { id: "clinicaltrials", label: "ClinicalTrials.gov" },

@@ -81,3 +81,8 @@ The record is deliberately:
 The candidate dossier opens at `/peptide-discovery/{candidate_id}`. It must not be promoted to a canonical peptide or labelled FDA-approved/not-approved from this single compounding page alone. Curators must resolve exact sequence/form and check product-level authorization sources separately.
 
 Official source: https://www.fda.gov/drugs/human-drug-compounding/certain-bulk-drug-substances-use-compounding-may-present-significant-safety-risks
+
+
+### BPC-157 literature mechanism note
+
+Migration 070 adds PubMed PMID 40005999 (2025 review) as a second source observation on the same BPC-157 candidate dossier. The provisional mechanism hint summarizes proposed NOS interaction, HO-1/antioxidant expression and VEGF-receptor modulation. It is explicitly labelled literature-reported and predominantly preclinical. It is not a curator-verified mechanism, a demonstrated human pathway or evidence of clinical efficacy. The exact review, DOI, PMCID, excerpt, source URL and evidence-scope limitation are retained in the dossier and immutable observation history.

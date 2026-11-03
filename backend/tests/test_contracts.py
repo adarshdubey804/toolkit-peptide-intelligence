@@ -2008,6 +2008,8 @@ def test_dbaasp_normalization_preserves_modified_sequence_and_assay_context():
         "sequenceLength": 12,
         "synthesisType": {"name": "Synthetic"},
         "complexity": {"name": "monomer"},
+        "targetObjects": [{"name": "Outer membrane protein A"}],
+        "nterminus": {"name": "Acetylated"},
         "targetActivities": [{
             "targetSpecies": {"name": "Escherichia coli"},
             "activityMeasureGroup": {"name": "MIC"},
@@ -2035,6 +2037,8 @@ def test_dbaasp_normalization_preserves_modified_sequence_and_assay_context():
     })
     assert result["source_identifier"] == "DBAASPR_000107"
     assert result["sequence"] == "KWRR-modified"
+    assert result["reported_target"] == "target object: Outer membrane protein A"
+    assert "N-terminus: Acetylated" in result["chemical_form"]
     assert result["target_activities"][0]["activityMeasureValue"] == "4"
     assert result["hemolytic_cytotoxic_activities"][0]["activity"] == 5
     assert result["reported_combination_activity"][0]["antibioticName"] == "Example antibiotic"

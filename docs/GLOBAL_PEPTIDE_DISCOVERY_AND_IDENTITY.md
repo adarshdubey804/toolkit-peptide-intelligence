@@ -89,3 +89,14 @@ A worldwide inventory is an ongoing evidence-coverage programme, not a one-time 
 | IEDB | Peptide epitopes and immune assay evidence | Epitope evidence is not a comprehensive peptide inventory or proof of therapeutic status |
 
 These sources cover different biological domains and must remain separately attributed. A peptide sequence observed in a proteomics or epitope dataset is not automatically a mature, stable, independently existing therapeutic peptide entity.
+
+## Provisional candidate dossier folders
+
+Every persisted discovery candidate has a stable UUID and its own route at `/peptide-discovery/{candidate_id}`. This provisional folder displays source identity, source-reported sequence and SMILES, target/mechanism hints, source payload, immutable observation versions and curation decision history. It is distinct from the canonical peptide profile at `/peptides/{peptide_id}`.
+
+A candidate becomes a canonical peptide only after an explicit identity decision:
+- accepted as existing: link to an already curator-verified canonical peptide;
+- accepted as new: record a new-entity decision, then create the canonical peptide dossier in a separate governed workflow;
+- duplicate, rejected or needs-more-evidence: preserve the decision and its rationale in append-only history.
+
+No name-only match, source search result or AI extraction creates a verified peptide. Provisional candidate folders remain clearly labelled as unverified until canonical identity review is complete.

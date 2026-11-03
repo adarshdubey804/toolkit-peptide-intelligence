@@ -45,6 +45,31 @@ def normalize_peptide(detail: dict) -> dict:
     cytotoxic_activities = detail.get("hemoliticCytotoxicActivities") or []
     synergy_records = detail.get("synergies") or []
     articles = detail.get("articles") or []
+    target_names = []
+    for target in detail.get("targetObjects") or []:
+        if isinstance(target, dict) and target.get("name"):
+            target_names.append("target object: " + str(target["name"]))
+    for group in detail.get("targetGroups") or []:
+        if isinstance(group, dict) and group.get("name"):
+            target_names.append("target group: " + str(group["name"]))
+    target_summary = "; ".join(dict.fromkeys(target_names)) or None
+
+    chemical_form_parts = []
+    for label, terminus in (
+        ("N-terminus", detail.get("nterminus") or detail.get("nTerminus")),
+        ("C-terminus", detail.get("cterminus") or detail.get("cTerminus")),
+    ):
+        if isinstance(terminus, dict) and terminus.get("name"):
+            chemical_form_parts.append(f"{label}: {terminus['name']}")
+    for modification in detail.get("unusualAminoAcids") or []:
+        if isinstance(modification, dict):
+            mod_type = modification.get("modificationType") or {}
+            name = mod_type.get("name") if isinstance(mod_type, dict) else str(mod_type or "")
+            if name:
+                chemical_form_parts.append(
+                    f"unusual residue at position {modification.get('position', 'not stated')}: {name}"
+                )
+    chemical_form_summary = "; ".join(chemical_form_parts) or None
     return {
         "source": SOURCE_NAME,
         "source_identifier": record_id,
@@ -55,6 +80,8 @@ def normalize_peptide(detail: dict) -> dict:
         "name": detail.get("name"),
         "major_name": detail.get("majorName"),
         "sequence": detail.get("sequence"),
+        "reported_target": target_summary,
+        "chemical_form": chemical_form_summary,
         "sequence_length": detail.get("sequenceLength"),
         "synthesis_type": (detail.get("synthesisType") or {}).get("name") if isinstance(detail.get("synthesisType"), dict) else detail.get("synthesisType"),
         "complexity": (detail.get("complexity") or {}).get("name") if isinstance(detail.get("complexity"), dict) else detail.get("complexity"),

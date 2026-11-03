@@ -2008,6 +2008,8 @@ def test_dbaasp_normalization_preserves_modified_sequence_and_assay_context():
         "sequenceLength": 12,
         "synthesisType": {"name": "Synthetic"},
         "complexity": {"name": "monomer"},
+        "targetObjects": [{"name": "Outer membrane protein A"}],
+        "nterminus": {"name": "Acetylated"},
         "targetActivities": [{
             "targetSpecies": {"name": "Escherichia coli"},
             "activityMeasureGroup": {"name": "MIC"},
@@ -2035,6 +2037,8 @@ def test_dbaasp_normalization_preserves_modified_sequence_and_assay_context():
     })
     assert result["source_identifier"] == "DBAASPR_000107"
     assert result["sequence"] == "KWRR-modified"
+    assert result["reported_target"] == "target object: Outer membrane protein A"
+    assert "N-terminus: Acetylated" in result["chemical_form"]
     assert result["target_activities"][0]["activityMeasureValue"] == "4"
     assert result["hemolytic_cytotoxic_activities"][0]["activity"] == 5
     assert result["reported_combination_activity"][0]["antibioticName"] == "Example antibiotic"
@@ -2057,3 +2061,33 @@ def test_dbaasp_research_and_global_discovery_contracts_are_registered():
     from app.routers.enrichment import PeptideDiscoveryRequest
     request = PeptideDiscoveryRequest(query="magainin", sources=["dbaasp"])
     assert request.sources == ["dbaasp"]
+
+def test_global_discovery_candidate_dossier_and_decision_routes_are_registered():
+    paths = app.openapi()["paths"]
+    assert "get" in paths["/api/v1/enrichment/discovery-candidates/{candidate_id}"]
+    assert "post" in paths["/api/v1/enrichment/discovery-candidates/{candidate_id}/decisions"]
+
+
+def test_global_discovery_decision_requires_canonical_link_only_for_existing_peptide():
+    import pytest
+    from pydantic import ValidationError
+    from app.routers.enrichment import GlobalDiscoveryDecision
+    from uuid import uuid4
+
+    valid = GlobalDiscoveryDecision(
+        decision="accepted_as_existing_peptide",
+        canonical_peptide_id=uuid4(),
+        rationale="Sequence and chemical form match the verified canonical record.",
+    )
+    assert valid.canonical_peptide_id is not None
+    with pytest.raises(ValidationError):
+        GlobalDiscoveryDecision(
+            decision="rejected",
+            canonical_peptide_id=uuid4(),
+            rationale="This candidate is not a peptide entity and is excluded.",
+        )
+    with pytest.raises(ValidationError):
+        GlobalDiscoveryDecision(
+            decision="rejected",
+            rationale="                    ",
+        )

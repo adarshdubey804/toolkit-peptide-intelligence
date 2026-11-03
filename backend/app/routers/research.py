@@ -18,6 +18,7 @@ from ..rate_limit import enforce_rate_limit, request_client_identity
 from ..integrations.alphafold import AlphaFoldProvider
 from ..integrations.clinicaltrials import ClinicalTrialsProvider
 from ..integrations.dailymed import DailyMedProvider
+from ..integrations.ema_article57 import EmaArticle57Provider
 from ..integrations.fda_drugsfda import FdaDrugsFdaProvider
 from ..integrations.fda_purple_book import FdaPurpleBookProvider
 from ..integrations.gtopdb import GtoPdbProvider
@@ -58,6 +59,18 @@ async def search_health_canada_dpd(
         return await HealthCanadaDpdProvider().search_by_ingredient(q, limit)
     except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
         raise HTTPException(status_code=502, detail="Health Canada DPD could not be reached or returned an invalid response.") from exc
+
+
+@router.get("/ema-article57")
+async def search_ema_article57(
+    q: str = Query(min_length=2, max_length=160),
+    limit: int = Query(default=20, ge=1, le=50),
+):
+    """Search the public EMA Article 57 EEA product snapshot; results are unreviewed observations."""
+    try:
+        return await EmaArticle57Provider().search(q, limit)
+    except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(status_code=502, detail="EMA Article 57 could not be retrieved or parsed.") from exc
 
 
 @router.get("/gtopdb-peptides")

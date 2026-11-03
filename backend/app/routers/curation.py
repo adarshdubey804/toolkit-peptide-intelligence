@@ -14,7 +14,7 @@ router = APIRouter(prefix="/api/v1/curation", tags=["scientific curation"])
 
 
 class ReviewSubmission(BaseModel):
-    entity_type: Literal["peptide", "evidence_claim"]
+    entity_type: Literal["peptide", "evidence_claim", "peptide_mechanism"]
     entity_id: UUID
     source_record_id: UUID | None = None
     priority: Literal["low", "normal", "high"] = "normal"
@@ -54,7 +54,7 @@ def _require_reviewer_role(role: str):
 
 
 def _entity_exists(db: Session, entity_type: str, entity_id: UUID) -> bool:
-    table = {"peptide": "peptides", "evidence_claim": "evidence_claims"}[entity_type]
+    table = {"peptide": "peptides", "evidence_claim": "evidence_claims", "peptide_mechanism": "peptide_mechanisms"}[entity_type]
     return db.execute(text(f"SELECT 1 FROM {table} WHERE id = :entity_id"), {"entity_id": entity_id}).first() is not None
 
 
@@ -109,11 +109,14 @@ def list_reviews(
                cr.evidence_claim_revision_id,
                revision.revision_number AS evidence_claim_revision_number,
                revision.content_hash AS evidence_claim_revision_hash,
-               COALESCE(p.preferred_name, ec.claim_text) AS record_label,
+               COALESCE(p.preferred_name, ec.claim_text, mechanism.mechanism_title || ' — ' || mechanism_peptide.preferred_name) AS record_label,
                sr.source_name, sr.source_identifier, sr.source_url
         FROM curation_reviews cr
         LEFT JOIN peptides p ON cr.entity_type = 'peptide' AND p.id = cr.entity_id
         LEFT JOIN evidence_claims ec ON cr.entity_type = 'evidence_claim' AND ec.id = cr.entity_id
+        LEFT JOIN peptide_mechanisms mechanism
+          ON cr.entity_type = 'peptide_mechanism' AND mechanism.id = cr.entity_id
+        LEFT JOIN peptides mechanism_peptide ON mechanism_peptide.id = mechanism.peptide_id
         LEFT JOIN evidence_claim_revisions revision ON revision.id = cr.evidence_claim_revision_id
         LEFT JOIN source_records sr ON sr.id = cr.source_record_id
         WHERE (:review_status IS NULL OR cr.review_status = CAST(:review_status AS review_status))
@@ -256,6 +259,14 @@ def decide_review(
                 text("SELECT 1 FROM source_records WHERE id = :source_id AND source_url IS NOT NULL"),
                 {"source_id": source_id},
             ).first()
+        elif review["entity_type"] == "peptide_mechanism":
+            supported = db.execute(text("""
+                SELECT 1
+                FROM peptide_mechanisms mechanism
+                JOIN source_records source ON source.id = mechanism.source_record_id
+                WHERE mechanism.id = :entity_id AND source.source_url IS NOT NULL
+                LIMIT 1
+            """), {"entity_id": review["entity_id"]}).first()
         else:
             supported = db.execute(text("""
                 SELECT 1
@@ -291,8 +302,9 @@ def decide_review(
     """), {"new_status": new_status, "rationale": payload.rationale.strip(),
            "reviewer": current_user["id"], "review_id": review_id})
 
-    if review["entity_type"] in ("peptide", "evidence_claim"):
-        table = {"peptide": "peptides", "evidence_claim": "evidence_claims"}[review["entity_type"]]
+    if review["entity_type"] in ("peptide", "evidence_claim", "peptide_mechanism"):
+        table = {"peptide": "peptides", "evidence_claim": "evidence_claims",
+                 "peptide_mechanism": "peptide_mechanisms"}[review["entity_type"]]
         db.execute(text(f"""
             UPDATE {table}
             SET review_status = CAST(:new_status AS review_status)

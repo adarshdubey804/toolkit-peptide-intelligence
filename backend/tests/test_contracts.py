@@ -1730,12 +1730,12 @@ def test_purple_book_discovers_latest_monthly_csv_from_fda_download_page():
 
 def test_purple_book_parser_uses_full_snapshot_table_not_monthly_change_table():
     csv_text = (
-        "Change Type,BLA Number,Proper Name,Product Number,License Type\\n"
-        "N,123,Temporary row,001,351(a)\\n"
-        "\\n"
-        "BLA Number,Proper Name,Product Number,License Type,Applicant,Strength,Route of Administration,Licensure\\n"
-        "123,Peptide biologic A,001,351(a),Example Sponsor,1 mg,Subcutaneous,Licensed\\n"
-        "456,Other biologic,002,351(a),Other Sponsor,2 mg,Intravenous,Licensed\\n"
+        "Change Type,BLA Number,Proper Name,Product Number,License Type\n"
+        "N,123,Temporary row,001,351(a)\n"
+        "\n"
+        "BLA Number,Proper Name,Product Number,License Type,Applicant,Strength,Route of Administration,Licensure\n"
+        "123,Peptide biologic A,001,351(a),Example Sponsor,1 mg,Subcutaneous,Licensed\n"
+        "456,Other biologic,002,351(a),Other Sponsor,2 mg,Intravenous,Licensed\n"
     )
     rows = parse_purple_book_csv(csv_text)
     assert len(rows) == 2

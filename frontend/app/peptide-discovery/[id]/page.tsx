@@ -165,6 +165,7 @@ export default function DiscoveryCandidateDossierPage() {
   const dbaaspCytotoxic = asRecords(sourceRecord.hemolytic_cytotoxic_activities);
   const dbaaspCombinations = asRecords(sourceRecord.reported_combination_activity);
   const dbaaspArticles = asRecords(sourceRecord.references);
+  const literatureSources = asRecords(candidate.raw_metadata.literature_sources);
   const dailymedMechanism = typeof sourceRecord.mechanism_of_action === "string" ? sourceRecord.mechanism_of_action : "";
   const chemblMechanisms = asRecords(sourceRecord.mechanism_records);
 
@@ -186,19 +187,20 @@ export default function DiscoveryCandidateDossierPage() {
     <nav aria-label="Candidate dossier sections" className="panel mt-6 p-4">
       <p className="text-xs uppercase tracking-[.16em] text-slate-400">Individual peptide dossier</p>
       <div className="mt-3 flex flex-wrap gap-2 text-sm">
-        {[
+        {([
           ["identity", "Identity & source"],
           ["sequence", "Sequence & chemistry"],
           ["mechanism", "Targets & MOA"],
-          ["dbaasp-evidence", "DBAASP evidence"],
-          ["chembl-evidence", "ChEMBL evidence"],
-          ["dailymed-mechanism", "DailyMed MOA"],
-          ["ema-product", "EMA product"],
+          ...(literatureSources.length ? [["literature-evidence", "Supporting literature"]] : []),
+          ...(candidate.source_name.includes("DBAASP") ? [["dbaasp-evidence", "DBAASP evidence"]] : []),
+          ...(candidate.source_name.includes("ChEMBL") ? [["chembl-evidence", "ChEMBL evidence"]] : []),
+          ...(dailymedMechanism ? [["dailymed-mechanism", "DailyMed MOA"]] : []),
+          ...(candidate.source_name.includes("European Medicines Agency") ? [["ema-product", "EMA product"]] : []),
           ["source-metadata", "Source metadata"],
           ["source-history", "Source history"],
           ["curation-history", "Curation history"],
-          ["curation", "Curator review"],
-        ].map(([id, label]) => <a key={id} href={`#${id}`} className="rounded-full border border-slate-700 px-3 py-2 text-emerald-300 hover:border-emerald-400">{label}</a>)}
+          ...(data.permissions.can_review ? [["curation", "Curator review"]] : []),
+        ] as [string, string][]).map(([id, label]) => <a key={id} href={`#${id}`} className="rounded-full border border-slate-700 px-3 py-2 text-emerald-300 hover:border-emerald-400">{label}</a>)}
       </div>
       <p className="muted mt-3 text-xs">This source candidate has its own stable dossier URL. If identity is confirmed against an existing peptide, the dossier links to that canonical peptide folder; unresolved candidates remain separate until reviewed.</p>
     </nav>
@@ -244,6 +246,18 @@ export default function DiscoveryCandidateDossierPage() {
         <p className="mt-2 text-sm">{candidate.reported_target || "Not reported"}</p>
         <p className="mt-4 text-xs font-medium text-slate-400">Reported mechanism</p>
         <p className="mt-2 text-sm">{candidate.reported_mechanism || "Not reported"}</p>
+        {literatureSources.length > 0 && <div id="literature-evidence" className="mt-4 scroll-mt-24 border-t border-slate-800 pt-4">
+          <p className="text-xs font-semibold text-slate-300">Supporting literature · source-reported, not curated</p>
+          <div className="mt-3 space-y-3">
+            {literatureSources.map((item, index) => <article key={String(item.source_identifier ?? index)} className="rounded-xl border border-slate-800 p-3">
+              <p className="text-sm font-medium">{displayValue(item.title)}</p>
+              <p className="muted mt-1 text-xs">{displayValue(item.publication_date)} · {displayValue(item.publication_type)} · PMID {displayValue(item.source_identifier)}</p>
+              <p className="mt-2 text-xs leading-5">{displayValue(item.evidence_scope)}</p>
+              {typeof item.source_excerpt === "string" && <blockquote className="mt-2 border-l-2 border-slate-700 pl-3 text-xs leading-5">{item.source_excerpt}</blockquote>}
+              {typeof item.source_url === "string" && <a href={item.source_url} target="_blank" rel="noreferrer" className="mt-2 inline-block text-xs text-emerald-300">Open PubMed source ↗</a>}
+            </article>)}
+          </div>
+        </div>}
       </section>
 
       {candidate.source_name.includes("DBAASP") && <section id="dbaasp-evidence" className="panel scroll-mt-24 p-5">

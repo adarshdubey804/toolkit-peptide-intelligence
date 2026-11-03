@@ -57,6 +57,7 @@ CREATE POLICY peptide_workbook_import_rows_insert_scope ON peptide_workbook_impo
     WITH CHECK (organization_id = NULLIF(current_setting('app.organization_id', true), '')::uuid);
 
 ALTER TABLE peptide_discovery_candidates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE peptide_discovery_candidates FORCE ROW LEVEL SECURITY;
 CREATE POLICY peptide_discovery_candidates_select_scope ON peptide_discovery_candidates FOR SELECT
     USING (
         owner_organization_id IS NULL
@@ -78,6 +79,7 @@ CREATE POLICY peptide_discovery_candidates_update_scope ON peptide_discovery_can
     );
 
 ALTER TABLE peptide_discovery_observations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE peptide_discovery_observations FORCE ROW LEVEL SECURITY;
 CREATE POLICY peptide_discovery_observations_select_scope ON peptide_discovery_observations FOR SELECT
     USING (
         owner_organization_id IS NULL
@@ -88,3 +90,13 @@ CREATE POLICY peptide_discovery_observations_insert_scope ON peptide_discovery_o
         owner_organization_id IS NULL
         OR owner_organization_id = NULLIF(current_setting('app.organization_id', true), '')::uuid
     );
+
+ALTER TABLE peptide_workbook_import_batches ENABLE ROW LEVEL SECURITY;
+ALTER TABLE peptide_workbook_import_batches FORCE ROW LEVEL SECURITY;
+CREATE POLICY peptide_workbook_import_batches_select_scope ON peptide_workbook_import_batches FOR SELECT
+    USING (organization_id = NULLIF(current_setting('app.organization_id', true), '')::uuid);
+CREATE POLICY peptide_workbook_import_batches_insert_scope ON peptide_workbook_import_batches FOR INSERT
+    WITH CHECK (organization_id = NULLIF(current_setting('app.organization_id', true), '')::uuid);
+CREATE POLICY peptide_workbook_import_batches_update_scope ON peptide_workbook_import_batches FOR UPDATE
+    USING (organization_id = NULLIF(current_setting('app.organization_id', true), '')::uuid)
+    WITH CHECK (organization_id = NULLIF(current_setting('app.organization_id', true), '')::uuid);

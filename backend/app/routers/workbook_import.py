@@ -263,7 +263,7 @@ def save_candidate_dossier_section(
                 CAST(:citations AS jsonb), CAST(:media AS jsonb), :user_id)
         ON CONFLICT (candidate_id, organization_id, section_key) DO UPDATE SET
             content=EXCLUDED.content, citations=EXCLUDED.citations,
-            media=EXCLUDED.media, updated_by=EXCLUDED.updated_by
+            media=EXCLUDED.media, updated_by=EXCLUDED.updated_by, revision=peptide_dossier_sections.revision + 1
         RETURNING id, section_key, content, citations, media, revision, updated_at
     """), {
         "candidate": candidate_id, "org": organization_id, "section_key": section_key,

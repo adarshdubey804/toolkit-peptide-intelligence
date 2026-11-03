@@ -258,7 +258,7 @@ def save_candidate_dossier_section(
     media = [item.model_dump(mode="json") for item in payload.media]
     row = db.execute(text("""
         INSERT INTO peptide_dossier_sections
-            (candidate_id, organization_id, section_key, content, references, media, updated_by)
+            (candidate_id, organization_id, section_key, content, citations, media, updated_by)
         VALUES (:candidate, :org, :section_key, CAST(:content AS jsonb),
                 CAST(:citations AS jsonb), CAST(:media AS jsonb), :user_id)
         ON CONFLICT (candidate_id, organization_id, section_key) DO UPDATE SET

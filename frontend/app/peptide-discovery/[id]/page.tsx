@@ -55,6 +55,20 @@ type DiscoveryDossier = {
   dossier_notice: string;
 };
 
+type JsonRecord = Record<string, unknown>;
+function asRecord(value: unknown): JsonRecord {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
+}
+function asRecords(value: unknown): JsonRecord[] {
+  return Array.isArray(value) ? value.filter(x => x && typeof x === "object" && !Array.isArray(x)) as JsonRecord[] : [];
+}
+function displayValue(value: unknown): string {
+  if (value === null || value === undefined || value === "") return "Not reported";
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
+  const object = asRecord(value);
+  return typeof object.name === "string" ? object.name : JSON.stringify(value);
+}
+
 export default function DiscoveryCandidateDossierPage() {
   const params = useParams<{ id: string }>();
   const [token, setToken] = useState("");
@@ -145,6 +159,13 @@ export default function DiscoveryCandidateDossierPage() {
 
   if (!data) return null;
   const candidate = data.candidate;
+  const sourceRecord = asRecord(candidate.raw_metadata.source_record);
+  const dbaaspActivities = asRecords(sourceRecord.target_activities);
+  const dbaaspAntibiofilm = asRecords(sourceRecord.antibiofilm_activities);
+  const dbaaspCytotoxic = asRecords(sourceRecord.hemolytic_cytotoxic_activities);
+  const dbaaspCombinations = asRecords(sourceRecord.reported_combination_activity);
+  const dbaaspArticles = asRecords(sourceRecord.references);
+  const dailymedMechanism = typeof sourceRecord.mechanism_of_action === "string" ? sourceRecord.mechanism_of_action : "";
 
   return <main className="container min-h-screen py-10">
     <Link href="/peptide-discovery" className="text-sm text-emerald-300 hover:text-emerald-200">← Peptide discovery workspace</Link>
@@ -199,6 +220,61 @@ export default function DiscoveryCandidateDossierPage() {
         <p className="mt-2 text-sm">{candidate.reported_mechanism || "Not reported"}</p>
       </section>
 
+      {candidate.source_name.includes("DBAASP") && <section className="panel p-5">
+        <h2 className="text-lg font-semibold">DBAASP experimental evidence</h2>
+        <p className="muted mt-1 text-xs">Source-reported laboratory observations. Preserve assay context; these are not clinical efficacy or incidence estimates.</p>
+        {dbaaspActivities.length > 0 && <div className="mt-4"><h3 className="text-sm font-semibold">Target activity ({dbaaspActivities.length})</h3>
+          <div className="mt-2 space-y-2">{dbaaspActivities.map((item, index) => <article key={String(item.id ?? index)} className="rounded-xl border border-slate-800 p-3 text-xs">
+            <p className="font-semibold">{displayValue(asRecord(item.targetSpecies).name)} · {displayValue(asRecord(item.activityMeasureGroup).name)}</p>
+            <p className="mt-1">{displayValue(item.activityMeasureValue)} {displayValue(asRecord(item.unit).name)} · Concentration: {displayValue(item.concentration)}</p>
+            <p className="muted mt-1">Medium: {displayValue(asRecord(item.medium).name)} · pH: {displayValue(item.ph)} · Ionic strength: {displayValue(item.ionicStrength)} · CFU: {displayValue(item.cfu)}</p>
+            <p className="muted mt-1">Reference: {displayValue(item.reference)}</p>
+          </article>)}</div>
+        </div>}
+        {dbaaspAntibiofilm.length > 0 && <div className="mt-4"><h3 className="text-sm font-semibold">Antibiofilm activity ({dbaaspAntibiofilm.length})</h3>
+          <div className="mt-2 space-y-2">{dbaaspAntibiofilm.map((item, index) => <article key={String(item.id ?? index)} className="rounded-xl border border-slate-800 p-3 text-xs">
+            <p className="font-semibold">{displayValue(asRecord(item.targetSpecies).name)} · {displayValue(asRecord(item.activityMeasureGroup).name)}</p>
+            <p className="muted mt-1">Value: {displayValue(item.activityMeasureValue)} {displayValue(asRecord(item.unit).name)} · Concentration: {displayValue(item.concentration)} · Medium: {displayValue(asRecord(item.medium).name)}</p>
+            <p className="muted mt-1">Reference: {displayValue(item.reference)}</p>
+          </article>)}</div>
+        </div>}
+        {dbaaspCytotoxic.length > 0 && <div className="mt-4"><h3 className="text-sm font-semibold">Hemolytic / cytotoxic activity ({dbaaspCytotoxic.length})</h3>
+          <div className="mt-2 space-y-2">{dbaaspCytotoxic.map((item, index) => <article key={String(item.id ?? index)} className="rounded-xl border border-slate-800 p-3 text-xs">
+            <p className="font-semibold">{displayValue(asRecord(item.targetCell).name)} · {displayValue(asRecord(item.activityMeasureForLysisGroup).name)}</p>
+            <p className="muted mt-1">Value: {displayValue(item.activityMeasureForLysisValue)} · Concentration: {displayValue(item.concentration)} {displayValue(asRecord(item.unit).name)}</p>
+            <p className="muted mt-1">pH: {displayValue(item.ph)} · Ionic strength: {displayValue(item.ionicStrength)} · Reference: {displayValue(item.reference)}</p>
+          </article>)}</div>
+        </div>}
+        {dbaaspCombinations.length > 0 && <div className="mt-4"><h3 className="text-sm font-semibold">Reported combination observations ({dbaaspCombinations.length})</h3>
+          <p className="muted mt-1 text-xs">These may be peptide–antibiotic combinations; they are not automatically peptide–peptide synergy evidence.</p>
+          <div className="mt-2 space-y-2">{dbaaspCombinations.map((item, index) => <article key={String(item.id ?? index)} className="rounded-xl border border-amber-400/20 p-3 text-xs">
+            <p className="font-semibold">Peptide + {displayValue(item.antibioticName)}</p>
+            <p className="muted mt-1">Peptide activity: {displayValue(item.peptideActivity)} · Combination activity: {displayValue(item.peptideAntibioticActivity)} · Antibiotic activity: {displayValue(item.antibioticActivity)}</p>
+            <p className="muted mt-1">Source-reported FICI: {displayValue(item.fici)} · Reference: {displayValue(item.reference)}</p>
+          </article>)}</div>
+        </div>}
+        {dbaaspArticles.length > 0 && <div className="mt-4"><h3 className="text-sm font-semibold">Source publications ({dbaaspArticles.length})</h3>
+          <ul className="mt-2 space-y-2 text-xs">{dbaaspArticles.map((item, index) => <li key={index} className="rounded-lg border border-slate-800 p-3">{displayValue(item.title)} ({displayValue(item.year)}) · PMID: {displayValue(asRecord(item.pubmed).pubmedId)}</li>)}</ul>
+        </div>}
+      </section>}
+      {dailymedMechanism && <section className="panel p-5">
+        <h2 className="text-lg font-semibold">Source-extracted mechanism of action</h2>
+        <p className="muted mt-1 text-xs">DailyMed SPL Section 12.1 · source-reported · not yet curator-verified</p>
+        <p className="mt-3 whitespace-pre-wrap text-sm leading-6">{dailymedMechanism}</p>
+        <p className="muted mt-2 text-xs">{displayValue(sourceRecord.mechanism_extraction_notice)}</p>
+      </section>}
+      {candidate.source_name.includes("European Medicines Agency") && <section className="panel p-5">
+        <h2 className="text-lg font-semibold">EMA Article 57 product observation</h2>
+        <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+          <p>Product: {displayValue(sourceRecord.product_name)}</p>
+          <p>Active substance: {displayValue(sourceRecord.active_substance)}</p>
+          <p>Route: {displayValue(sourceRecord.route_of_administration)}</p>
+          <p>Authorisation country: {displayValue(sourceRecord.country_of_authorisation)}</p>
+          <p>Marketing authorisation holder: {displayValue(sourceRecord.marketing_authorisation_holder)}</p>
+          <p>Snapshot status: {displayValue(sourceRecord.source_status)}</p>
+        </div>
+        <p className="muted mt-3 text-xs">{displayValue(sourceRecord.coverage_notice)}</p>
+      </section>}
       <section className="panel p-5">
         <h2 className="text-lg font-semibold">Source metadata</h2>
         <details className="mt-3">

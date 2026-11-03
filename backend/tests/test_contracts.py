@@ -4,6 +4,7 @@ import asyncio
 from app.integrations.clinicaltrials import normalize_study
 from app.integrations.dailymed import extract_mechanism_of_action, normalize_spl
 from app.integrations.fda_drugsfda import normalize_application
+from app.integrations.fda_purple_book import discover_latest_csv_url, normalize_product as normalize_purple_book_product, parse_purple_book_csv
 from app.integrations.health_canada_dpd import normalize_product
 from app.main import MIGRATIONS_DIR, app
 
@@ -1770,3 +1771,44 @@ def test_dailymed_moa_extraction_route_is_registered():
     paths = app.openapi()["paths"]
     route = paths["/api/v1/research/dailymed/{set_id}/mechanism-of-action"]["get"]
     assert route["parameters"][0]["name"] == "set_id"
+
+
+def test_purple_book_discovers_latest_monthly_csv_from_fda_download_page():
+    html = """
+    <a href="https://www.accessdata.fda.gov/drugsatfda_docs/PurpleBook/2025/purplebook-search-December-data-download.csv">Dec</a>
+    <a href="https://www.accessdata.fda.gov/drugsatfda_docs/PurpleBook/2026/purplebook-search-October-data-download.csv">Oct</a>
+    """
+    assert discover_latest_csv_url(html).endswith("2026/purplebook-search-October-data-download.csv")
+
+
+def test_purple_book_parser_uses_full_snapshot_table_not_monthly_change_table():
+    csv_text = (
+        "Change Type,BLA Number,Proper Name,Product Number,License Type\n"
+        "N,123,Temporary row,001,351(a)\n"
+        "\n"
+        "BLA Number,Proper Name,Product Number,License Type,Applicant,Strength,Route of Administration,Licensure\n"
+        "123,Peptide biologic A,001,351(a),Example Sponsor,1 mg,Subcutaneous,Licensed\n"
+        "456,Other biologic,002,351(a),Other Sponsor,2 mg,Intravenous,Licensed\n"
+    )
+    rows = parse_purple_book_csv(csv_text)
+    assert len(rows) == 2
+    assert rows[0]["proper_name"] == "Peptide biologic A"
+    assert rows[0]["bla_number"] == "123"
+    normalized = normalize_purple_book_product(rows[0], "https://example.test/purplebook.csv")
+    assert normalized["source_identifier"] == "123:001"
+    assert normalized["jurisdiction"] == "US"
+    assert normalized["source_version"] == "purplebook.csv"
+    assert normalized["curation_status"] == "not_reviewed"
+    assert "not proof" in normalized["coverage_notice"]
+
+
+def test_purple_book_research_and_global_discovery_contracts_are_registered():
+    route = app.openapi()["paths"]["/api/v1/research/fda-purple-book"]["get"]
+    params = {item["name"]: item for item in route["parameters"]}
+    assert params["limit"]["schema"]["maximum"] == 100
+    from app.routers.enrichment import PeptideDiscoveryRequest
+    request = PeptideDiscoveryRequest(
+        query="peptide biologic",
+        sources=["fda_purple_book", "health_canada_dpd"],
+    )
+    assert len(request.sources) == 2

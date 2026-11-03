@@ -59,3 +59,17 @@
 | International | Antimicrobial Peptide Database (APD6) | External link-out | Specialist antimicrobial peptide research resource | Link-out only; no bulk ingestion |
 
 The platform's source coverage catalogue is available at `/source-coverage`. It lists integrated sources, access modes, coverage boundaries and known limitations. This catalogue must be updated in the same pull request that changes an adapter's production status.
+
+## Priority national authority evaluation queue
+
+The following jurisdictions are priority gaps. They are not production integrations yet; the platform must not imply that their product registers have been queried.
+
+| Jurisdiction | Authority / source family | Evaluation required before integration |
+|---|---|---|
+| India | CDSCO official approved new drugs, biologics and regulatory notices | Identify authoritative current product lists, machine-readable access, stable application/product identifiers, historical status coverage and update cadence |
+| United Kingdom | MHRA product and medicines information sources | Confirm official product register/API access, authorisation status semantics, product identifiers, labels and licence terms |
+| Australia | TGA Australian Register of Therapeutic Goods (ARTG) | Confirm public search/export/API options, biologic/peptide coverage, ARTG identifiers and status history |
+| Japan | PMDA / MHLW drug and biologic approval sources | Confirm official datasets, language/translation controls, approval identifiers, product forms and historical status |
+| China | NMPA drug and biologic registration sources | Confirm official publication channels, stable identifiers, access restrictions, product status semantics and update cadence |
+
+For every new jurisdiction, an adapter is accepted only after it has: (1) a source-access and licence assessment; (2) a documented source-native schema/status map; (3) pagination/completeness checks; (4) source retrieval timestamps and payload hashes; (5) normalization and identity tests; (6) failure/retry tests; and (7) explicit no-result and ambiguity semantics. A national source being absent from the integration list is not evidence that no peptide products are authorised there.

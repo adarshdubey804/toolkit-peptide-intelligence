@@ -159,6 +159,22 @@ def peptide_profile(peptide_id: UUID, db: Session = Depends(get_db)):
         WHERE peptide_id=:id AND review_status='verified'
         ORDER BY form_name, id
     """)
+    regulatory_authorizations = rows("""
+        SELECT a.id, a.chemical_form_id, form.form_name AS chemical_form_name,
+               a.product_name, a.active_ingredient_name, a.application_identifier,
+               a.authorization_identifier, a.jurisdiction_code, a.jurisdiction_name,
+               a.authority_name, a.regulatory_status, a.indication_text,
+               a.route_of_administration, a.dosage_form, a.strength_text,
+               a.marketing_authorization_holder, a.original_approval_date,
+               a.effective_date, a.status_end_date, a.status_reason,
+               a.label_version, a.label_url, a.source_locator, a.source_checked_at,
+               source.source_name, source.source_url
+        FROM regulatory_product_authorizations a
+        LEFT JOIN peptide_chemical_forms form ON form.id=a.chemical_form_id
+        JOIN source_records source ON source.id=a.source_record_id
+        WHERE a.peptide_id=:id AND a.review_status='verified'
+        ORDER BY a.jurisdiction_code, a.authority_name, a.product_name
+    """)
     mechanisms = rows("""
         SELECT m.id, m.chemical_form_id, form.form_name AS chemical_form_name,
                m.mechanism_title, m.mechanism_statement, m.mechanism_class,

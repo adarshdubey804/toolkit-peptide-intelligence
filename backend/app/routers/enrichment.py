@@ -788,7 +788,8 @@ def get_global_peptide_discovery_candidate(
     candidate = db.execute(text("""
         SELECT c.*, s.source_name, s.source_identifier, s.source_url,
                s.retrieved_at AS source_retrieved_at, s.license_notes,
-               p.preferred_name AS canonical_peptide_name
+               p.preferred_name AS canonical_peptide_name,
+               p.review_status AS canonical_peptide_review_status
         FROM peptide_discovery_candidates c
         JOIN source_records s ON s.id=c.source_record_id
         LEFT JOIN peptides p ON p.id=c.canonical_peptide_id
@@ -821,6 +822,7 @@ def get_global_peptide_discovery_candidate(
         "decisions": [dict(row) for row in decisions],
         "permissions": {
             "can_review": role in {"organization_admin", "curator", "reviewer"},
+            "can_create_dossier": role in {"organization_admin", "curator"},
             "organization_id": str(organization_id),
         },
         "dossier_notice": (

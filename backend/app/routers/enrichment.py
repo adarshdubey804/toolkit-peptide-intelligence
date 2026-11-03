@@ -13,6 +13,7 @@ from ..db import get_db
 from ..rate_limit_dependencies import authenticated_write_rate_limit
 from ..integrations.clinicaltrials import ClinicalTrialsProvider
 from ..integrations.dailymed import DailyMedProvider
+from ..integrations.dbaasp import DbaaspProvider
 from ..integrations.ema_article57 import EmaArticle57Provider
 from ..integrations.fda_drugsfda import FdaDrugsFdaProvider
 from ..integrations.fda_purple_book import FdaPurpleBookProvider
@@ -191,9 +192,9 @@ class DailyMedMechanismSubmission(BaseModel):
 class PeptideDiscoveryRequest(BaseModel):
     query: str = Field(min_length=2, max_length=160)
     sources: list[str] = Field(
-        default_factory=lambda: ["fda_drugsfda", "fda_purple_book", "ema_article57", "dailymed", "health_canada_dpd", "clinicaltrials", "pubmed"],
+        default_factory=lambda: ["fda_drugsfda", "fda_purple_book", "ema_article57", "dbaasp", "dailymed", "health_canada_dpd", "clinicaltrials", "pubmed"],
         min_length=1,
-        max_length=9,
+        max_length=10,
     )
     limit: int = Field(default=20, ge=1, le=50)
 
@@ -396,7 +397,7 @@ async def discover_and_persist_peptide_candidates(
     if role not in {"organization_admin", "curator", "reviewer", "researcher"}:
         raise HTTPException(status_code=403, detail="Researcher, curator or reviewer membership is required.")
 
-    allowed_sources = {"fda_drugsfda", "fda_purple_book", "ema_article57", "dailymed", "health_canada_dpd", "clinicaltrials", "pubmed", "gtopdb", "dramp"}
+    allowed_sources = {"fda_drugsfda", "fda_purple_book", "ema_article57", "dbaasp", "dailymed", "health_canada_dpd", "clinicaltrials", "pubmed", "gtopdb", "dramp"}
     selected = list(dict.fromkeys(payload.sources))
     if not selected or not set(selected).issubset(allowed_sources):
         raise HTTPException(status_code=422, detail="Unsupported peptide discovery source.")
@@ -422,6 +423,10 @@ async def discover_and_persist_peptide_candidates(
     if "ema_article57" in selected:
         operations["ema_article57"] = EmaArticle57Provider().search(
             query, min(payload.limit, 50)
+        )
+    if "dbaasp" in selected:
+        operations["dbaasp"] = DbaaspProvider().search(
+            query, min(payload.limit, 25)
         )
     if "dailymed" in selected:
         operations["dailymed"] = DailyMedProvider().search_by_name(query, min(payload.limit, 50), 1)
@@ -529,6 +534,12 @@ async def discover_and_persist_peptide_candidates(
                     title = f"EMA Article 57 product · {item.get('product_name') or query}"
                     candidate_name = item.get("active_substance") or query
                     development_status = item.get("source_status") or "source_status_not_returned"
+                elif source_key == "dbaasp":
+                    identifier = item.get("source_identifier")
+                    source_url = item.get("source_url")
+                    title = f"DBAASP peptide {identifier or 'unknown'} · {item.get('candidate_name') or query}"
+                    candidate_name = item.get("candidate_name") or query
+                    development_status = item.get("synthesis_type") or item.get("complexity") or "experimental_antimicrobial_peptide_record"
                 elif source_key == "dailymed":
                     identifier = item.get("set_id")
                     source_url = item.get("source_url")

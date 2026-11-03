@@ -2205,3 +2205,18 @@ def test_default_global_peptide_discovery_includes_all_configured_specialist_sou
     assert "gtopdb" in request.sources
     assert "chembl" in request.sources
     assert len(request.sources) <= 12
+
+
+def test_peptide_workbook_import_route_is_registered_and_file_upload_is_required():
+    operation = app.openapi()["paths"]["/api/v1/dossiers/import-workbook"]["post"]
+    assert operation["requestBody"]["required"] is True
+    assert operation["requestBody"]["content"]["multipart/form-data"]
+    assert "post" in app.openapi()["paths"]["/api/v1/dossiers/import-workbook"]
+
+
+def test_peptide_workbook_import_migration_preserves_row_level_provenance():
+    sql = (MIGRATIONS_DIR / "071_peptide_workbook_imports.sql").read_text(encoding="utf-8")
+    assert "peptide_workbook_import_batches" in sql
+    assert "peptide_workbook_import_rows" in sql
+    assert "UNIQUE (batch_id, worksheet_name, worksheet_row_number)" in sql
+    assert "source_row JSONB" in sql

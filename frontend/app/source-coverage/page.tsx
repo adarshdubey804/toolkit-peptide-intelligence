@@ -53,6 +53,12 @@ export default function SourceCoveragePage() {
       <h1 className="mt-3 text-4xl font-semibold">Source coverage & limitations</h1>
       <p className="muted mt-4 text-sm leading-7">A transparent register of the external sources connected to peptide discovery. It explains what each source contributes, how it is accessed and what it cannot establish. This is a source coverage map, not a claim that every peptide in the world has been captured.</p>
     </header>
+    <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="panel p-4"><p className="muted text-xs">Tracked sources</p><p className="mt-2 text-2xl font-semibold">{sources.length}</p></div>
+      <div className="panel p-4"><p className="muted text-xs">Integrated</p><p className="mt-2 text-2xl font-semibold">{sources.filter(source => source.status.startsWith("Integrated")).length}</p></div>
+      <div className="panel p-4"><p className="muted text-xs">Link-out only</p><p className="mt-2 text-2xl font-semibold">{sources.filter(source => source.status === "Link-out only").length}</p></div>
+      <div className="panel p-4"><p className="muted text-xs">Credential required</p><p className="mt-2 text-2xl font-semibold">{sources.filter(source => source.status.includes("credentials required")).length}</p></div>
+    </div>
     <section className="panel mt-7 p-5">
       <h2 className="font-semibold">How to interpret coverage</h2>
       <ul className="muted mt-3 list-disc space-y-2 pl-5 text-sm leading-6">

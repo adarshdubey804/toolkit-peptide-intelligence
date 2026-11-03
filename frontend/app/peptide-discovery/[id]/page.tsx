@@ -56,6 +56,7 @@ type DiscoveryDossier = {
 };
 
 type JsonRecord = Record<string, unknown>;
+type SavedDossierSection = { section_key: string; citations: JsonRecord[]; media: JsonRecord[]; revision: number };
 function asRecord(value: unknown): JsonRecord {
   return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
 }
@@ -80,6 +81,7 @@ export default function DiscoveryCandidateDossierPage() {
   const [decision, setDecision] = useState("needs_more_evidence");
   const [canonicalPeptideId, setCanonicalPeptideId] = useState("");
   const [rationale, setRationale] = useState("");
+  const [savedSections, setSavedSections] = useState<SavedDossierSection[]>([]);
 
   const loadDossier = useCallback(async (authToken: string) => {
     setLoading(true);
@@ -109,6 +111,17 @@ export default function DiscoveryCandidateDossierPage() {
     setToken(storedToken);
     void loadDossier(storedToken);
   }, [loadDossier]);
+
+  useEffect(() => {
+    if (!token || !params.id) return;
+    fetch(API_BASE + "/api/v1/dossiers/candidates/" + encodeURIComponent(params.id) + "/sections", {
+      headers: { Authorization: "Bearer " + token },
+    }).then(async response => {
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || "Could not load curated references and images.");
+      setSavedSections((result.items || []) as SavedDossierSection[]);
+    }).catch(() => setSavedSections([]));
+  }, [token, params.id]);
 
   async function submitDecision(event: FormEvent) {
     event.preventDefault();
@@ -209,6 +222,32 @@ export default function DiscoveryCandidateDossierPage() {
     {error && <div role="alert" className="mt-5 rounded-xl border border-rose-400/30 bg-rose-400/5 p-4 text-sm text-rose-200">{error}</div>}
     {notice && <div role="status" className="mt-5 rounded-xl border border-emerald-400/30 bg-emerald-400/5 p-4 text-sm text-emerald-200">{notice}</div>}
 
+    {savedSections.length > 0 && <section className="panel mt-8 p-5">
+      <p className="accent text-xs tracking-widest">CURATED SOURCES & VISUAL ASSETS</p>
+      <h2 className="mt-2 text-xl font-semibold">References and scientific images</h2>
+      <div className="mt-5 grid gap-5 lg:grid-cols-2">
+        {savedSections.flatMap(section => section.media.map((asset, index) => ({...asset, section_key: section.section_key, key: section.section_key + "-" + index}))).map(asset => {
+          const imageUrl = typeof asset.image_url === "string" && asset.image_url.startsWith("https://") ? asset.image_url : "";
+          return <article key={asset.key} className="rounded-xl border border-slate-700 p-4">
+            {imageUrl && <a href={imageUrl} target="_blank" rel="noreferrer"><img src={imageUrl} loading="lazy" referrerPolicy="no-referrer" alt={String(asset.alt_text || asset.title || "Peptide scientific visual")} className="mb-3 max-h-64 w-full rounded-lg object-contain bg-slate-950" /></a>}
+            <h3 className="font-medium">{displayValue(asset.title)}</h3>
+            <p className="muted mt-1 text-xs">{displayValue(asset.caption)}</p>
+            <p className="muted mt-2 text-xs">Source: {displayValue(asset.source_name)} · {displayValue(asset.source_identifier)}</p>
+            <p className="muted mt-1 text-xs">Attribution/licence: {displayValue(asset.attribution)} · {displayValue(asset.license_or_reuse_terms)}</p>
+            {imageUrl && <a className="mt-2 inline-block text-xs text-emerald-300" href={imageUrl} target="_blank" rel="noreferrer">Open original asset →</a>}
+          </article>;
+        })}
+        {savedSections.flatMap(section => section.citations.map((citation, index) => ({...citation, section_key: section.section_key, key: section.section_key + "-citation-" + index}))).map(citation => {
+          const url = typeof citation.url === "string" && citation.url.startsWith("https://") ? citation.url : "";
+          return <article key={citation.key} className="rounded-xl border border-slate-700 p-4">
+            <h3 className="font-medium">{displayValue(citation.title)}</h3>
+            <p className="muted mt-1 text-xs">{displayValue(citation.source_name)} · {displayValue(citation.evidence_type)}</p>
+            <p className="muted mt-1 text-xs">Locator: {displayValue(citation.locator)} · DOI: {displayValue(citation.doi)} · PMID: {displayValue(citation.pmid)}</p>
+            {url && <a className="mt-2 inline-block text-xs text-emerald-300" href={url} target="_blank" rel="noreferrer">Open source →</a>}
+          </article>;
+        })}
+      </div>
+    </section>}
     <div className="mt-8 grid gap-4 lg:grid-cols-2">
       <section id="identity" className="panel scroll-mt-24 p-5">
         <h2 className="text-lg font-semibold">Identity and source</h2>

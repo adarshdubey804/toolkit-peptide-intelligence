@@ -1875,11 +1875,11 @@ def test_dramp_download_discovery_finds_fasta_and_fasts_datasets():
 
 def test_dramp_fasta_and_fasts_merge_preserves_sequence_and_smiles():
     fasta = parse_fasta_records(
-        ">DRAMP00005 Epicidin 280 (Bacteriocin)\\nSLGPAIKATRQVCPKATRFVTVSCKKSDCQ\\n",
+        ">DRAMP00005 Epicidin 280 (Bacteriocin)\nSLGPAIKATRQVCPKATRFVTVSCKKSDCQ\n",
         "general_amps",
     )
     fasts = parse_fasta_records(
-        ">DRAMP00005 CC(C)C[C@@H]1NC(=O)\\nSLGPAIKATRQVCPKATRFVTVSCKKSDCQ\\n",
+        ">DRAMP00005 CC(C)C[C@@H]1NC(=O)\nSLGPAIKATRQVCPKATRFVTVSCKKSDCQ\n",
         "general_smiles",
         contains_smiles=True,
     )

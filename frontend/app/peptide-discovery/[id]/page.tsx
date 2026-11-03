@@ -66,7 +66,7 @@ function displayValue(value: unknown): string {
   if (value === null || value === undefined || value === "") return "Not reported";
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
   const object = asRecord(value);
-  return typeof object.name === "string" ? object.name : JSON.stringify(value);
+  return typeof object.name === "string" ? object.name : JSON.stringify(value) ?? String(value);
 }
 
 export default function DiscoveryCandidateDossierPage() {

@@ -644,7 +644,8 @@ async def submit_chembl_mechanism_for_review(
     mechanisms = molecule.get("mechanism_records") or []
     usable = [
         item for item in mechanisms
-        if item.get("mechanism_of_action") and item.get("target_chembl_id")
+        if str(item.get("mechanism_of_action") or "").strip()
+        and str(item.get("target_chembl_id") or "").strip()
     ]
     if not usable:
         raise HTTPException(

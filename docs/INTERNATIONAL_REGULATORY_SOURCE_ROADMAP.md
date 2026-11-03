@@ -30,3 +30,17 @@
 - Run entity resolution as a candidate process. Ambiguous identity must go to a review queue.
 - Keep source polling health, last successful retrieval, page/pagination completeness and known coverage exclusions visible.
 - Do not infer worldwide coverage from a subset of national sources.
+
+
+## EMA / European Economic Area
+
+### Article 57 public product snapshot — implementable public source
+- Public XLSX: `https://www.ema.europa.eu/en/documents/other/article-57-product-data_en.xlsx`
+- Official scope: products with valid marketing authorisations in the EEA at the time represented by the snapshot.
+- Available fields include product name, active substance, route, authorisation country and marketing authorisation holder.
+- The platform imports this as a source snapshot observation. It must not infer peptide identity from a name match or treat a snapshot row as a current, country-by-country regulatory decision without checking the relevant national authority.
+- The source publishes only products with valid authorisations; therefore it cannot establish the identity or status of withdrawn, refused, investigational or never-authorised peptide candidates.
+
+### EMA PMS Public API beta — deferred
+- The public beta exposes selected FHIR R5 product data but is explicitly a beta service. Its API specification describes OAuth2 client-credential access; EMA terms and beta limitations must be reviewed before use.
+- The platform will not use beta/reference-only data as a production authorization source or for commercial purposes unless EMA's current terms explicitly permit that use.

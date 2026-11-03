@@ -98,6 +98,9 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             "regulatory_product_authorization_revisions",
             "peptide_mechanisms",
             "peptide_mechanism_revisions",
+            "peptide_discovery_candidates",
+            "peptide_discovery_observations",
+            "peptide_discovery_decisions",
         )
         for table_name in required_tables:
             exists = connection.execute(
@@ -127,6 +130,26 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             )
         """)).scalar_one()
         assert mechanism_triggers == 3, "Mechanism form-parent integrity and immutable revisions must be installed"
+
+        discovery_columns = connection.execute(text("""
+            SELECT count(*) FROM information_schema.columns
+            WHERE table_schema='public' AND table_name='peptide_discovery_candidates'
+              AND column_name IN ('source_record_id','source_entity_identifier','candidate_name',
+                                  'candidate_kind','source_development_status','source_jurisdiction_code',
+                                  'reported_sequence','reported_mechanism','canonical_peptide_id',
+                                  'identity_match_status','match_confidence','candidate_status',
+                                  'last_observed_at','raw_metadata')
+        """)).scalar_one()
+        assert discovery_columns == 14, "Discovery records must retain source identity, candidate classification and resolution state"
+
+        discovery_history_triggers = connection.execute(text("""
+            SELECT count(*) FROM pg_trigger
+            WHERE NOT tgisinternal AND tgname IN (
+                'peptide_discovery_observations_append_only',
+                'peptide_discovery_decisions_append_only'
+            )
+        """)).scalar_one()
+        assert discovery_history_triggers == 2, "Source observations and curation decisions must be immutable"
 
         regulatory_authorization_columns = connection.execute(text("""
             SELECT count(*) FROM information_schema.columns

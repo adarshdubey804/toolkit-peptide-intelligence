@@ -17,6 +17,8 @@ from ..services.source_persistence import persist_normalized_source_record
 from ..rate_limit import enforce_rate_limit, request_client_identity
 from ..integrations.alphafold import AlphaFoldProvider
 from ..integrations.clinicaltrials import ClinicalTrialsProvider
+from ..integrations.dailymed import DailyMedProvider
+from ..integrations.fda_drugsfda import FdaDrugsFdaProvider
 from ..integrations.pubchem import PubChemProvider
 from ..integrations.pubmed import PubMedProvider
 from ..integrations.rcsb import RCSBProvider
@@ -41,6 +43,31 @@ router = APIRouter(
     tags=["research"],
     dependencies=[Depends(limit_public_research_discovery)],
 )
+
+
+@router.get("/fda-drugsfda")
+async def search_fda_drugsfda(
+    q: str = Query(min_length=3, max_length=160),
+    limit: int = Query(default=20, ge=1, le=99),
+):
+    """Read-only FDA Drugs@FDA application search by active ingredient."""
+    try:
+        return await FdaDrugsFdaProvider().search_by_ingredient(q, limit, settings.openfda_api_key)
+    except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(status_code=502, detail="FDA Drugs@FDA could not be reached or returned an invalid response.") from exc
+
+
+@router.get("/dailymed")
+async def search_dailymed(
+    q: str = Query(min_length=2, max_length=160),
+    limit: int = Query(default=20, ge=1, le=100),
+    page: int = Query(default=1, ge=1, le=10000),
+):
+    """Read-only DailyMed SPL label discovery; label presence is not an approval determination."""
+    try:
+        return await DailyMedProvider().search_by_name(q, limit, page)
+    except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(status_code=502, detail="DailyMed could not be reached or returned an invalid response.") from exc
 
 
 @router.get("/pubmed")

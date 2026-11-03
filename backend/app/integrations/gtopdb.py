@@ -53,6 +53,8 @@ def normalize_ligand(record: dict, interactions: list[dict]) -> dict:
         "synonyms": record.get("synonyms") or record.get("synonym"),
         "reported_target": "; ".join(targets) if targets else None,
         "reported_mechanism": "; ".join(actions) if actions else None,
+        "target": "; ".join(targets) if targets else None,
+        "mechanism_of_action": "; ".join(actions) if actions else None,
         "reported_interactions": interactions,
         "raw_ligand_record": record,
         "source": SOURCE_NAME,

@@ -166,6 +166,7 @@ export default function DiscoveryCandidateDossierPage() {
   const dbaaspCombinations = asRecords(sourceRecord.reported_combination_activity);
   const dbaaspArticles = asRecords(sourceRecord.references);
   const dailymedMechanism = typeof sourceRecord.mechanism_of_action === "string" ? sourceRecord.mechanism_of_action : "";
+  const chemblMechanisms = asRecords(sourceRecord.mechanism_records);
 
   return <main className="container min-h-screen py-10">
     <Link href="/peptide-discovery" className="text-sm text-emerald-300 hover:text-emerald-200">← Peptide discovery workspace</Link>
@@ -256,6 +257,27 @@ export default function DiscoveryCandidateDossierPage() {
         {dbaaspArticles.length > 0 && <div className="mt-4"><h3 className="text-sm font-semibold">Source publications ({dbaaspArticles.length})</h3>
           <ul className="mt-2 space-y-2 text-xs">{dbaaspArticles.map((item, index) => <li key={index} className="rounded-lg border border-slate-800 p-3">{displayValue(item.title)} ({displayValue(item.year)}) · PMID: {displayValue(asRecord(item.pubmed).pubmedId)}</li>)}</ul>
         </div>}
+      </section>}
+      {candidate.source_name.includes("ChEMBL") && <section className="panel p-5">
+        <h2 className="text-lg font-semibold">ChEMBL peptide biotherapeutic evidence</h2>
+        <p className="muted mt-1 text-xs">HELM notation and mechanism entries are copied from ChEMBL; source-reported only and not a canonical chemical identity or regulatory determination.</p>
+        <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+          <p>ChEMBL ID: {displayValue(sourceRecord.molecule_chembl_id)}</p>
+          <p>Molecule type: {displayValue(sourceRecord.molecule_type)}</p>
+          <p>Maximum clinical phase in source: {displayValue(sourceRecord.max_phase)}</p>
+          <p>ChEMBL release: {displayValue(sourceRecord.source_version)}</p>
+        </div>
+        <p className="mt-4 text-xs font-medium text-slate-400">HELM peptide notation</p>
+        <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-all rounded-xl bg-slate-950 p-3 text-xs">{displayValue(sourceRecord.helm_notation)}</pre>
+        {chemblMechanisms.length > 0 && <div className="mt-4">
+          <h3 className="text-sm font-semibold">ChEMBL mechanism records ({chemblMechanisms.length})</h3>
+          <div className="mt-2 space-y-2">{chemblMechanisms.map((item, index) => <article key={String(item.mechanism_id ?? index)} className="rounded-xl border border-slate-800 p-3 text-xs">
+            <p className="font-semibold">{displayValue(item.mechanism_of_action)}</p>
+            <p className="muted mt-1">Action: {displayValue(item.action_type)} · Target: {displayValue(item.target_name || item.target_chembl_id)}</p>
+            <p className="muted mt-1">Comment: {displayValue(item.mechanism_comment)}</p>
+          </article>)}</div>
+        </div>}
+        <p className="muted mt-3 text-xs">ChEMBL data are CC BY-SA 3.0. Attribution and share-alike obligations apply. A ChEMBL mechanism is not automatically a complete pathway or proof of clinical effect.</p>
       </section>}
       {dailymedMechanism && <section className="panel p-5">
         <h2 className="text-lg font-semibold">Source-extracted mechanism of action</h2>

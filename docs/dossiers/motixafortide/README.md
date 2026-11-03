@@ -88,7 +88,7 @@ Do not confuse the approximately 2-hour plasma half-life with the longer recepto
 
 **US indication:** APHEXDA is indicated in combination with filgrastim to mobilize hematopoietic stem cells to peripheral blood for collection and subsequent autologous transplantation in patients with multiple myeloma.
 
-**Pivotal evidence — GENESIS (NCT032 sain? no):** The FDA approval was based on the GENESIS randomized, double-blind, placebo-controlled study in 122 patients with multiple myeloma. Participants received motixafortide plus filgrastim or placebo plus filgrastim. The primary collection goal was at least 6 × 10⁶ CD34-positive cells/kg within up to two aphereses.
+**Pivotal evidence — GENESIS (NCT03279783):** The FDA approval was based on the GENESIS randomized, double-blind, placebo-controlled study in 122 patients with multiple myeloma. Participants received motixafortide plus filgrastim or placebo plus filgrastim. The primary collection goal was at least 6 × 10⁶ CD34-positive cells/kg within up to two aphereses.
 
 The FDA Drug Trials Snapshot reports 80 patients in the motixafortide arm and 42 in the placebo arm. Trial outcomes should be reported with the precise endpoint and analysis population; successful cell collection is not the same as a demonstrated improvement in long-term survival.
 

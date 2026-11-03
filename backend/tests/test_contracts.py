@@ -2175,3 +2175,18 @@ def test_chembl_peptide_discovery_route_and_source_contract_are_registered():
     from app.routers.enrichment import PeptideDiscoveryRequest
     request = PeptideDiscoveryRequest(query="tirzepatide", sources=["chembl"])
     assert request.sources == ["chembl"]
+
+
+def test_chembl_mechanism_import_submission_requires_canonical_molecule_id():
+    from app.routers.enrichment import ChEMBLMechanismSubmission
+    payload = ChEMBLMechanismSubmission(chembl_id="CHEMBL448105")
+    assert payload.chembl_id == "CHEMBL448105"
+    with pytest.raises(Exception):
+        ChEMBLMechanismSubmission(chembl_id="CHEMBL-nope")
+
+
+def test_chembl_mechanism_import_route_is_registered():
+    route = app.openapi()["paths"]["/api/v1/enrichment/peptides/{peptide_id}/mechanisms/chembl"]["post"]
+    assert route["requestBody"]["required"] is True
+    schemas = app.openapi()["components"]["schemas"]
+    assert "chembl_id" in schemas["ChEMBLMechanismSubmission"]["properties"]

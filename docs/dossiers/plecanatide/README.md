@@ -11,7 +11,7 @@ Plecanatide is an orally administered 16-amino-acid peptide and GC-C agonist. It
 
 ## 2. Sequence and chemistry
 Label-defined sequence: `NDECE LCVNVACTGCL` (without spacing: `NDECELCVNVACTGCL`).  
-The 16-residue chain contains disulfide bonds Cys4–Cys12 and Cys7–Cys15. Formula: C65H104N18O26S4. Molecular weight: 1682 Da. The N-terminal residue is leucine in the chemical name/sequence representation of the active molecule; confirm sequence orientation against the official label structure graphic when importing machine-readable sequence. Product is a 3 mg oral tablet.
+The 16-residue chain contains disulfide bonds Cys4–Cys12 and Cys7–Cys15. Formula: C65H104N18O26S4. Molecular weight: 1682 Da. The FDA label's structure graphic gives the mature sequence as H-Asn-Asp-Glu-Cys-Glu-Leu-Cys-Val-Asn-Val-Ala-Cys-Thr-Gly-Cys-Leu-OH. Sequence orientation must follow that labelled structure; the chemical name in some label renderings is awkwardly formatted, so the structure graphic is the preferred machine-readable transcription source. Product is a 3 mg oral tablet.
 
 ## 3. Mechanism of action
 Plecanatide and its active metabolite bind GC-C on the luminal surface of intestinal epithelial cells. GC-C activation raises intracellular and extracellular cGMP. Intracellular cGMP activates CFTR, increasing chloride and bicarbonate secretion; sodium and water follow, increasing intestinal fluid and accelerating transit. Extracellular cGMP may reduce visceral nociceptor activity in animal models, but its clinical contribution is not fully established.

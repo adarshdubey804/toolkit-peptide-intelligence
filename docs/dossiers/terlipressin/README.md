@@ -79,3 +79,26 @@ These are authoritative discovery endpoints for completing the dossier; individu
 - Added molecule-specific identity/classification and mechanism summary.
 - Recorded workbook indication and regulatory label as source-provenance fields.
 - Marked `in_progress` pending primary-source verification and quantitative evidence extraction.
+
+
+## 15. Label-based clinical pharmacology and evidence expansion
+
+### Chemical identity and product form
+The current US label describes terlipressin as a 12-amino-acid peptide with chemical name N-[N-(N-glycylglycyl)glycyl]-8-L-lysinevasopressin. Terlivaz contains terlipressin acetate; its labelled molecular formula is C52H74N16O15S2 · (C2H4O2)n, where n is the acetate content (theoretical n=2.8). Average molecular weight is 1,227.38 Da as free base. Each vial contains 0.85 mg terlipressin, equivalent to 1 mg terlipressin acetate, and 10 mg mannitol.
+
+### Receptor signalling
+The US label characterizes terlipressin as approximately twice as selective for V1 versus V2 receptors. It has pharmacological activity in its own right and also serves as a prodrug for lysine-vasopressin. V1a activation in vascular smooth muscle couples to Gq/11, stimulating PLCβ, IP3/DAG generation, intracellular calcium mobilization, and contraction. The therapeutic HRS hypothesis is restoration of effective arterial circulation through splanchnic vasoconstriction, rather than a direct tubular action on the kidney.
+
+### CONFIRM endpoint and safety
+The FDA Drug Trials Snapshot describes CONFIRM (NCT02770716) as a double-blind, randomized, placebo-controlled trial in 300 patients (199 terlipressin; 101 placebo). The FDA summary reports kidney-function improvement in 29% versus 16%, respectively. The current US label reports serious or fatal respiratory failure in 14% of TERLIVAZ-treated patients compared with 5% of placebo recipients. This serious harm is integral to interpreting the renal response signal.
+
+### Current US label warnings
+The June 2026 DailyMed label includes a boxed warning for serious or fatal respiratory failure, with increased risk in volume overload and ACLF grade 3. It contraindicates use in patients experiencing hypoxia or worsening respiratory symptoms and in patients with ongoing coronary, peripheral, or mesenteric ischemia. Other warnings include ischemic events, possible impact on liver-transplant eligibility, and embryo-fetal toxicity.
+
+## 16. Updated source register
+1. **DailyMed — TERLIVAZ, current label updated June 19, 2026.** Chemistry, receptor pharmacology, boxed warning, contraindications, and adverse-event table. https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=3a35b86c-f451-4fac-8499-43019e4da354
+2. **FDA Drug Trials Snapshot — TERLIVAZ.** Approval date, CONFIRM design and primary efficacy endpoint. https://www.fda.gov/drugs/drug-trials-snapshots/drug-trials-snapshots-terlivaz
+3. **FDA — Approval announcement for HRS.** Renal response and safety summary. https://www.fda.gov/drugs/news-events-human-drugs/fda-approves-treatment-improve-kidney-function-adults-hepatorenal-syndrome
+4. **ClinicalTrials.gov — NCT02770716 (CONFIRM).** https://clinicaltrials.gov/study/NCT02770716
+
+The dossier remains `in_progress` until the complete label PK section and full publication endpoint tables are captured.

@@ -218,3 +218,12 @@ Review patents for modified GHRH analogues, N-terminal acylation, peptide synthe
 - [ ] Complete independent scientific review.
 
 **Completion rule:** source-linked working dossier only. Keep status `in_progress` until the outstanding identity, clinical, regulatory, CMC and provenance checks are complete.
+
+
+## Workbook sequence crosswalk — entry 054
+
+The source workbook's 54th peptide entry is **Tesamorelin** (Excel row 52), with Egrifta SV and Egrifta WR listed as presentations, for excess abdominal fat in HIV-associated lipodystrophy. This dossier already existed as dossier 018 before the workbook-sequenced expansion. It is therefore retained as the canonical tesamorelin dossier rather than creating a duplicate `docs/dossiers/tesamorelin/` folder.
+
+The dossier's existing evidence and product-specific presentation distinctions are retained. The workbook-to-dossier index should map workbook entry 054 to this canonical path. Do not count the earlier dossier number 018 as an additional workbook row.
+
+**Workbook curation status:** `in_progress`; see the outstanding curation checklist above.

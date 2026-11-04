@@ -1,7 +1,7 @@
 # 042 — Secretin (human and porcine forms)
 
 **Curation status:** in_progress  
-**Workbook sequence:** 042; next entry after Pegulicianine  
+**Workbook sequence:** 038; Excel row 39  
 **Entity class:** peptide hormone; diagnostic secretagogue  
 **Evidence cut-off:** 4 November 2026
 
@@ -182,3 +182,11 @@ Do not label secretin as an enzyme, digestive enzyme replacement, GLP-1 agonist,
 
 ---
 *Educational and research curation only. Not medical advice or a substitute for the current prescribing information, specialist interpretation, or institutional diagnostic protocols.*
+
+
+## Workbook source mapping
+
+- **Workbook entry:** 038/128
+- **Workbook source name:** Secretin (human / porcine)
+- **Source worksheet:** `Peptides` (Excel row 39)
+- This canonical dossier is reused for this workbook row; do not create a duplicate folder for the alternate display name.

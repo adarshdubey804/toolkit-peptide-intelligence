@@ -59,3 +59,10 @@ Potential analyses: circadian biology, pineal signalling, melatonin pathways, te
 ## Data-quality note
 
 Research curation only; not prescribing guidance. No dosing instructions are provided.
+
+## Workbook source mapping
+
+- **Workbook entry:** 124/128
+- **Workbook source name:** Epitalon (epithalon)
+- **Source worksheet:** `Peptides` (Excel row 125)
+- This canonical dossier is reused for this workbook row; do not create a duplicate folder for the alternate display name.

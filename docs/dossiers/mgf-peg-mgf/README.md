@@ -191,3 +191,11 @@ A generic certificate stating “99% purity” is inadequate if it does not iden
 - Treated PEG-MGF as a separate, incompletely specified conjugate entity.
 - Avoided unsupported sequence, formula, PK, safety-frequency, and clinical-efficacy claims.
 - Status remains `in_progress`.
+
+
+## Workbook source mapping
+
+- **Workbook entry:** 060/128
+- **Workbook source name:** MGF / PEG-MGF (mechano growth factor)
+- **Source worksheet:** `Peptides` (Excel row 61)
+- This canonical dossier is reused for this workbook row; do not create a duplicate folder for the alternate display name.

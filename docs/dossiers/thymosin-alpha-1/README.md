@@ -45,3 +45,11 @@ Not FDA-approved in the United States. Thymalfasin is authorized in selected non
 - Created as workbook entry 104.
 - Added 28-aa acetylated sequence and clarified international versus US regulatory status.
 - Status remains `in_progress`.
+
+
+## Workbook source mapping
+
+- **Workbook entry:** 104/128
+- **Workbook source name:** Thymosin alpha-1 (thymalfasin)
+- **Source worksheet:** `Peptides` (Excel row 105)
+- This canonical dossier is reused for this workbook row; do not create a duplicate folder for the alternate display name.

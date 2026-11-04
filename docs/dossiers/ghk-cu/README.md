@@ -60,3 +60,10 @@ Potential analyses: copper coordination chemistry, matrix metalloproteinases, co
 ## Data-quality note
 
 Research curation only; not prescribing guidance. No dosing instructions are provided.
+
+## Workbook source mapping
+
+- **Workbook entry:** 122/128
+- **Workbook source name:** GHK-Cu (copper tripeptide)
+- **Source worksheet:** `Peptides` (Excel row 123)
+- This canonical dossier is reused for this workbook row; do not create a duplicate folder for the alternate display name.

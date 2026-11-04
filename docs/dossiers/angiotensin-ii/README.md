@@ -185,7 +185,7 @@ Do not assume that a research-grade angiotensin II powder is equivalent to the a
 1. **FDA Drugs@FDA — Giapreza (angiotensin II).** Official approval and label history. https://www.accessdata.fda.gov/scripts/cder/daf/
 2. **DailyMed — Giapreza prescribing information.** Current product label, warnings, and administration information. https://dailymed.nlm.nih.gov/dailymed/search.cfm?query=Giapreza
 3. **Khanna A, et al. (2017).** Angiotensin II for the Treatment of Vasodilatory Shock. *New England Journal of Medicine*. DOI: 10.1056/NEJMoa1704154. PMID: 28528561. https://pubmed.ncbi.nlm.nih.gov/28528561/
-4. **ClinicalTrials.gov — ATHOS-3, NCT023388 naga?** Registry record should be linked after verifying the exact identifier; trial identifier is commonly reported as NCT02338843. https://clinicaltrials.gov/study/NCT02338843
+4. **ClinicalTrials.gov — ATHOS-3, NCT02338843** Registry record should be linked after verifying the exact identifier; trial identifier is commonly reported as NCT02338843. https://clinicaltrials.gov/study/NCT02338843
 5. **UniProt — Angiotensinogen (AGT), P01019.** Precursor pathway context. https://www.uniprot.org/uniprotkb/P01019/entry
 6. **IUPHAR/BPS Guide to Pharmacology — Angiotensin receptors.** AT1 and AT2 receptor pharmacology. https://www.guidetopharmacology.org/
 

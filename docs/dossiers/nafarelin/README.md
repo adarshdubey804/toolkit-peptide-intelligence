@@ -194,3 +194,25 @@ SYNAREL is a prescription nasal solution. Current label presence is not equivale
 ## 20. Disclaimer
 
 For scientific and research information only. This dossier is not a prescribing guide and does not replace current regulator-approved product information or qualified clinical judgement.
+
+
+## 21. Workbook cross-reference (128-peptide source workbook)
+
+- **Workbook entry:** 069
+- **Workbook row:** Peptides sheet, Excel row 70
+- **Workbook name:** Nafarelin
+- **Workbook brand:** Synarel
+- **Workbook category:** Reproductive Health & Fertility
+- **Workbook indication text:** Endometriosis; central precocious puberty
+- **Workbook FDA field:** Yes / FDA-approved
+- **Workbook first-US-approval field:** 1990
+- **Canonical dossier path:** `docs/dossiers/nafarelin/README.md`
+
+The heading number 029 is a legacy dossier-sequence identifier from earlier repository curation. The workbook cross-reference 069 is the stable position in the 128-row workbook. These are two separate numbering systems and must not be conflated. Keep this canonical dossier; do not create a duplicate folder for workbook entry 069. The workbook's approval-year field is retained as provenance and should be independently reconciled with the FDA application history before treating it as the definitive first approval date.
+
+## 22. Workbook mapping change log
+
+- Mapped the existing canonical nafarelin dossier to workbook entry 069.
+- Preserved its prior dossier-sequence identifier (029) for backward compatibility.
+- Confirmed the workbook indication and brand fields.
+- No duplicate dossier folder created.

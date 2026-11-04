@@ -59,3 +59,10 @@ Potential research: sleep-stage EEG endpoints, circadian/neuroendocrine networks
 ## Data-quality note
 
 Research curation only; not prescribing guidance. No dosing instructions are provided.
+
+## Workbook source mapping
+
+- **Workbook entry:** 117/128
+- **Workbook source name:** DSIP (delta sleep-inducing peptide / emideltide)
+- **Source worksheet:** `Peptides` (Excel row 118)
+- This canonical dossier is reused for this workbook row; do not create a duplicate folder for the alternate display name.

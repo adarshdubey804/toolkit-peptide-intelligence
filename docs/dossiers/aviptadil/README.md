@@ -46,3 +46,11 @@ Not FDA-approved as a standalone medicinal product. Investigational status shoul
 - Added 28-aa amidated VIP sequence and VPAC1/VPAC2 mechanism.
 - Explicitly retained investigational/non-FDA-approved status.
 - Status remains `in_progress`.
+
+
+## Workbook source mapping
+
+- **Workbook entry:** 106/128
+- **Workbook source name:** Aviptadil (vasoactive intestinal peptide)
+- **Source worksheet:** `Peptides` (Excel row 107)
+- This canonical dossier is reused for this workbook row; do not create a duplicate folder for the alternate display name.

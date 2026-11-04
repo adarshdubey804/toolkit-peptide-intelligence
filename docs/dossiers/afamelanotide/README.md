@@ -58,3 +58,10 @@ Relevant analyses: MC1R signalling, melanogenesis networks, porphyrin/heme biosy
 ## Data-quality note
 
 Research curation only; not prescribing guidance. No dosing instructions are provided.
+
+## Workbook source mapping
+
+- **Workbook entry:** 111/128
+- **Workbook source name:** Afamelanotide (Melanotan I)
+- **Source worksheet:** `Peptides` (Excel row 112)
+- This canonical dossier is reused for this workbook row; do not create a duplicate folder for the alternate display name.

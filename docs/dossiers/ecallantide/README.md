@@ -1,7 +1,8 @@
 # 049 — Ecallantide (KALBITOR)
 
 **Curation status:** in_progress  
-**Workbook sequence:** 049  
+**Legacy dossier sequence:** 049  
+**Workbook cross-reference:** 100 (Peptides workbook, row 101)  
 **Entity class:** recombinant protein; 60-amino-acid Kunitz-domain kallikrein inhibitor  
 **Evidence cut-off:** 4 November 2026
 

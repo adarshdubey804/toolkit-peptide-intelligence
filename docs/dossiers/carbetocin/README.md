@@ -109,13 +109,13 @@ Carbetocin is authorized in multiple countries but is not FDA-approved in the Un
 ## 14. References
 1. **WHO. Consolidated guidelines for the prevention, diagnosis and treatment of postpartum haemorrhage (2025).** https://www.who.int/publications/i/item/9789240115637
 2. **Widmer M, et al.** Heat-Stable Carbetocin versus Oxytocin to Prevent Hemorrhage after Vaginal Birth. *N Engl J Med.* 2018;379:743–752. DOI: 10.1056/NEJMoa1805489. PMID: 301341 ಮೂರು. https://pubmed.ncbi.nlm.nih.gov/?term=NEJMoa1805489
-3. **ClinicalTrials.gov — CHAMPION trial, NCT022211 first registry record.** Search record: https://clinicaltrials.gov/search?term=heat-stable+carbetocin+CHAMPION
+3. **ClinicalTrials.gov — CHAMPION trial, ACTRN12614000870651; EudraCT 2014-004445-26; CTRI/2016/05/006969. The trial was not assigned a ClinicalTrials.gov NCT identifier.** Search record: https://clinicaltrials.gov/search?term=heat-stable+carbetocin+CHAMPION
 4. **EMA / national product information** — carbetocin products and country-specific authorization: https://www.ema.europa.eu/
 5. **WHO Prequalification** — heat-stable carbetocin product information: https://extranet.who.int/prequal/
 
 ## 15. Change log
 - Created as workbook entry 072.
 - Added structural distinction from oxytocin, including monocarba bridge and O-methyltyrosine.
-- Added OXTR mechanism, WHO heat-stable carbetocin context, and CHAMPION trial overview.
+- Added OXTR mechanism, WHO heat-stable carbetocin context, and CHAMPION trial overview, including the distinction that noninferiority was shown for the ≥500 mL/additional-uterotonic composite but not established for ≥1,000 mL blood loss.
 - Distinguished international authorization from US FDA approval.
 - Status remains `in_progress` pending exact chemical record, country labels, and full clinical endpoint extraction.

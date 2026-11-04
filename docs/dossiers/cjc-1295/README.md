@@ -216,3 +216,11 @@ Do not represent DAC as an ordinary amino-acid residue or treat albumin associat
 - Separated DAC and non-DAC nomenclature to prevent cross-application of chemistry and PK data.
 - Added human phase 1 pharmacology findings and FDA compounding-risk information.
 - Status remains `in_progress`; this dossier is not represented as exhaustive or complete.
+
+
+## Workbook source mapping
+
+- **Workbook entry:** 054/128
+- **Workbook source name:** CJC-1295 (with/without DAC)
+- **Source worksheet:** `Peptides` (Excel row 55)
+- This canonical dossier is reused for this workbook row; do not create a duplicate folder for the alternate display name.

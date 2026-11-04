@@ -190,7 +190,7 @@ A generic BNP peptide or research-grade material is not equivalent to the approv
 
 1. **FDA Drugs@FDA — Natrecor (nesiritide).** Official approval and label history. https://www.accessdata.fda.gov/scripts/cder/daf/
 2. **DailyMed — Natrecor (nesiritide) prescribing information.** Product indication, warnings, and PK. https://dailymed.nlm.nih.gov/dailymed/search.cfm?query=Natrecor
-3. **O'Connor CM, et al. (2011).** Effect of nesiritide in patients with acute decompensated heart failure. *New England Journal of Medicine*. DOI: 10.1056/NEJMoa110017 ಮಹ. PMID: _kernel. https://pubmed.ncbi.nlm.nih.gov/?term=ASCEND-HF+nesiritide+O%27Connor
+3. **O'Connor CM, et al. (2011).** Effect of nesiritide in patients with acute decompensated heart failure. *New England Journal of Medicine*. DOI: 10.1056/NEJMoa1100171. PMID: 21732835. https://pubmed.ncbi.nlm.nih.gov/21732835/
 4. **ClinicalTrials.gov — ASCEND-HF.** Trial record NCT00475852. https://clinicaltrials.gov/study/NCT00475852
 5. **UniProt — Natriuretic peptides / BNP precursor.** Sequence and precursor context. https://www.uniprot.org/uniprotkb/P16860/entry
 6. **IUPHAR/BPS Guide to Pharmacology — Natriuretic peptide receptors.** NPR-A/GC-A and cGMP receptor pharmacology. https://www.guidetopharmacology.org/

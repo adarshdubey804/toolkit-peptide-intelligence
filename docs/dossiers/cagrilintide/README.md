@@ -221,3 +221,11 @@ Review patent families covering long-acting amylin analogues, sequence substitut
 - [ ] Complete independent scientific review.
 
 **Completion rule:** this is a source-linked investigational-drug working dossier, not a prescribing guide or completed A-to-Z monograph. Keep status `in_progress` until identity, primary clinical evidence, regulatory status, safety, CMC and provenance checks are complete.
+
+
+## Workbook source mapping
+
+- **Workbook entry:** 018/128
+- **Workbook source name:** Cagrilintide (and CagriSema = cagrilintide + semaglutide)
+- **Source worksheet:** `Peptides` (Excel row 19)
+- This canonical dossier is reused for this workbook row; do not create a duplicate folder for the alternate display name.

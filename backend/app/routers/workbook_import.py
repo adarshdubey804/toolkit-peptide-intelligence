@@ -159,8 +159,13 @@ def _validate_worksheet_dimensions(workbook) -> None:
     """Bound declared worksheet dimensions before iterating any worksheet cells."""
     total_cells = 0
     for sheet in workbook.worksheets:
-        rows = sheet.max_row or 0
-        columns = sheet.max_column or 0
+        rows = sheet.max_row
+        columns = sheet.max_column
+        if rows is None or columns is None or rows < 1 or columns < 1:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Worksheet '{sheet.title}' has missing or invalid dimensions.",
+            )
         if rows > MAX_WORKSHEET_ROWS or columns > MAX_WORKSHEET_COLUMNS:
             raise HTTPException(
                 status_code=422,

@@ -44,3 +44,34 @@ The changed-file inventory also contains legacy/adjacent dossiers that are not l
 - File presence and a workbook cross-reference do not constitute scientific completion. Each factual claim still needs its own source locator and evidence classification.
 - The dossiers remain `in_progress`; no unsupported status has been promoted to complete.
 - CI for the latest head commit was running at audit time; final results must be checked before declaring the PR validated.
+
+
+## Follow-up duplicate and numbering audit — 5 November 2026
+
+A subsequent review of the earlier dossier commits and the complete PR #155 changed-file inventory found that these peptide dossiers already exist in the workbook dossier batch:
+
+| Peptide | Existing canonical path in this PR | Existing dossier heading / workbook mapping |
+|---|---|---|
+| Ipamorelin | `docs/dossiers/ipamorelin/README.md` | Dossier 053; workbook entry 053 |
+| CJC-1295 | `docs/dossiers/cjc-1295/README.md` | Dossier 054; workbook entry 054 |
+| GHRP-6 | `docs/dossiers/ghrp-6/README.md` | Dossier 055; source sheet row 55 is stated in the dossier |
+| GHRP-2 / pralmorelin | `docs/dossiers/ghrp-2/README.md` | Dossier 056; source sheet row 56 is stated in the dossier |
+| Hexarelin / examorelin | `docs/dossiers/hexarelin/README.md` | Dossier 057; source sheet row 57 is stated in the dossier |
+| Sermorelin | `docs/dossiers/sermorelin/README.md` | Its file labels itself workbook sequence 055 but also says Peptides data row 51 / Excel row 53 |
+
+### Duplicate PRs detected and closed
+
+- PR #156 attempted to add Ipamorelin again at `docs/peptide-dossiers/056-ipamorelin/README.md`. Closed as a duplicate of the existing Ipamorelin dossier above.
+- PR #157 attempted to add GHRP-2 / pralmorelin again at `docs/peptide-dossiers/057-ghrp-2-pralmorelin/README.md`. Closed as a duplicate of the existing GHRP-2 dossier above.
+- GHRP-6 was already present in the PR #155 inventory; no new GHRP-6 folder should be created.
+
+### Numbering integrity issue
+
+The existing Sermorelin file uses sequence number 055 while the GHRP-6 file is also titled Dossier 055. This is a dossier-number collision, not evidence that Sermorelin and GHRP-6 are the same peptide. Keep the canonical identity and source-row mapping separate from human-readable dossier sequence labels. Before changing any numbering, reconcile all 128 exact workbook rows against the source workbook and choose one unique, stable identifier policy. Do not use a dossier sequence number as a database primary key.
+
+### Scope and remaining checks
+
+- The PR #155 changed-file inventory contains 133 dossier folders, while the workbook contains 128 source rows. The path audit identifies five additional legacy/adjacent folders; these must remain explicitly outside workbook row accounting unless separately mapped.
+- The workbook audit reports 128 unique names, but this is not equivalent to chemical-identity deduplication. Salts, conjugates, fragments, peptide-derived compounds and ambiguous names still require identity-level review.
+- PR #155 remains the only intended workbook import/dossier batch in this comparison. Its workbook import has not been demonstrated against the deployed database in this audit.
+- No claim is made that the 128 dossiers are all scientifically complete or curator-verified.

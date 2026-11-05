@@ -226,3 +226,18 @@ def test_workbook_dimension_guard_rejects_excessive_declared_rows():
         parsed.close()
     assert error.value.status_code == 422
     assert "dimensions" in error.value.detail
+
+
+
+def test_blank_status_detail_falls_back_to_workbook_fda_status():
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Peptides"
+    sheet.append(["Peptide", "FDA Status", "Status Detail"])
+    for index in range(128):
+        sheet.append([f"Peptide {index + 1}", "Yes", "   "])
+    try:
+        rows = _extract_peptide_rows(workbook)
+    finally:
+        workbook.close()
+    assert rows[0][3] == "Yes"

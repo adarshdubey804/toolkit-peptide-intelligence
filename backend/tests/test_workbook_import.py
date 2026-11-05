@@ -1,4 +1,5 @@
 from io import BytesIO
+import zipfile
 
 import pytest
 from fastapi import HTTPException
@@ -9,6 +10,7 @@ from app.routers.workbook_import import (
     DossierMediaInput,
     DossierReferenceInput,
     _extract_peptide_rows,
+    _validate_xlsx_archive,
     _worksheet_rows,
 )
 
@@ -154,3 +156,44 @@ def test_dossier_media_requires_alt_text_attribution_source_and_reuse_terms():
             source_name="RCSB PDB",
             license_or_reuse_terms="Unknown",
         )
+
+
+
+def test_xlsx_archive_validator_accepts_a_normal_workbook():
+    workbook = _catalogue_workbook()
+    try:
+        stream = BytesIO()
+        workbook.save(stream)
+    finally:
+        workbook.close()
+
+    _validate_xlsx_archive(stream.getvalue())
+
+
+def test_xlsx_archive_validator_rejects_invalid_zip_payload():
+    with pytest.raises(HTTPException) as error:
+        _validate_xlsx_archive(b"not a zip archive")
+    assert error.value.status_code == 422
+
+
+def test_xlsx_archive_validator_rejects_high_compression_ratio():
+    stream = BytesIO()
+    with zipfile.ZipFile(stream, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("[Content_Types].xml", "x" * (2 * 1024 * 1024))
+        archive.writestr("xl/workbook.xml", "<workbook/>")
+
+    with pytest.raises(HTTPException) as error:
+        _validate_xlsx_archive(stream.getvalue())
+    assert error.value.status_code == 413
+    assert "compression ratio" in error.value.detail
+
+
+def test_xlsx_archive_validator_rejects_non_xlsx_zip():
+    stream = BytesIO()
+    with zipfile.ZipFile(stream, "w") as archive:
+        archive.writestr("readme.txt", "not an xlsx")
+
+    with pytest.raises(HTTPException) as error:
+        _validate_xlsx_archive(stream.getvalue())
+    assert error.value.status_code == 422
+    assert "valid XLSX workbook" in error.value.detail

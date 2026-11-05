@@ -134,7 +134,7 @@ def test_clinical_trials_normalization_preserves_source_and_evidence_state():
 
 def test_provenance_migration_is_present_and_applied_in_development_order():
     migrations = sorted(path.name for path in MIGRATIONS_DIR.glob("*.sql"))
-    assert migrations == ["001_initial_schema.sql", "002_provenance_curation.sql", "003_authentication.sql", "004_organization_workspaces.sql", "005_curation_workflow.sql", "006_enrichment_candidates.sql", "007_vendor_directory.sql", "008_analytical_method_intelligence.sql", "009_formulation_stability_intelligence.sql", "010_process_development_intelligence.sql", "011_molecular_interaction_intelligence.sql", "012_agent_sessions.sql", "013_evidence_intelligence.sql", "014_regulatory_guidance_intelligence.sql", "015_regulatory_change_monitoring.sql", "016_regulatory_observation_integrity.sql", "017_regulatory_source_registry.sql", "018_enrichment_ingestion_runs.sql", "019_regulatory_source_observations.sql", "020_regulatory_poll_scheduler.sql", "021_evidence_review_decisions.sql", "022_structured_evidence_extraction.sql", "023_extracted_evidence_field_review.sql", "024_peptide_analytical_method_applicability.sql", "025_vendor_certification_verification.sql", "026_vendor_service_review.sql", "027_vendor_service_evidence_links.sql", "028_vendor_facility_verification.sql", "029_vendor_service_facility_link.sql", "030_vendor_certification_submitter.sql", "031_laboratory_capability_claims.sql", "032_analytical_test_catalogue.sql", "033_analytical_test_catalogue_curation.sql", "034_peptide_test_applicability.sql", "035_analytical_reference_framework_crosswalk.sql", "036_shared_api_rate_limiting.sql", "037_tamper_evident_audit_trail.sql", "038_explicit_record_ownership.sql", "039_canonical_peptide_chemical_forms.sql", "040_chemical_form_applicability_links.sql", "041_interaction_and_decision_ownership.sql", "042_vendor_material_batch_traceability.sql", "043_vendor_material_visibility_review.sql", "044_vendor_material_row_level_security.sql", "045_analytical_method_row_level_security.sql", "046_claim_source_citation_locators.sql", "047_formulation_process_row_level_security.sql", "048_molecular_interaction_row_level_security.sql", "049_evidence_appraisal_row_level_security.sql", "050_curation_workflow_row_level_security.sql", "051_agent_session_user_row_level_security.sql", "052_regulatory_guidance_row_level_security.sql", "053_regulatory_source_scheduler_row_level_security.sql", "054_vendor_identity_site_certification_row_level_security.sql", "055_evidence_claim_revision_history.sql", "056_extraction_source_record_provenance.sql", "057_extraction_artifact_row_level_security.sql", "058_enrichment_artifact_row_level_security.sql", "059_vendor_service_evidence_row_level_security.sql", "060_laboratory_capability_row_level_security.sql", "061_peptide_applicability_row_level_security.sql", "062_analytical_test_catalogue_decision_row_level_security.sql", "063_audit_event_row_level_security.sql", "064_regulatory_source_registry_row_level_security.sql", "065_peptide_chemical_form_revision_history.sql", "066_product_level_regulatory_authorizations.sql", "067_peptide_mechanism_of_action.sql", "068_global_peptide_discovery_registry.sql", "069_bpc157_fda_source_candidate_seed.sql", "070_bpc157_pubmed_mechanism_evidence.sql"]
+    assert migrations == ["001_initial_schema.sql", "002_provenance_curation.sql", "003_authentication.sql", "004_organization_workspaces.sql", "005_curation_workflow.sql", "006_enrichment_candidates.sql", "007_vendor_directory.sql", "008_analytical_method_intelligence.sql", "009_formulation_stability_intelligence.sql", "010_process_development_intelligence.sql", "011_molecular_interaction_intelligence.sql", "012_agent_sessions.sql", "013_evidence_intelligence.sql", "014_regulatory_guidance_intelligence.sql", "015_regulatory_change_monitoring.sql", "016_regulatory_observation_integrity.sql", "017_regulatory_source_registry.sql", "018_enrichment_ingestion_runs.sql", "019_regulatory_source_observations.sql", "020_regulatory_poll_scheduler.sql", "021_evidence_review_decisions.sql", "022_structured_evidence_extraction.sql", "023_extracted_evidence_field_review.sql", "024_peptide_analytical_method_applicability.sql", "025_vendor_certification_verification.sql", "026_vendor_service_review.sql", "027_vendor_service_evidence_links.sql", "028_vendor_facility_verification.sql", "029_vendor_service_facility_link.sql", "030_vendor_certification_submitter.sql", "031_laboratory_capability_claims.sql", "032_analytical_test_catalogue.sql", "033_analytical_test_catalogue_curation.sql", "034_peptide_test_applicability.sql", "035_analytical_reference_framework_crosswalk.sql", "036_shared_api_rate_limiting.sql", "037_tamper_evident_audit_trail.sql", "038_explicit_record_ownership.sql", "039_canonical_peptide_chemical_forms.sql", "040_chemical_form_applicability_links.sql", "041_interaction_and_decision_ownership.sql", "042_vendor_material_batch_traceability.sql", "043_vendor_material_visibility_review.sql", "044_vendor_material_row_level_security.sql", "045_analytical_method_row_level_security.sql", "046_claim_source_citation_locators.sql", "047_formulation_process_row_level_security.sql", "048_molecular_interaction_row_level_security.sql", "049_evidence_appraisal_row_level_security.sql", "050_curation_workflow_row_level_security.sql", "051_agent_session_user_row_level_security.sql", "052_regulatory_guidance_row_level_security.sql", "053_regulatory_source_scheduler_row_level_security.sql", "054_vendor_identity_site_certification_row_level_security.sql", "055_evidence_claim_revision_history.sql", "056_extraction_source_record_provenance.sql", "057_extraction_artifact_row_level_security.sql", "058_enrichment_artifact_row_level_security.sql", "059_vendor_service_evidence_row_level_security.sql", "060_laboratory_capability_row_level_security.sql", "061_peptide_applicability_row_level_security.sql", "062_analytical_test_catalogue_decision_row_level_security.sql", "063_audit_event_row_level_security.sql", "064_regulatory_source_registry_row_level_security.sql", "065_peptide_chemical_form_revision_history.sql", "066_product_level_regulatory_authorizations.sql", "067_peptide_mechanism_of_action.sql", "068_global_peptide_discovery_registry.sql", "069_bpc157_fda_source_candidate_seed.sql", "070_bpc157_pubmed_mechanism_evidence.sql", "071_peptide_workbook_imports.sql", "072_editable_dossier_sections_and_media.sql", "073_private_discovery_candidate_update_scope.sql", "074_private_discovery_insert_scope.sql"]
     sql = (MIGRATIONS_DIR / "002_provenance_curation.sql").read_text(encoding="utf-8")
     assert "source_record_versions" in sql
     assert "external_entity_links" in sql
@@ -2205,3 +2205,210 @@ def test_default_global_peptide_discovery_includes_all_configured_specialist_sou
     assert "gtopdb" in request.sources
     assert "chembl" in request.sources
     assert len(request.sources) <= 12
+
+
+def test_peptide_workbook_import_route_is_registered_and_file_upload_is_required():
+    operation = app.openapi()["paths"]["/api/v1/dossiers/import-workbook"]["post"]
+    assert operation["requestBody"]["required"] is True
+    assert operation["requestBody"]["content"]["multipart/form-data"]
+    assert "post" in app.openapi()["paths"]["/api/v1/dossiers/import-workbook"]
+
+
+def test_peptide_workbook_import_migration_preserves_row_level_provenance():
+    sql = (MIGRATIONS_DIR / "071_peptide_workbook_imports.sql").read_text(encoding="utf-8")
+    assert "peptide_workbook_import_batches" in sql
+    assert "peptide_workbook_import_rows" in sql
+    assert "UNIQUE (batch_id, worksheet_name, worksheet_row_number)" in sql
+    assert "source_row JSONB" in sql
+
+
+def test_peptide_dossier_section_editor_routes_are_registered():
+    paths = app.openapi()["paths"]
+    assert "/api/v1/dossiers/candidates/{candidate_id}/sections" in paths
+    assert "get" in paths["/api/v1/dossiers/candidates/{candidate_id}/sections"]
+    assert "/api/v1/dossiers/candidates/{candidate_id}/sections/{section_key}" in paths
+    assert "put" in paths["/api/v1/dossiers/candidates/{candidate_id}/sections/{section_key}"]
+
+
+def test_dossier_sections_are_organization_scoped_and_revisioned():
+    sql = (MIGRATIONS_DIR / "072_editable_dossier_sections_and_media.sql").read_text(encoding="utf-8")
+    assert "ENABLE ROW LEVEL SECURITY" in sql
+    assert "FORCE ROW LEVEL SECURITY" in sql
+    assert "peptide_dossier_section_revisions" in sql
+    assert "prevent_peptide_dossier_section_revision_mutation" in sql
+    assert "citations JSONB" in sql
+    assert "media JSONB" in sql
+
+
+def test_dossier_editor_cors_allows_put_requests():
+    from app.main import app
+    cors = next(m for m in app.user_middleware if m.cls.__name__ == "CORSMiddleware")
+    assert "PUT" in cors.kwargs["allow_methods"]
+
+
+def test_private_workbook_discovery_records_are_tenant_scoped():
+    sql = (MIGRATIONS_DIR / "071_peptide_workbook_imports.sql").read_text(encoding="utf-8")
+    assert "owner_organization_id UUID REFERENCES organizations(id)" in sql
+    assert "peptide_discovery_candidates FORCE ROW LEVEL SECURITY" in sql
+    assert "peptide_discovery_observations FORCE ROW LEVEL SECURITY" in sql
+    assert "peptide_workbook_import_batches FORCE ROW LEVEL SECURITY" in sql
+    assert "peptide_workbook_import_rows FORCE ROW LEVEL SECURITY" in sql
+
+
+def test_workbook_import_recognizes_common_peptide_column_header_variants():
+    from app.routers.workbook_import import _first_header, _normalise_header, NAME_HEADERS
+    assert _normalise_header("Peptide (generic / common name)") == "peptide generic common name"
+    assert _first_header(("Brand", "Peptide Name", "FDA Status"), NAME_HEADERS) == "Peptide Name"
+    assert _first_header(("Drug", "Common Name"), NAME_HEADERS) == "Common Name"
+
+
+def test_workbook_import_preserves_companion_worksheet_metadata():
+    sql = (MIGRATIONS_DIR / "071_peptide_workbook_imports.sql").read_text(encoding="utf-8")
+    assert "workbook_metadata JSONB" in sql
+    assert "source_row JSONB" in sql
+    from app.routers import workbook_import
+    assert "Expected 128 populated peptide rows" in __import__("inspect").getsource(workbook_import._extract_peptide_rows)
+
+
+def test_dossier_references_must_map_to_claims_and_use_https():
+    from pydantic import ValidationError
+    from app.routers.workbook_import import DossierReferenceInput, DossierMediaInput
+    valid = {
+        "claim_text": "Binds the target receptor in a concentration-dependent assay.",
+        "title": "Primary pharmacology study",
+        "source_name": "PubMed",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/12345678/",
+        "locator": "Figure 2",
+        "evidence_type": "in_vitro",
+    }
+    assert DossierReferenceInput(**valid).claim_text.startswith("Binds")
+    with pytest.raises(ValidationError):
+        DossierReferenceInput(**{**valid, "url": "http://example.org/source"})
+    with pytest.raises(ValidationError):
+        DossierReferenceInput(**{key: value for key, value in valid.items() if key != "claim_text"})
+    media = {
+        "title": "Peptide structure",
+        "image_url": "https://pubchem.ncbi.nlm.nih.gov/image.png",
+        "alt_text": "2D molecular structure depiction",
+        "source_name": "PubChem",
+        "license_or_reuse_terms": "PubChem record image terms",
+    }
+    assert DossierMediaInput(**media).image_url.scheme == "https"
+
+
+
+def test_workbook_row_extractor_accepts_128_rows_and_preserves_source_fields():
+    from io import BytesIO
+    from openpyxl import Workbook, load_workbook
+    from app.routers.workbook_import import _extract_peptide_rows
+
+    source = Workbook()
+    sheet = source.active
+    sheet.title = "Peptides"
+    sheet.append(["Catalogue export"])
+    sheet.append(["Peptide (generic / common name)", "FDA Status", "Source note"])
+    for index in range(128):
+        sheet.append([f"Peptide {index + 1}", "Not approved", f"Source row {index + 1}"])
+    payload = BytesIO()
+    source.save(payload)
+    source.close()
+
+    parsed_workbook = load_workbook(BytesIO(payload.getvalue()), read_only=True, data_only=True)
+    try:
+        rows = _extract_peptide_rows(parsed_workbook)
+    finally:
+        parsed_workbook.close()
+
+    assert len(rows) == 128
+    assert rows[0][0] == 3
+    assert rows[0][2] == "Peptide 1"
+    assert rows[0][3] == "Not approved"
+    assert rows[-1][2] == "Peptide 128"
+    assert rows[0][1]["Source note"] == "Source row 1"
+
+
+def test_workbook_row_extractor_rejects_wrong_row_count_and_missing_headers():
+    from io import BytesIO
+    from openpyxl import Workbook, load_workbook
+    from fastapi import HTTPException
+    from app.routers.workbook_import import _extract_peptide_rows
+
+    def parse(sheet_name, header, count):
+        source = Workbook()
+        sheet = source.active
+        sheet.title = sheet_name
+        sheet.append(header)
+        for index in range(count):
+            sheet.append([f"Peptide {index + 1}"])
+        payload = BytesIO()
+        source.save(payload)
+        source.close()
+        parsed = load_workbook(BytesIO(payload.getvalue()), read_only=True, data_only=True)
+        try:
+            return _extract_peptide_rows(parsed)
+        finally:
+            parsed.close()
+
+    with pytest.raises(HTTPException) as wrong_count:
+        parse("Peptides", ["Peptide Name"], 127)
+    assert wrong_count.value.status_code == 422
+    with pytest.raises(HTTPException) as missing_header:
+        parse("Peptides", ["Drug", "Status"], 128)
+    assert missing_header.value.status_code == 422
+    with pytest.raises(HTTPException) as missing_sheet:
+        parse("Catalogue", ["Peptide Name"], 128)
+    assert missing_sheet.value.status_code == 422
+
+def test_peptide_workbook_import_route_is_registered_and_requires_xlsx_upload():
+    operation = app.openapi()["paths"]["/api/v1/dossiers/import-workbook"]["post"]
+    assert operation["requestBody"]["required"] is True
+    schema = operation["requestBody"]["content"]["multipart/form-data"]["schema"]
+    assert schema["$ref"].endswith("/Body_import_peptide_workbook_api_v1_dossiers_import_workbook_post")
+
+
+def test_dossier_reference_and_media_require_https_provenance():
+    import pytest
+    from app.routers.workbook_import import DossierMediaInput, DossierReferenceInput
+
+    reference = {
+        "claim_text": "Activates the growth hormone secretagogue receptor.",
+        "title": "Primary pharmacology study",
+        "source_name": "PubMed",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/12345678/",
+    }
+    assert DossierReferenceInput(**reference).url.scheme == "https"
+    with pytest.raises(Exception):
+        DossierReferenceInput(**{**reference, "url": "http://example.org/article"})
+
+    media = {
+        "title": "Molecular structure",
+        "image_url": "https://example.org/structure.png",
+        "alt_text": "Molecular structure depiction of the peptide",
+        "source_name": "PubChem",
+        "license_or_reuse_terms": "Public domain",
+    }
+    assert DossierMediaInput(**media).image_url.scheme == "https"
+    with pytest.raises(Exception):
+        DossierMediaInput(**{**media, "image_url": "http://example.org/structure.png"})
+
+
+def test_private_discovery_candidates_cannot_be_updated_by_other_organizations():
+    sql = (MIGRATIONS_DIR / "073_private_discovery_candidate_update_scope.sql").read_text(encoding="utf-8")
+    assert "DROP POLICY IF EXISTS peptide_discovery_candidates_update_scope" in sql
+    assert "owner_organization_id IS NOT NULL" in sql
+    assert "owner_organization_id = NULLIF(current_setting('app.organization_id', true), '')::uuid" in sql
+    assert "global candidates are read-only" in sql
+
+
+
+def test_private_discovery_insert_policies_reject_shared_global_writes():
+    sql = (MIGRATIONS_DIR / "074_private_discovery_insert_scope.sql").read_text(encoding="utf-8")
+    for policy in (
+        "peptide_discovery_candidates_insert_scope",
+        "peptide_discovery_observations_insert_scope",
+    ):
+        assert f"DROP POLICY IF EXISTS {policy}" in sql
+        assert f"CREATE POLICY {policy}" in sql
+    assert sql.count("owner_organization_id IS NOT NULL") == 2
+    assert sql.count("owner_organization_id = NULLIF(current_setting('app.organization_id', true), '')::uuid") == 2
+    assert "trusted ingestion" in sql

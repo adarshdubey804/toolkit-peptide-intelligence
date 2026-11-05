@@ -104,6 +104,10 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             "peptide_discovery_candidates",
             "peptide_discovery_observations",
             "peptide_discovery_decisions",
+            "peptide_workbook_import_batches",
+            "peptide_workbook_import_rows",
+            "peptide_dossier_sections",
+            "peptide_dossier_section_revisions",
         )
         for table_name in required_tables:
             exists = connection.execute(
@@ -404,6 +408,12 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             "vendor_material_batches",
             "batch_analytical_test_results",
             "batch_analytical_test_result_decisions",
+            "peptide_discovery_candidates",
+            "peptide_discovery_observations",
+            "peptide_workbook_import_batches",
+            "peptide_workbook_import_rows",
+            "peptide_dossier_sections",
+            "peptide_dossier_section_revisions",
         )
         for table_name in rls_tables:
             rls_state = connection.execute(text("""
@@ -429,6 +439,44 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             )
         """)).scalar_one()
         assert required_policies == 11, "All vendor material traceability access paths need explicit RLS policies"
+
+        dossier_policies = connection.execute(text("""
+            SELECT count(*) FROM pg_policies
+            WHERE schemaname='public' AND policyname IN (
+                'peptide_discovery_candidates_select_scope',
+                'peptide_discovery_candidates_insert_scope',
+                'peptide_discovery_candidates_update_scope',
+                'peptide_discovery_observations_select_scope',
+                'peptide_discovery_observations_insert_scope',
+                'peptide_workbook_import_batches_select_scope',
+                'peptide_workbook_import_batches_insert_scope',
+                'peptide_workbook_import_batches_update_scope',
+                'peptide_workbook_import_rows_select_scope',
+                'peptide_workbook_import_rows_insert_scope',
+                'peptide_workbook_import_rows_update_scope',
+                'peptide_dossier_sections_select_scope',
+                'peptide_dossier_sections_insert_scope',
+                'peptide_dossier_sections_update_scope',
+                'peptide_dossier_section_revisions_select_scope',
+                'peptide_dossier_section_revisions_insert_scope'
+            )
+        """)).scalar_one()
+        assert dossier_policies == 16, "All private peptide discovery, workbook and dossier tables need explicit organization RLS policies"
+
+        private_insert_policies = connection.execute(text("""
+            SELECT policyname, with_check
+            FROM pg_policies
+            WHERE schemaname='public' AND policyname IN (
+                'peptide_discovery_candidates_insert_scope',
+                'peptide_discovery_observations_insert_scope'
+            )
+        """)).mappings().all()
+        assert len(private_insert_policies) == 2
+        for policy in private_insert_policies:
+            assert "owner_organization_id IS NOT NULL" in policy["with_check"]
+            assert "app.organization_id" in policy["with_check"], (
+                f"{policy['policyname']} must prevent tenant users from inserting shared/global discovery records"
+            )
 
         method_rls_tables = ("analytical_methods", "analytical_method_sources", "analytical_method_decisions")
         for table_name in method_rls_tables:

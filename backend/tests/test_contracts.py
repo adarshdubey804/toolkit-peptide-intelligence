@@ -2358,3 +2358,35 @@ def test_workbook_row_extractor_rejects_wrong_row_count_and_missing_headers():
     with pytest.raises(HTTPException) as missing_sheet:
         parse("Catalogue", ["Peptide Name"], 128)
     assert missing_sheet.value.status_code == 422
+
+def test_peptide_workbook_import_route_is_registered_and_requires_xlsx_upload():
+    operation = app.openapi()["paths"]["/api/v1/dossiers/import-workbook"]["post"]
+    assert operation["requestBody"]["required"] is True
+    schema = operation["requestBody"]["content"]["multipart/form-data"]["schema"]
+    assert schema["$ref"].endswith("/Body_import_peptide_workbook_api_v1_dossiers_import_workbook_post")
+
+
+def test_dossier_reference_and_media_require_https_provenance():
+    import pytest
+    from app.routers.workbook_import import DossierMediaInput, DossierReferenceInput
+
+    reference = {
+        "claim_text": "Activates the growth hormone secretagogue receptor.",
+        "title": "Primary pharmacology study",
+        "source_name": "PubMed",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/12345678/",
+    }
+    assert DossierReferenceInput(**reference).url.scheme == "https"
+    with pytest.raises(Exception):
+        DossierReferenceInput(**{**reference, "url": "http://example.org/article"})
+
+    media = {
+        "title": "Molecular structure",
+        "image_url": "https://example.org/structure.png",
+        "alt_text": "Molecular structure depiction of the peptide",
+        "source_name": "PubChem",
+        "license_or_reuse_terms": "Public domain",
+    }
+    assert DossierMediaInput(**media).image_url.scheme == "https"
+    with pytest.raises(Exception):
+        DossierMediaInput(**{**media, "image_url": "http://example.org/structure.png"})

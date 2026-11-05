@@ -2294,3 +2294,67 @@ def test_dossier_references_must_map_to_claims_and_use_https():
         "license_or_reuse_terms": "PubChem record image terms",
     }
     assert DossierMediaInput(**media).image_url.scheme == "https"
+
+
+
+def test_workbook_row_extractor_accepts_128_rows_and_preserves_source_fields():
+    from io import BytesIO
+    from openpyxl import Workbook, load_workbook
+    from app.routers.workbook_import import _extract_peptide_rows
+
+    source = Workbook()
+    sheet = source.active
+    sheet.title = "Peptides"
+    sheet.append(["Catalogue export"])
+    sheet.append(["Peptide (generic / common name)", "FDA Status", "Source note"])
+    for index in range(128):
+        sheet.append([f"Peptide {index + 1}", "Not approved", f"Source row {index + 1}"])
+    payload = BytesIO()
+    source.save(payload)
+    source.close()
+
+    parsed_workbook = load_workbook(BytesIO(payload.getvalue()), read_only=True, data_only=True)
+    try:
+        rows = _extract_peptide_rows(parsed_workbook)
+    finally:
+        parsed_workbook.close()
+
+    assert len(rows) == 128
+    assert rows[0][0] == 4
+    assert rows[0][2] == "Peptide 1"
+    assert rows[0][3] == "Not approved"
+    assert rows[-1][2] == "Peptide 128"
+    assert rows[0][1]["Source note"] == "Source row 1"
+
+
+def test_workbook_row_extractor_rejects_wrong_row_count_and_missing_headers():
+    from io import BytesIO
+    from openpyxl import Workbook, load_workbook
+    from fastapi import HTTPException
+    from app.routers.workbook_import import _extract_peptide_rows
+
+    def parse(sheet_name, header, count):
+        source = Workbook()
+        sheet = source.active
+        sheet.title = sheet_name
+        sheet.append(header)
+        for index in range(count):
+            sheet.append([f"Peptide {index + 1}"])
+        payload = BytesIO()
+        source.save(payload)
+        source.close()
+        parsed = load_workbook(BytesIO(payload.getvalue()), read_only=True, data_only=True)
+        try:
+            return _extract_peptide_rows(parsed)
+        finally:
+            parsed.close()
+
+    with pytest.raises(HTTPException) as wrong_count:
+        parse("Peptides", ["Peptide Name"], 127)
+    assert wrong_count.value.status_code == 422
+    with pytest.raises(HTTPException) as missing_header:
+        parse("Peptides", ["Drug", "Status"], 128)
+    assert missing_header.value.status_code == 422
+    with pytest.raises(HTTPException) as missing_sheet:
+        parse("Catalogue", ["Peptide Name"], 128)
+    assert missing_sheet.value.status_code == 422

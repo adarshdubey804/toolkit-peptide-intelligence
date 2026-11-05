@@ -222,6 +222,7 @@ async def import_peptide_workbook(
     }
     workbook_metadata_json = json.dumps(workbook_metadata, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
     if len(workbook_metadata_json.encode("utf-8")) > 4 * 1024 * 1024:
+        workbook.close()
         raise HTTPException(status_code=422, detail="Summary and notes/source worksheets exceed the 4 MB metadata limit.")
 
     batch = db.execute(text("""

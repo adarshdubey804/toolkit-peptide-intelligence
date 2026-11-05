@@ -1,9 +1,12 @@
-# 055 — Sermorelin (GEREF)
+# Sermorelin (GEREF)
 
 **Curation status:** in_progress  
-**Workbook sequence:** 055 (Peptides sheet data row 51; Excel row 53)  
+**Workbook position:** Peptides worksheet data row 51 (Excel row 53)  
+**Stable dossier identifier:** `sermorelin` (canonical folder slug; not a sequence number)  
 **Entity class:** synthetic 29-amino-acid growth hormone-releasing hormone fragment (GHRH 1–29 amide)  
 **Evidence cut-off:** 4 November 2026
+
+**Numbering correction:** The earlier `055` heading was incorrect and collided with GHRP-6's dossier label. It has been removed; workbook row position and canonical folder identifier are kept as separate identifiers.
 
 ## 1. Identity and provenance
 

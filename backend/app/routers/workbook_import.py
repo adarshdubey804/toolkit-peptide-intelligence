@@ -31,6 +31,9 @@ MAX_XLSX_UNCOMPRESSED_BYTES = 100 * 1024 * 1024
 MAX_XLSX_MEMBER_BYTES = 25 * 1024 * 1024
 MAX_XLSX_MEMBERS = 2000
 MAX_XLSX_COMPRESSION_RATIO = 100
+MAX_WORKSHEET_ROWS = 10_000
+MAX_WORKSHEET_COLUMNS = 200
+MAX_WORKBOOK_DECLARED_CELLS = 500_000
 
 
 def _normalise_header(value) -> str:
@@ -152,6 +155,22 @@ async def _read_upload_limited(file: UploadFile) -> bytes:
     return b"".join(chunks)
 
 
+def _validate_worksheet_dimensions(workbook) -> None:
+    """Bound declared worksheet dimensions before iterating any worksheet cells."""
+    total_cells = 0
+    for sheet in workbook.worksheets:
+        rows = sheet.max_row or 0
+        columns = sheet.max_column or 0
+        if rows > MAX_WORKSHEET_ROWS or columns > MAX_WORKSHEET_COLUMNS:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Worksheet '{sheet.title}' exceeds the permitted row or column dimensions.",
+            )
+        total_cells += rows * columns
+        if total_cells > MAX_WORKBOOK_DECLARED_CELLS:
+            raise HTTPException(status_code=422, detail="Workbook exceeds the permitted total worksheet cell dimensions.")
+
+
 def _json_value(value):
     if value is None:
         return None
@@ -183,8 +202,14 @@ async def import_peptide_workbook(
     except Exception as exc:
         raise HTTPException(status_code=422, detail="The uploaded workbook could not be read.") from exc
     if "Peptides" not in workbook.sheetnames:
+        workbook.close()
         raise HTTPException(status_code=422, detail="Workbook must contain a 'Peptides' worksheet.")
-    rows = _extract_peptide_rows(workbook)
+    try:
+        _validate_worksheet_dimensions(workbook)
+        rows = _extract_peptide_rows(workbook)
+    except Exception:
+        workbook.close()
+        raise
 
     workbook_metadata = {
         name: _worksheet_rows(workbook[name])

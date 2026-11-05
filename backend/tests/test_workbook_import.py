@@ -241,3 +241,20 @@ def test_blank_status_detail_falls_back_to_workbook_fda_status():
     finally:
         workbook.close()
     assert rows[0][3] == "Yes"
+
+
+
+def test_workbook_import_rejects_duplicate_headers_to_prevent_source_field_loss():
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Peptides"
+    sheet.append(["Peptide", "Notes", "Notes"])
+    for index in range(128):
+        sheet.append([f"Peptide {index + 1}", f"First note {index + 1}", f"Second note {index + 1}"])
+    try:
+        with pytest.raises(HTTPException) as error:
+            _extract_peptide_rows(workbook)
+    finally:
+        workbook.close()
+    assert error.value.status_code == 422
+    assert "duplicate column headers" in error.value.detail

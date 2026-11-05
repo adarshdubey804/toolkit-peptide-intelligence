@@ -150,7 +150,7 @@ def test_dossier_media_requires_alt_text_attribution_source_and_reuse_terms():
         DossierMediaInput(
             title="Structure",
             image_url="https://example.org/structure.png",
-            alt_text="Short",
+            alt_text="Bad",
             source_name="RCSB PDB",
             license_or_reuse_terms="Unknown",
         )

@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import zipfile
 from io import BytesIO
 from typing import Annotated
 from uuid import UUID
@@ -25,6 +26,11 @@ NAME_HEADERS = {
 }
 STATUS_HEADERS = {"status detail", "fda approved", "fda status", "approval status"}
 FDA_HEADERS = {"fda approved", "fda status", "approved by fda"}
+MAX_UPLOAD_BYTES = 15 * 1024 * 1024
+MAX_XLSX_UNCOMPRESSED_BYTES = 100 * 1024 * 1024
+MAX_XLSX_MEMBER_BYTES = 25 * 1024 * 1024
+MAX_XLSX_MEMBERS = 2000
+MAX_XLSX_COMPRESSION_RATIO = 100
 
 
 def _normalise_header(value) -> str:
@@ -94,6 +100,58 @@ def _extract_peptide_rows(workbook):
     return rows
 
 
+def _validate_xlsx_archive(raw: bytes) -> None:
+    """Reject malformed or resource-amplifying ZIP containers before parsing XML."""
+    try:
+        with zipfile.ZipFile(BytesIO(raw)) as archive:
+            members = archive.infolist()
+            if len(members) > MAX_XLSX_MEMBERS:
+                raise HTTPException(status_code=422, detail="Workbook contains too many archive entries.")
+            total_uncompressed = 0
+            for member in members:
+                if member.flag_bits & 0x1:
+                    raise HTTPException(status_code=422, detail="Encrypted workbook entries are not supported.")
+                if member.file_size > MAX_XLSX_MEMBER_BYTES:
+                    raise HTTPException(status_code=413, detail="A workbook component exceeds the permitted uncompressed size.")
+                total_uncompressed += member.file_size
+                if total_uncompressed > MAX_XLSX_UNCOMPRESSED_BYTES:
+                    raise HTTPException(status_code=413, detail="Workbook expands beyond the 100 MB safety limit.")
+                if member.file_size and member.compress_size == 0:
+                    raise HTTPException(status_code=422, detail="Workbook contains an invalid compressed entry.")
+                if member.compress_size and member.file_size / member.compress_size > MAX_XLSX_COMPRESSION_RATIO:
+                    raise HTTPException(status_code=413, detail="Workbook compression ratio exceeds the safety limit.")
+                normalized_path = member.filename.replace("\\", "/")
+                if normalized_path.startswith("/") or ".." in normalized_path.split("/"):
+                    raise HTTPException(status_code=422, detail="Workbook contains an invalid archive path.")
+            names = set(archive.namelist())
+            if "[Content_Types].xml" not in names or "xl/workbook.xml" not in names:
+                raise HTTPException(status_code=422, detail="The uploaded file is not a valid XLSX workbook.")
+            bad_member = archive.testzip()
+            if bad_member:
+                raise HTTPException(status_code=422, detail="Workbook archive integrity check failed.")
+    except HTTPException:
+        raise
+    except (zipfile.BadZipFile, OSError, RuntimeError) as exc:
+        raise HTTPException(status_code=422, detail="The uploaded file is not a valid XLSX archive.") from exc
+
+
+async def _read_upload_limited(file: UploadFile) -> bytes:
+    """Read in bounded chunks so oversized uploads are rejected before full buffering."""
+    chunks = []
+    total = 0
+    while True:
+        chunk = await file.read(min(1024 * 1024, MAX_UPLOAD_BYTES + 1 - total))
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail="Workbook must be non-empty and no larger than 15 MB.")
+        chunks.append(chunk)
+    if total == 0:
+        raise HTTPException(status_code=413, detail="Workbook must be non-empty and no larger than 15 MB.")
+    return b"".join(chunks)
+
+
 def _json_value(value):
     if value is None:
         return None
@@ -117,9 +175,8 @@ async def import_peptide_workbook(
     organization_id, _ = _membership(current_user, db)
     if not file.filename or not file.filename.lower().endswith(".xlsx"):
         raise HTTPException(status_code=415, detail="Upload an .xlsx workbook.")
-    raw = await file.read()
-    if not raw or len(raw) > 15 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="Workbook must be non-empty and no larger than 15 MB.")
+    raw = await _read_upload_limited(file)
+    _validate_xlsx_archive(raw)
     file_hash = hashlib.sha256(raw).hexdigest()
     try:
         workbook = load_workbook(BytesIO(raw), read_only=True, data_only=True)

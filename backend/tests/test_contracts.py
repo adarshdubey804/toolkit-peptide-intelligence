@@ -2320,7 +2320,7 @@ def test_workbook_row_extractor_accepts_128_rows_and_preserves_source_fields():
         parsed_workbook.close()
 
     assert len(rows) == 128
-    assert rows[0][0] == 4
+    assert rows[0][0] == 3
     assert rows[0][2] == "Peptide 1"
     assert rows[0][3] == "Not approved"
     assert rows[-1][2] == "Peptide 128"

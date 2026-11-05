@@ -67,7 +67,7 @@ A subsequent review of the earlier dossier commits and the complete PR #155 chan
 
 ### Numbering integrity issue
 
-The existing Sermorelin file uses sequence number 055 while the GHRP-6 file is also titled Dossier 055. This is a dossier-number collision, not evidence that Sermorelin and GHRP-6 are the same peptide. Keep the canonical identity and source-row mapping separate from human-readable dossier sequence labels. Before changing any numbering, reconcile all 128 exact workbook rows against the source workbook and choose one unique, stable identifier policy. Do not use a dossier sequence number as a database primary key.
+The existing Sermorelin file had used sequence number 055 while the GHRP-6 file is also titled Dossier 055. This was a dossier-number collision, not evidence that Sermorelin and GHRP-6 are the same peptide. Corrected Sermorelin's README heading to `Sermorelin (GEREF)` and retained its stated Peptides worksheet data row 51 / Excel row 53; the unsupported sequence label 055 was removed. Keep canonical identity, workbook row position and stable folder slug as separate identifiers. Do not use a dossier sequence number as a database primary key.
 
 ### Scope and remaining checks
 

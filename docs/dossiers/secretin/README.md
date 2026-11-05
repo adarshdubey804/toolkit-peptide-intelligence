@@ -1,4 +1,4 @@
-# 042 — Secretin (human and porcine forms)
+# 038 — Secretin (human and porcine forms)
 
 **Curation status:** in_progress  
 **Workbook sequence:** 038; Excel row 39  

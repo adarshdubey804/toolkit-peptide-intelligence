@@ -2267,7 +2267,7 @@ def test_workbook_import_preserves_companion_worksheet_metadata():
     assert "workbook_metadata JSONB" in sql
     assert "source_row JSONB" in sql
     from app.routers import workbook_import
-    assert "Expected 128 populated peptide rows" in __import__("inspect").getsource(workbook_import.import_peptide_workbook)
+    assert "Expected 128 populated peptide rows" in __import__("inspect").getsource(workbook_import._extract_peptide_rows)
 
 
 def test_dossier_references_must_map_to_claims_and_use_https():

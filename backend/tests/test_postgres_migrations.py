@@ -463,6 +463,21 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
         """)).scalar_one()
         assert dossier_policies == 16, "All private peptide discovery, workbook and dossier tables need explicit organization RLS policies"
 
+        private_insert_policies = connection.execute(text("""
+            SELECT policyname, with_check
+            FROM pg_policies
+            WHERE schemaname='public' AND policyname IN (
+                'peptide_discovery_candidates_insert_scope',
+                'peptide_discovery_observations_insert_scope'
+            )
+        """)).mappings().all()
+        assert len(private_insert_policies) == 2
+        for policy in private_insert_policies:
+            assert "owner_organization_id IS NOT NULL" in policy["with_check"]
+            assert "app.organization_id" in policy["with_check"], (
+                f"{policy['policyname']} must prevent tenant users from inserting shared/global discovery records"
+            )
+
         method_rls_tables = ("analytical_methods", "analytical_method_sources", "analytical_method_decisions")
         for table_name in method_rls_tables:
             method_rls_state = connection.execute(text("""

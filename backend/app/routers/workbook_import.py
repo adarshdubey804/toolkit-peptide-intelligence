@@ -73,6 +73,12 @@ def _extract_peptide_rows(workbook):
     if "Peptides" not in workbook.sheetnames:
         raise HTTPException(status_code=422, detail="Workbook must contain a 'Peptides' worksheet.")
     sheet = workbook["Peptides"]
+    for row in sheet.iter_rows():
+        if any(cell.data_type == "f" for cell in row):
+            raise HTTPException(
+                status_code=422,
+                detail="The Peptides worksheet contains formulas; replace them with reviewed values before importing to avoid missing cached results.",
+            )
     header_row_number = None
     headers = ()
     for row_number, values in enumerate(sheet.iter_rows(min_row=1, max_row=10, values_only=True), start=1):
@@ -209,7 +215,7 @@ async def import_peptide_workbook(
     _validate_xlsx_archive(raw)
     file_hash = hashlib.sha256(raw).hexdigest()
     try:
-        workbook = load_workbook(BytesIO(raw), read_only=True, data_only=True)
+        workbook = load_workbook(BytesIO(raw), read_only=True, data_only=False)
     except Exception as exc:
         raise HTTPException(status_code=422, detail="The uploaded workbook could not be read.") from exc
     if "Peptides" not in workbook.sheetnames:
@@ -222,14 +228,17 @@ async def import_peptide_workbook(
         workbook.close()
         raise
 
-    workbook_metadata = {
-        name: _worksheet_rows(workbook[name])
-        for name in workbook.sheetnames if name != "Peptides"
-    }
-    workbook_metadata_json = json.dumps(workbook_metadata, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
-    if len(workbook_metadata_json.encode("utf-8")) > 4 * 1024 * 1024:
+    try:
+        workbook_metadata = {
+            name: _worksheet_rows(workbook[name])
+            for name in workbook.sheetnames if name != "Peptides"
+        }
+        workbook_metadata_json = json.dumps(workbook_metadata, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+        if len(workbook_metadata_json.encode("utf-8")) > 4 * 1024 * 1024:
+            raise HTTPException(status_code=422, detail="Summary and notes/source worksheets exceed the 4 MB metadata limit.")
+    except Exception:
         workbook.close()
-        raise HTTPException(status_code=422, detail="Summary and notes/source worksheets exceed the 4 MB metadata limit.")
+        raise
 
     batch = db.execute(text("""
         INSERT INTO peptide_workbook_import_batches

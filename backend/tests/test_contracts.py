@@ -2398,3 +2398,17 @@ def test_private_discovery_candidates_cannot_be_updated_by_other_organizations()
     assert "owner_organization_id IS NOT NULL" in sql
     assert "owner_organization_id = NULLIF(current_setting('app.organization_id', true), '')::uuid" in sql
     assert "global candidates are read-only" in sql
+
+
+
+def test_private_discovery_insert_policies_reject_shared_global_writes():
+    sql = (MIGRATIONS_DIR / "074_private_discovery_insert_scope.sql").read_text(encoding="utf-8")
+    for policy in (
+        "peptide_discovery_candidates_insert_scope",
+        "peptide_discovery_observations_insert_scope",
+    ):
+        assert f"DROP POLICY IF EXISTS {policy}" in sql
+        assert f"CREATE POLICY {policy}" in sql
+    assert sql.count("owner_organization_id IS NOT NULL") == 2
+    assert sql.count("owner_organization_id = NULLIF(current_setting('app.organization_id', true), '')::uuid") == 2
+    assert "trusted ingestion" in sql

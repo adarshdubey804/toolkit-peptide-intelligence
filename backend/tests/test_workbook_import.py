@@ -160,13 +160,12 @@ def test_dossier_media_requires_alt_text_attribution_source_and_reuse_terms():
 
 
 def test_xlsx_archive_validator_accepts_a_normal_workbook():
-    workbook = _catalogue_workbook()
-    try:
-        stream = BytesIO()
-        workbook.save(stream)
-    finally:
-        workbook.close()
-
+    workbook = Workbook()
+    workbook.active.title = "Peptides"
+    workbook.active.append(["Peptide"])
+    workbook.active.append(["Example peptide"])
+    stream = BytesIO()
+    workbook.save(stream)
     _validate_xlsx_archive(stream.getvalue())
 
 

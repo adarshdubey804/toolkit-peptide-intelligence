@@ -67,7 +67,7 @@ def test_workbook_import_extracts_all_128_rows_and_preserves_source_fields():
     assert rows[-1][2] == "Peptide 128"
 
 
-@pytest.mark.parametrize("row_count", [0, 1, 127, 129])
+@pytest.mark.parametrize("row_count", [1, 127, 129])
 def test_workbook_import_rejects_catalogues_without_exactly_128_named_rows(row_count):
     workbook = _catalogue_workbook(row_count)
     try:

@@ -83,6 +83,12 @@ def _extract_peptide_rows(workbook):
             break
     if header_row_number is None:
         raise HTTPException(status_code=422, detail="Could not identify a peptide-name column in the first 10 rows of the Peptides worksheet.")
+    non_empty_headers = [_normalise_header(header) for header in headers if _normalise_header(header)]
+    if len(non_empty_headers) != len(set(non_empty_headers)):
+        raise HTTPException(
+            status_code=422,
+            detail="The Peptides worksheet contains duplicate column headers; resolve them before importing to prevent source-field loss.",
+        )
     name_header = _first_header(headers, NAME_HEADERS)
     status_header = _first_header(headers, STATUS_HEADERS)
     fda_header = _first_header(headers, FDA_HEADERS)

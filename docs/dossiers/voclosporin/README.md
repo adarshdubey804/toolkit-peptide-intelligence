@@ -35,7 +35,7 @@ FDA approved January 2021 for adults with active lupus nephritis in combination 
 - DailyMed, LUPKYNIS prescribing information: https://dailymed.nlm.nih.gov/dailymed/search.cfm?query=Lupkynis
 - FDA Drugs@FDA, NDA 213716: https://www.accessdata.fda.gov/scripts/cder/daf/
 - ClinicalTrials.gov AURORA 1: https://clinicaltrials.gov/study/NCT03021499
-- ClinicalTrials.gov AURORA 2: https://clinicaltrials.gov/study/NCT035974ಗ
+- ClinicalTrials.gov AURORA 2: https://clinicaltrials.gov/study/NCT03597448
 - PubMed voclosporin lupus nephritis AURORA: https://pubmed.ncbi.nlm.nih.gov/?term=voclosporin+AURORA+1+lupus+nephritis
 
 ## Change log

@@ -32,7 +32,7 @@ Sequence:
 
 - Length: 34 amino acids.
 - Molecular formula: C181H291N55O51S2.
-- Molecular weight: approximately 4,118. GOT exact displayed value and counterion/formulation details should be cross-checked with the current product label.
+- Molecular weight: approximately 4,118 Da; verify the exact displayed value and counterion/formulation basis against the current product label.
 - N-terminus: free amino group.
 - C-terminus: free carboxyl group.
 - Peptide identity: human PTH residues 1–34.

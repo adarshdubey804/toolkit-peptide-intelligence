@@ -93,7 +93,7 @@ def _extract_peptide_rows(workbook):
         if name is None or not str(name).strip():
             continue
         reported_status = row.get(status_header) if status_header else None
-        if reported_status is None and fda_header:
+        if (reported_status is None or not str(reported_status).strip()) and fda_header:
             reported_status = row.get(fda_header)
         rows.append((row_number, row, str(name).strip(), str(reported_status or "Not stated")))
     if not rows:

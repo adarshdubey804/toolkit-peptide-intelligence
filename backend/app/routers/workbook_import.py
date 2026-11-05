@@ -57,6 +57,43 @@ def _membership(user: dict, db: Session) -> tuple[str, str]:
     return str(org), role
 
 
+
+
+def _extract_peptide_rows(workbook):
+    """Extract the 128 source rows from a workbook without writing to the database."""
+    if "Peptides" not in workbook.sheetnames:
+        raise HTTPException(status_code=422, detail="Workbook must contain a 'Peptides' worksheet.")
+    sheet = workbook["Peptides"]
+    header_row_number = None
+    headers = ()
+    for row_number, values in enumerate(sheet.iter_rows(min_row=1, max_row=10, values_only=True), start=1):
+        possible_headers = tuple(_json_value(value) for value in values)
+        if _first_header(possible_headers, NAME_HEADERS):
+            header_row_number = row_number
+            headers = possible_headers
+            break
+    if header_row_number is None:
+        raise HTTPException(status_code=422, detail="Could not identify a peptide-name column in the first 10 rows of the Peptides worksheet.")
+    name_header = _first_header(headers, NAME_HEADERS)
+    status_header = _first_header(headers, STATUS_HEADERS)
+    fda_header = _first_header(headers, FDA_HEADERS)
+    rows = []
+    for row_number, values in enumerate(sheet.iter_rows(min_row=header_row_number + 1, values_only=True), start=header_row_number + 1):
+        row = {str(headers[i]): _json_value(values[i]) for i in range(min(len(headers), len(values))) if headers[i]}
+        name = row.get(name_header)
+        if name is None or not str(name).strip():
+            continue
+        reported_status = row.get(status_header) if status_header else None
+        if reported_status is None and fda_header:
+            reported_status = row.get(fda_header)
+        rows.append((row_number, row, str(name).strip(), str(reported_status or "Not stated")))
+    if not rows:
+        raise HTTPException(status_code=422, detail="No peptide rows were found.")
+    if len(rows) != 128:
+        raise HTTPException(status_code=422, detail=f"Expected 128 populated peptide rows; found {len(rows)}. Check the workbook before importing.")
+    return rows
+
+
 def _json_value(value):
     if value is None:
         return None
@@ -90,36 +127,7 @@ async def import_peptide_workbook(
         raise HTTPException(status_code=422, detail="The uploaded workbook could not be read.") from exc
     if "Peptides" not in workbook.sheetnames:
         raise HTTPException(status_code=422, detail="Workbook must contain a 'Peptides' worksheet.")
-    sheet = workbook["Peptides"]
-    header_row_number = None
-    headers = ()
-    for row_number, values in enumerate(sheet.iter_rows(min_row=1, max_row=10, values_only=True), start=1):
-        possible_headers = tuple(_json_value(value) for value in values)
-        if _first_header(possible_headers, NAME_HEADERS):
-            header_row_number = row_number
-            headers = possible_headers
-            break
-    if header_row_number is None:
-        raise HTTPException(status_code=422, detail="Could not identify a peptide-name column in the first 10 rows of the Peptides worksheet.")
-    name_header = _first_header(headers, NAME_HEADERS)
-    status_header = _first_header(headers, STATUS_HEADERS)
-    fda_header = _first_header(headers, FDA_HEADERS)
-    rows = []
-    for row_number, values in enumerate(sheet.iter_rows(min_row=header_row_number + 1, values_only=True), start=header_row_number + 1):
-        row = {str(headers[i]): _json_value(values[i]) for i in range(min(len(headers), len(values))) if headers[i]}
-        name = row.get(name_header)
-        if name is None or not str(name).strip():
-            continue
-        reported_status = row.get(status_header) if status_header else None
-        if reported_status is None and fda_header:
-            reported_status = row.get(fda_header)
-        rows.append((row_number, row, str(name).strip(), str(reported_status or "Not stated")))
-    if not rows:
-        raise HTTPException(status_code=422, detail="No peptide rows were found.")
-    if len(rows) != 128:
-        raise HTTPException(status_code=422, detail=f"Expected 128 populated peptide rows; found {len(rows)}. Check the workbook before importing.")
-    if len(rows) > 1000:
-        raise HTTPException(status_code=422, detail="A single workbook import is limited to 1,000 rows.")
+    rows = _extract_peptide_rows(workbook)
 
     workbook_metadata = {
         name: _worksheet_rows(workbook[name])

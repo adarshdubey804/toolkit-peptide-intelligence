@@ -104,6 +104,10 @@ def test_full_postgres_migration_chain_is_valid_and_idempotent():
             "peptide_discovery_candidates",
             "peptide_discovery_observations",
             "peptide_discovery_decisions",
+            "peptide_workbook_import_batches",
+            "peptide_workbook_import_rows",
+            "peptide_dossier_sections",
+            "peptide_dossier_section_revisions",
         )
         for table_name in required_tables:
             exists = connection.execute(

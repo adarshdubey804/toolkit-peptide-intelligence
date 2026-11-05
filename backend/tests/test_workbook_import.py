@@ -11,6 +11,7 @@ from app.routers.workbook_import import (
     DossierReferenceInput,
     _extract_peptide_rows,
     _validate_xlsx_archive,
+    _validate_worksheet_dimensions,
     _worksheet_rows,
 )
 
@@ -196,3 +197,32 @@ def test_xlsx_archive_validator_rejects_non_xlsx_zip():
         _validate_xlsx_archive(stream.getvalue())
     assert error.value.status_code == 422
     assert "valid XLSX workbook" in error.value.detail
+
+
+
+def test_workbook_dimension_guard_accepts_normal_catalogue():
+    workbook = _catalogue_workbook()
+    try:
+        _validate_worksheet_dimensions(workbook)
+    finally:
+        workbook.close()
+
+
+def test_workbook_dimension_guard_rejects_excessive_declared_rows():
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Peptides"
+    sheet.append(["Peptide"])
+    for _ in range(10_000):
+        sheet.append([""])
+    stream = BytesIO()
+    workbook.save(stream)
+    workbook.close()
+    parsed = load_workbook(stream, read_only=True, data_only=True)
+    try:
+        with pytest.raises(HTTPException) as error:
+            _validate_worksheet_dimensions(parsed)
+    finally:
+        parsed.close()
+    assert error.value.status_code == 422
+    assert "dimensions" in error.value.detail

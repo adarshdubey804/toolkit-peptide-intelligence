@@ -258,3 +258,20 @@ def test_workbook_import_rejects_duplicate_headers_to_prevent_source_field_loss(
         workbook.close()
     assert error.value.status_code == 422
     assert "duplicate column headers" in error.value.detail
+
+
+def test_workbook_import_rejects_formula_cells_in_peptide_rows():
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Peptides"
+    sheet.append(["Peptide", "FDA Status"])
+    for index in range(128):
+        sheet.append([f"Peptide {index + 1}", "Yes"])
+    sheet["B2"] = '=IF(1=1,"Yes","No")'
+    try:
+        with pytest.raises(HTTPException) as error:
+            _extract_peptide_rows(workbook)
+    finally:
+        workbook.close()
+    assert error.value.status_code == 422
+    assert "contains formulas" in error.value.detail
